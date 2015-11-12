@@ -77,6 +77,10 @@ class tenderlist extends NoInputCorePage
     */
     function body_content()
     {
+        $showCode = 0;
+        if (CoreLocal::get('store') == 'WEFC_Toronto') {
+            $showCode = 1;
+        }
         $db = Database::pDataConnect();
         $q = "SELECT TenderCode,TenderName FROM tenders 
             WHERE MaxAmount > 0
@@ -93,7 +97,8 @@ class tenderlist extends NoInputCorePage
         $selected = "selected";
         while($row = $db->fetch_row($r)){
             echo "<option value='".$row["TenderCode"]."' ".$selected.">";
-            echo $row['TenderName'];
+            echo (($showCode) ? "{$row['TenderCode']} " : '') .
+                $row['TenderName'];
             echo '</option>';
             $selected = "";
         }

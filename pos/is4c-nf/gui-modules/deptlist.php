@@ -82,6 +82,10 @@ class deptlist extends NoInputCorePage
     */
     function body_content()
     {
+        $showCode = 0;
+        if (CoreLocal::get('store') == 'WEFC_Toronto') {
+            $showCode = 1;
+        }
         $db = Database::pDataConnect();
         $q = "SELECT dept_no,dept_name FROM departments ORDER BY dept_name";
         $r = $db->query($q);
@@ -99,7 +103,9 @@ class deptlist extends NoInputCorePage
             echo "<option value='".$row["dept_no"]."' ".$selected.">";
             // &shy; prevents the cursor from moving out of
             // step with filter-as-you-type
-            echo '&shy; ' . $row['dept_name'];
+            echo '&shy; ' .
+                (($showCode) ? "{$row['dept_no']} " : '') .
+                $row['dept_name'];
             echo '</option>';
             $selected = "";
         }

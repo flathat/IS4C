@@ -23,6 +23,7 @@
 
 /* --COMMENTS - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+    *  9Sep2015 Eric Lee WEFC_Toronto only, defeated unpaid AR check for in-house members.
     * 24Oct2013 Eric Lee Defeated:
     *                    + A WEFC_Toronto-only textbox for collecting Member Card#
     *  5Oct2012 Eric Lee Added:
@@ -141,6 +142,10 @@ class memlist extends NoInputCorePage
             // don't bother with unpaid balance check if there is no balance
             if ($memberID != CoreLocal::get("defaultNonMem") && CoreLocal::get('balance') > 0) {
                 $unpaid = PrehLib::check_unpaid_ar($memberID);
+                if (CoreLocal::get('store') == "WEFC_Toronto" &&
+                        $row["CardNo"] >= 99000) {
+                            $unpaid = false;
+                }
                 if ($unpaid) {
                     $this->change_page($this->page_url."gui-modules/UnpaidAR.php");
                 } else {
