@@ -254,10 +254,23 @@ class InstallUtilities extends LibraryClass
         /**
           ini.php expects string delimiters. Take them
           off if present.
-        */
         if (strlen($value) >= 2 && substr($value, 0, 1) == "'" && substr($value, -1) == "'") {
             $value = substr($value, 1, strlen($value)-2);
         }
+        */
+        if (!is_array($value)) {
+            if (strlen($value) >= 2 && substr($value, 0, 1) == "'" &&
+                substr($value, -1) == "'") {
+                $value = substr($value, 1, strlen($value)-2);
+            }
+        } else {
+            for ($i=0 ; $i < count($value) ; $i++) {
+                if (strlen($value[$i]) >= 2 && substr($value[$i], 0, 1) == "'" &&
+                    substr($value[$i], -1) == "'") {
+                    $value[$i] = substr($value[$i], 1, strlen($value[$i])-2);
+                }
+            }
+         }
 
         $json[$key] = $value;
         $saved = file_put_contents($ini_json, JsonLib::prettyJSON(json_encode($json)));
@@ -682,6 +695,13 @@ class InstallUtilities extends LibraryClass
             return CoreLocal::get('pDatabase');
         } else if ($name == 'trans') {
             return CoreLocal::get('tDatabase');
+        } elseif (substr($name, 0, 7) == 'plugin:') {
+            $pluginDbKey = substr($name, 7);
+            if (CoreLocal::get("$pluginDbKey",'') != '') {
+                return CoreLocal::get("$pluginDbKey");
+            } else {
+                return false;
+            }
         } else {
             return false;
         }
@@ -915,7 +935,7 @@ class InstallUtilities extends LibraryClass
         return $ret;
     }
 
-    static public function installCheckboxField($name, $label, $default_value=0, $storage=self::EITHER_SETTING, $choices=array(0, 1), $attributes=array())
+    static public function installCheckboxField($name, $label, $default_value=0, $storage=self::EITHER_SETTING, $choices=array(0, 1), $attributes=array(), $quoted=false)
     {
         $current_value = self::getCurrentValue($name, $default_value, $quoted);
 

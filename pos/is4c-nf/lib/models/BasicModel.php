@@ -540,32 +540,11 @@ class BasicModel
         );
         echo "==========================================\n";
 
-        /**
-
-        */
-        if ($db_name == \CoreLocal::get('pDatabase')) {
-            $this->connection = \Database::pDataConnect();
-        } else if ($db_name == \CoreLocal::get('tDatabase')) {
-            $this->connection = \Database::tDataConnect();
-        } else {
-            /**
-              Allow for db other than main ones, e.g. for a plugin.
-              Force a new connection to avoid messing with the
-              one maintained by the Database class
-            */
-            $this->connection = new \COREPOS\pos\lib\SQLManager(
-                $CORE_LOCAL->get("localhost"),
-                $CORE_LOCAL->get("DBMS"),
-                $db_name,
-                $CORE_LOCAL->get("localUser"),
-                $CORE_LOCAL->get("localPass"),
-                false,
-                true
-            );
-            if ($this->connection->isConnected($db_name)) {
-                echo "Error: Unknown database ($db_name)";
-                return false;
-            }
+        $this->setConnectionByName($db_name);
+        // EL The ! here is needed. See CORE #590.
+        if (!$this->connection->isConnected($db_name)) {
+            echo "Error: Unknown database ($db_name)";
+            return false;
         }
 
         if (!$this->connection->table_exists($this->name)) {
@@ -877,11 +856,11 @@ class $name extends BasicModel\n");
               one maintained by the Database class
             */
             $this->connection = new \COREPOS\pos\lib\SQLManager(
-                $CORE_LOCAL->get("localhost"),
-                $CORE_LOCAL->get("DBMS"),
+                \CoreLocal::get('localhost'),
+                \CoreLocal::get('DBMS'),
                 $db_name,
-                $CORE_LOCAL->get("localUser"),
-                $CORE_LOCAL->get("localPass"),
+                \CoreLocal::get('localUser'),
+                \CoreLocal::get('localPass'),
                 false,
                 true
             );
