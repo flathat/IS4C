@@ -32,6 +32,8 @@ class CCredMembershipsModel extends BasicModel
 
     protected $name = "CCredMemberships";
 
+    protected $preferred_db = 'plugin:CoopCredLaneDatabase';
+
     protected $columns = array(
         // FK to coop_cred.CCredPrograms
         'programID' => array('type'=>'SMALLINT(6)', 'not_null'=>True,
@@ -56,5 +58,10 @@ class CCredMembershipsModel extends BasicModel
         'membershipID' => array('type'=>'INT(11)','primary_key'=>True,
             'increment'=>True)
     );
+
+    public function name()
+    {
+        return $this->name;
+    }
 }
 
