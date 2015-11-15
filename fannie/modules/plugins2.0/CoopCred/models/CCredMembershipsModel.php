@@ -92,6 +92,7 @@ class CCredMembershipsModel extends BasicModel
         }
 
         $current = $this->connection;
+        $save_fq = $this->fq_name;
         // save to each lane
         $laneNumber = 0;
         foreach($FANNIE_LANES as $lane) {
@@ -104,6 +105,7 @@ class CCredMembershipsModel extends BasicModel
                 continue;
             }
             $this->connection = $sql;
+            $this->fq_name = $lane['op'] . $sql->sep() . $this->name;
             /* Update or Insert as appropriate.
              * Return membershipID or False
              */
@@ -113,6 +115,7 @@ class CCredMembershipsModel extends BasicModel
         }
         /* Restore connection to Fannie. */
         $this->connection = $current;
+        $this->fq_name = $save_fq;
         if (count($errors)>0) {
             $msg = implode("\n",$errors);
             $this->connection->logger($msg);

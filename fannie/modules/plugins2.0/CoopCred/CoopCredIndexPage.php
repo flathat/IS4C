@@ -80,7 +80,18 @@ class CoopCredIndexPage extends FanniePage
             "" .
             "";
 
-        $hbKey = 'rstatus';
+        $hbKey = 'revents';
+        $hbKeys[] = $hbKey;
+        $hbShortMessage["$hbKey"] = "The amount that has been Input to " .
+            "a Coop Cred Program and the amounts Transferred to its members. " .
+            "" .
+            "";
+        $hbLongMessage["$hbKey"] = "{$hbShortMessage[$hbKey]}" .
+            "<br />Use this report for a summary of the Program. " .
+            "<br />It includes a Balance." .
+            "";
+
+        $hbKey = 'rmemsum';
         $hbKeys[] = $hbKey;
         $hbShortMessage["$hbKey"] = "The amount that has been Transferred " .
             "to members of a Coop Cred Program and the amount they have used " .
@@ -92,15 +103,16 @@ class CoopCredIndexPage extends FanniePage
             "" .
             "";
 
-        $hbKey = 'revents';
+        $hbKey = 'ractivity';
         $hbKeys[] = $hbKey;
-        $hbShortMessage["$hbKey"] = "The amount that has been Input to " .
-            "a Coop Cred Program and the amounts Transferred to its members. " .
+        $hbShortMessage["$hbKey"] = "Earnings and Purchases of a single member " .
+            "of a program, inlcuding Running Balance, Subtotals and Balance." .
             "" .
             "";
         $hbLongMessage["$hbKey"] = "{$hbShortMessage[$hbKey]}" .
-            "<br />Use this report for a summary of the Program. " .
-            "<br />It includes a Balance." .
+            "<br />Use this report for a summary of the Member of a Program." .
+            "<br />Drill down to receipt." .
+            "" .
             "";
 
         $hbKey = 'rliability';
@@ -226,51 +238,43 @@ class CoopCredIndexPage extends FanniePage
                 <li><a href="CoopCredSetup.php"
                     target="_Setup">README: Initial Setup of Coop Cred</a>
                 </li>
-                <li><a href="programs/CoopCredConfigEditor.php?configno=1"
+                <li> <?php echo $hb['config']['a']; ?> <a href="programs/CoopCredConfigEditor.php?configno=1"
                     target="_Config">Configure Coop Cred for this co-op </a>
-                                <?php echo $hb['config']['a']; ?>
                 </li>
-                <li><a href="<?php echo $FANNIE_URL; ?>/mem/NewMemberTool.php" target="_MT"
-                        >Create Members</a>
-                        <?php echo $hb['mctool']['a']; ?>
+                <li> <?php echo $hb['mctool']['a']; ?> <a href="<?php echo $FANNIE_URL; ?>/mem/NewMemberTool.php"
+                    target="_MT" >Create Members</a>
                 </li>
             </ul>
         </li>
         <li>Day-to-day
             <ul>
-                <li><a href="programs/CoopCredProgramEditor.php"
+                <li> <?php echo $hb['prog']['a']; ?> <a href="programs/CoopCredProgramEditor.php"
                     target="_CCProgEdit">Manage Coop Cred Programs</a>
-                                <?php echo $hb['prog']['a']; ?>
                 </li>
-                <li><a href="reports/ProgramEvents/"
+                <li> <?php echo $hb['revents']['a']; ?> <a href="reports/ProgramEvents/"
                     target="_CCEvents">Report on Coop Cred - Program Events</a>
-                                <?php echo $hb['revents']['a']; ?>
                     </li>
-                <li><a href="reports/MemberSummary/"
+                <li> <?php echo $hb['rmemsum']['a']; ?> <a href="reports/MemberSummary/"
                     target="_CCMemSumm">Report on Coop Cred - Program Members Summary</a>
-                                <?php echo $hb['rstatus']['a']; ?>
                 </li>
-                <li><a href="reports/Liability/"
+                <li> <?php echo $hb['ractivity']['a']; ?> <a href="reports/Activity/"
+                    target="_CCMemActivity">Report on Coop Cred - Single Member Activity</a>
+                </li>
+                <li> <?php echo $hb['rliability']['a']; ?> <a href="reports/Liability/"
                     target="_CCLiability">Report on Coop Cred - Program Liability</a>
-                                <?php echo $hb['rliability']['a']; ?>
                 </li>
             </ul>
         </li>
-        <li>CORE tools for Coop Cred entities
-            <?php echo $hb['ftools']['a']; ?>
+        <li> <?php echo $hb['ftools']['a']; ?> CORE tools for Coop Cred entities
             <ul>
-                <li><a href="<?php echo $FANNIE_URL; ?>/mem/MemberSearchPage.php" target="_ME"
-                        >Members Editor</a>
-                        <?php echo $hb['mtool']['a']; ?>
+                <li> <?php echo $hb['mtool']['a']; ?> <a href="<?php echo $FANNIE_URL; ?>/mem/MemberSearchPage.php"
+                    target="_ME" >Members Editor</a>
                 </li>
-                <li><a href="<?php echo $FANNIE_URL; ?>/admin/Tenders/" target="_TE"
-                        >Tenders Editor</a>
-                        <?php echo $hb['ttool']['a']; ?>
+                <li> <?php echo $hb['ttool']['a']; ?> <a href="<?php echo $FANNIE_URL; ?>/admin/Tenders/"
+                    target="_TE" >Tenders Editor</a>
                 </li>
-                <li><a href="<?php echo $FANNIE_URL; ?>/item/departments/DepartmentEditor.php"
-                        target="_DE"
-                        >Payment Departments Editor</a>
-                        <?php echo $hb['dtool']['a']; ?>
+                <li> <?php echo $hb['dtool']['a']; ?> <a href="<?php echo $FANNIE_URL; ?>/item/departments/DepartmentEditor.php"
+                        target="_DE" >Payment Departments Editor</a>
                 </li>
             </ul>
         </ul>
@@ -287,6 +291,21 @@ class CoopCredIndexPage extends FanniePage
         }
 
         return ob_get_clean();
+    }
+
+    /**
+      User-facing help text explaining how to 
+      use a page.
+      @return [string] html content
+    */
+    public function helpContent()
+    {
+        $hbIcon = $this->config->get('URL') . "src/img/buttons/help16.png";
+        $help = "";
+        $help .= "<p>Use the <img src='". $hbIcon . "' /> " .
+            "Question-mark helps in the page iteself.</p>
+            ";
+        return $help;
     }
 
 // class CoopCredIndexPage

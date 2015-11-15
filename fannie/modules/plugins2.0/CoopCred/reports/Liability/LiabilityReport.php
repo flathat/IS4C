@@ -24,7 +24,6 @@
 /* TODO 12Sep2015
  * - Remove deadwood.
  * - Refine help.
- * - help to toolbar help.
  */
 
 include(dirname(__FILE__) . '/../../../../../config.php');
@@ -221,6 +220,10 @@ class LiabilityReport extends FannieReportPage
         $ret[] = "<p class='explain'><b>Undisbursed</b>" .
             " is the difference between Inputs and Disbursements." .
             " It is the amount of Inputs the co-op retains, is still expected to disburse." .
+            "</p>";
+        $ret[] = "<p class='explain'><b>Payments</b>" .
+            " is the amount received into Members' accounts." .
+            " It should be the same as Disbursements." .
             "</p>";
         $ret[] = "<p class='explain'><b>Total</b> of <b>Purchases</b>".
             " at the <a href='#notes' style='text-decoration:underline;'>end</a> of the report".
@@ -613,7 +616,6 @@ title="Tick to display with sorting from column heads; un-tick for a plain formt
         return '<p>Report liabilities,
             places where the co-op is still obliged
             to disburse money or provide goods.
-            </p>
             <ul>
                 <li>Inputs, money that has been provided by sponsors
                 but not disbursed to members yet.
@@ -621,6 +623,15 @@ title="Tick to display with sorting from column heads; un-tick for a plain formt
                 <li>Money that has been transferred (paid) to Program Members
                 that they have not used for purchases (spent) yet.
                 </li>
+            </ul>
+            Shows the amounts:
+            <ul>
+                <li>That have been Input to Programs (Program Inputs)</li>
+                <li>Transferred to members of a Program (Program Disbursements)</li>
+                <li>That are awaiting transfer to members (Program Undisbursed)</li>
+                <li>That members have received from the Program (Member Payments)</li>
+                <li>That members have used for purchases (Member Purchases)</li>
+                <li>That they have not yet used (Member Unspent)</li>
             </ul>
             ';
     }

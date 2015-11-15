@@ -997,6 +997,7 @@ class CoopCredProgramEditor extends FanniePage {
         /* Save changes to or Create the Program proper.
          */
         $model = new CCredProgramsModel($dbc);
+        $model->whichDB($FANNIE_PLUGIN_SETTINGS['CoopCredDatabase']);
         $model->programID($progno);
         $model->programName($progname);
         /* Cannot be active if any dummy's in use. */
@@ -1121,6 +1122,7 @@ class CoopCredProgramEditor extends FanniePage {
                 "a real Banker is assigned.";
         } else {
             $ccmModel = new CCredMembershipsModel($dbc);
+$ccmModel->whichDB($FANNIE_PLUGIN_SETTINGS['CoopCredDatabase']);
             $ccmModel->cardNo($bankid);
             /* Default values for new programs.
              * Should these be configurable? Probably.
@@ -1157,6 +1159,8 @@ class CoopCredProgramEditor extends FanniePage {
                 return;
             }
             $ccmModel = new CCredMembershipsModel($dbc);
+//$ccmModel->whichDB('coop_cred');
+$ccmModel->whichDB($FANNIE_PLUGIN_SETTINGS['CoopCredDatabase']);
             $ccmModel->cardNo($bankid);
             $ccmModel->programID($progno);
             $ccmModel->creditBalance($mCreditBalance);
@@ -1181,6 +1185,7 @@ class CoopCredProgramEditor extends FanniePage {
              */
             $ccmModel = new CCredMembershipsModel($dbc);
             $ccmModel->cardNo($bankid);
+$ccmModel->whichDB($FANNIE_PLUGIN_SETTINGS['CoopCredDatabase']);
             /* There should be one or none.
              * find() returns an array, possibly empty, so foreach is needed.
              */
@@ -1218,6 +1223,8 @@ class CoopCredProgramEditor extends FanniePage {
                 return;
             }
             $ccmModel = new CCredMembershipsModel($dbc);
+$ccmModel->whichDB($FANNIE_PLUGIN_SETTINGS['CoopCredDatabase']);
+//$ccmModel->whichDB('coop_cred');
             $ccmModel->cardNo($bankid);
             $ccmModel->programID($progno);
             $ccmModel->creditBalance($mCreditBalance);
@@ -1496,6 +1503,21 @@ class CoopCredProgramEditor extends FanniePage {
         return True;
 
     // updateViews()
+    }
+
+    /**
+      User-facing help text explaining how to 
+      use a page.
+      @return [string] html content
+    */
+    public function helpContent()
+    {
+        $hbIcon = $this->config->get('URL') . "src/img/buttons/help16.png";
+        $help = "";
+        $help .= "<p>Use the <img src='". $hbIcon . "' /> " .
+            "Question-mark helps in the page iteself.</p>
+            ";
+        return $help;
     }
 
 // CoopCredProgramEditor class

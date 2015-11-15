@@ -498,6 +498,24 @@ title="Tick to display with sorting from column heads; un-tick for a plain formt
     // /form_content()
     }
 
+    /**
+      User-facing help text explaining how to 
+      use a page.
+      @return [string] html content
+    */
+    public function helpContent()
+    {
+        $help = "";
+        $help .= "<p>";
+        $help .= "The amount that has been Input to " .
+            "a Coop Cred Program and the amounts Transferred to its members. ";
+        $help .= "<br />Use this report for a summary of the Program. " .
+            "<br />It includes a Balance." .
+            "</p>" .
+            "";
+        return $help;
+    }
+
     // class programReport
 }
 

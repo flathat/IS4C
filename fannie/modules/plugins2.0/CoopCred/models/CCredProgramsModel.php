@@ -104,10 +104,13 @@ class CCredProgramsModel extends BasicModel
             return $msg;
         }
 
+$this->connection->logger("pTLCC begin");
         $current = $this->connection;
+        $save_fq = $this->fq_name;
         // save to each lane
         $laneNumber = 0;
         foreach($FANNIE_LANES as $lane) {
+//$this->connection->logger("pTLCC lane $laneNumber");
             $laneNumber++;
             $lane['op'] = $coopCredLaneDatabase;
             $sql = new SQLManager($lane['host'],$lane['type'],$lane['op'],
@@ -117,15 +120,30 @@ class CCredProgramsModel extends BasicModel
                 continue;
             }
             $this->connection = $sql;
+            $this->fq_name = $lane['op'] . $sql->sep() . $this->name;
+$this->connection->logger("pTLCC lane $laneNumber db:{$lane['op']}");
             /* Update or Insert as appropriate.
              * Return membershipID or False
              */
-            if ($this->save() === False) {
+            $saveResult = $this->save();
+            if ($saveResult === False) {
+            //if ($this->save() === False) {
                 $errors[] = "pTLCC Program save to lane{$laneNumber} failed.";
+            } elseif (is_object($saveResult)) {
+                $rstr = print_r($saveResult,true); //'r: ';
+                foreach($saveResult as $rslt) {
+                    $rstr .= ($rslt['programID'] . ':');
+                }
+$this->connection->logger("pTLCC lane $laneNumber 1saved $rstr"); //. $saveResult['programID']);
+            } elseif (is_array($saveResult)) {
+$this->connection->logger("pTLCC lane $laneNumber 2saved "); //. $saveResult['programID']);
+            } else {
+$this->connection->logger("pTLCC lane $laneNumber 3saved " . $saveResult);
             }
         }
         /* Restore connection to Fannie. */
         $this->connection = $current;
+        $this->fq_name = $save_fq;
 
         if (count($errors)>0) {
             $msg = implode("\n",$errors);

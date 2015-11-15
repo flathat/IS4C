@@ -21,15 +21,6 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 *********************************************************************************/
-/* TODO
- * 12Sep2015 Handle date-range parameters.
- * 12Sep2015 Run without required parameters return empty page, not form_content.
- * 25Mar2015 Re-run for a different date range:
- *           - form_content() and a link to it OR
- *           - a date formlet in the report page.
- * 25Mar2015 A version of this for any Program, Any member,
- *            i.e. pickers for each each, chained.
- */
 
 include(dirname(__FILE__) . '/../../../../../config.php');
 if (!class_exists('FannieAPI')) {
@@ -38,15 +29,15 @@ if (!class_exists('FannieAPI')) {
 
 class ActivityReport extends FannieReportPage 
 {
-    public $themed = true;
     public $description = '[Coop Cred] lists all Coop Cred transactions for a given member in a given program';
-    public $report_set = 'CoopCred';
-    protected $title = "Fannie : Coop Cred Activity Report";
-    protected $header = "Coop Cred Activity Report";
+    // For Coop Cred what should this be? What does it do? $REPORTS/index.php?
+    public $report_set = 'Membership';
+    protected $title = "Fannie : Coop Cred Activity Report for a Single Member";
+    protected $header = "Coop Cred Single Member Activity Report";
 
     protected $errors = array();
     // headers vary by Program
-    protected $report_headers = array('Date', 'Receipt', 'Amount', 'Type');
+    protected $report_headers = array('Date', 'Receipt', 'Amount', 'Type', 'Running');
     protected $sort_direction = 1;
     protected $required_fields = array('memNum', 'programID');
     protected $cardNo = 0;
@@ -54,12 +45,19 @@ class ActivityReport extends FannieReportPage
     protected $programBankID = 0;
     protected $programName = '';
     protected $memberFullName = '';
+    protected $programStartDate = "";
+    protected $dateFrom = "";
+    protected $dateTo = "";
+    protected $epoch = "1970-01-01";
+    protected $hasDates = false;
 
-    public function preprocess()
+	public function preprocess()
     {
         global $FANNIE_OP_DB,$FANNIE_PLUGIN_LIST,$FANNIE_PLUGIN_SETTINGS;
 
         if (!isset($FANNIE_PLUGIN_LIST) || !in_array('CoopCred', $FANNIE_PLUGIN_LIST)) {
+            // Would like to log the problem. Or display the form-page with the error
+            //  like the Tools do.
             $this->errors[] = "The Coop Cred plugin is not enabled.";
             return False;
         }
@@ -68,83 +66,136 @@ class ActivityReport extends FannieReportPage
             $FANNIE_PLUGIN_SETTINGS['CoopCredDatabase'] != "") {
                 $dbc = FannieDB::get($FANNIE_PLUGIN_SETTINGS['CoopCredDatabase']);
         } else {
+            // Would like to log the problem.
             $this->errors[] = "The Coop Cred database is not assigned in the " .
                 "Coop Cred plugin configuration.";
             return False;
         }
 
-        $this->cardNo = (int)FormLib::get('memNum',0);
-        $this->programID = (int)FormLib::get('programID',0);
-
-        $ccpModel = new CCredProgramsModel($dbc);
-        $ccpModel->programID($this->programID);
-        $prog = array_pop($ccpModel->find());
-        if ($prog != null) {
-            $this->programName = $prog->programName();
-            $this->programBankID = $prog->bankID();
-        } else {
-            $this->errors[] = "Error: Program ID {$this->programID} is not known.";
-            return False;
+        $this->cardNo = FormLib::get('memNum','');
+        $this->programID = FormLib::get('programID','');
+        if (strpos($this->cardNo, '|')) {
+            list($this->programID, $this->cardNo) = explode('|',$this->cardNo);
         }
 
-        $dbc = FannieDB::get($FANNIE_OP_DB);
-        $cdModel = new CustdataModel($dbc);
-        $cdModel->CardNo($this->cardNo);
-        $cdModel->personNum(1);
-        $mem = array_pop($cdModel->find());
-        if ($mem != null) {
-            $this->memberFullName = $mem->FirstName() . " " . $mem->LastName();
-        } else {
-            $noop = 1;
-            $this->errors[] = "Error: Member {$this->cardNo} is not known.";
-            return False;
-        }
+        if ($this->cardNo && $this->programID) {
+            $ccpModel = new CCredProgramsModel($dbc);
+            $ccpModel->programID($this->programID);
+            $prog = array_pop($ccpModel->find());
+            if ($prog != null) {
+                $this->programName = $prog->programName();
+                $this->programBankID = $prog->bankID();
+            } else {
+                $this->errors[] = "Error: Program ID {$this->programID} is not known.";
+                return False;
+            }
 
-        /* 25Mar2015 Under bootstrap the non-sortable format doesn't really work.
-         */
-        $this->sortable = True;
+            $dbc = FannieDB::get($FANNIE_OP_DB);
+            $cdModel = new CustdataModel($dbc);
+            $cdModel->CardNo($this->cardNo);
+            $cdModel->personNum(1);
+            $mem = array_pop($cdModel->find());
+            if ($mem != null) {
+                $this->memberFullName = $mem->FirstName() . " " . $mem->LastName();
+            } else {
+                $noop = 1;
+                $this->errors[] = "Error: Member {$this->cardNo} is not known.";
+                return False;
+            }
+
+            $this->programStartDate = (preg_match("/^[12]\d{3}-\d{2}-\d{2}/",$prog->startDate()))
+                ? $prog->startDate() : '1970-01-01';
+
+		    $dateFrom = FormLib::get_form_value('date1','');
+		    $dateTo = FormLib::get_form_value('date2','');
+            $this->hasDates = (($dateFrom . $dateTo) == '') ? false : true;
+            $this->dateFrom = (($dateFrom == '')?$this->programStartDate:$dateFrom);
+            $this->dateTo = (($dateTo == '')?date('Y-m-d'):$dateTo);
+
+            $this->sortable = (FormLib::get_form_value('sortable','') != '') ? True : False;
+        }
 
         return parent::preprocess();
     }
 
     public function report_description_content()
     {
-        $desc = sprintf("For: %s (#%d) in: %s",
+        global $FANNIE_URL;
+        $desc = array();
+        $msg = sprintf("For: %s (#%d) in: %s",
             $this->memberFullName,
             $this->cardNo,
             $this->programName);
-        $desc = "<h2>$desc</h2>";
-        return array($desc);
+        $desc[] = "<h2>$msg</h2>";
+        // Date range
+        $desc[] = sprintf("<H3 class='report'>From %s to %s</H3>",
+            (($this->dateFrom == $this->programStartDate)?"Program Start":
+                date("F j, Y",strtotime("$this->dateFrom"))),
+            (($this->dateTo == date('Y-m-d'))?"Today":
+                date("F j, Y",strtotime("$this->dateTo")))
+        );
+        // Today, until now (not necessarily the whole day).
+       if (!$this->hasDates || $this->dateTo == date('Y-m-d')) {
+		    $today_time = date("l F j, Y g:i A");
+            $desc[] = "<p class='explain'>As at: {$today_time}</p>";
+        // Last day
+        } else {
+            $today_time = date("l F j, Y");
+            $desc[] = "<p class='explain'>To the end of the day: {$today_time}</p>";
+        }
+        // Start over
+        $msg = "<p><a href='{$_SERVER['PHP_SELF']}'>Start over</a>";
+        $msg .= " &nbsp; &nbsp; ";
+        $msg .= "<a href='{$_SERVER['PHP_SELF']}?" .
+            "programID={$this->programID}&amp;memNum={$this->cardNo}'>Same member, all activities</a>";
+        $msg .= "</p>";
+        $desc[] = $msg;
+        return $desc;
     }
 
-    public function fetch_report_data()
+	public function fetch_report_data()
     {
         global $FANNIE_TRANS_DB, $FANNIE_URL;
         global $FANNIE_PLUGIN_SETTINGS;
 
         $dbc = FannieDB::get($FANNIE_PLUGIN_SETTINGS['CoopCredDatabase']);
+        $dateSpec = ($this->hasDates) ? " AND (s.tdate BETWEEN ? AND ?)" : '';
 
         $fromCols = "programID,cardNo,charges,payments,tdate,transNum";
-        $fromSpec = "(SELECT $fromCols FROM CCredHistory " .
-            "UNION SELECT $fromCols FROM CCredHistoryToday)";
+        $fromSpec = "(SELECT $fromCols FROM CCredHistory ";
+        if (!$this->hasDates || $this->dateTo == date('Y-m-d')) {
+            $fromSpec .= "UNION SELECT $fromCols FROM CCredHistoryToday";
+        }
+        $fromSpec .= ")";
 
         $q = $dbc->prepare_statement("SELECT charges,transNum,payments,
-                year(tdate) AS year, month(tdate) AS month, day(tdate) AS day
+            year(tdate) AS year, month(tdate) AS month, day(tdate) AS day,
+            date(tdate) AS ddate
                 FROM $fromSpec AS s 
-                WHERE s.cardNo=? AND programID=?
-                ORDER BY tdate DESC");
+                WHERE s.cardNo=?
+                AND programID=?{$dateSpec}
+                ORDER BY tdate ASC");
         $args=array($this->cardNo,$this->programID);
+        if ($this->hasDates) {
+            $args[] = "{$this->epoch} 00:00:00";
+            //$args[] = "$this->dateFrom 00:00:00";
+            $args[] = "{$this->dateTo} 23:59:59";
+        }
         $r = $dbc->exec_statement($q,$args);
 
         $data = array();
         $rrp  = "{$FANNIE_URL}admin/LookupReceipt/RenderReceiptPage.php";
+        $balance = 0.0;
+        $opening = array();
         while($w = $dbc->fetch_row($r)) {
             if ($w['charges'] == 0 && $w['payments'] == 0) {
                 continue;
             }
             $record = array();
             // This Y/M/D format is sortable.
-            $record[] = sprintf('%d/%d/%d',$w['year'],$w['month'],$w['day']);
+            //$record[] = sprintf('%d/%d/%d',$w['year'],$w['month'],$w['day']);
+            // Is this format sortable?
+            $record[] = $w['ddate'];
             if (FormLib::get('excel') !== '') {
                 $record[] = $w['transNum'];
             } else {
@@ -157,13 +208,34 @@ class ActivityReport extends FannieReportPage
                     $w['transNum'],
                     $w['transNum']
                 );
-
             }
             // Amount
-            $record[] = sprintf('%.2f', ($w['charges'] != 0
-                ? (-1 * $w['charges']) : $w['payments']));
+            $record[] = sprintf('%.2f', ($w['charges'] != 0 ? (-1 * $w['charges']) : $w['payments']));
             $record[] = $this->getTypeLabel($w['charges'],$w['payments'],
                 $this->cardNo,$this->programBankID,$this->programID);
+            $balance += ($w['charges'] != 0 ? (-1 * $w['charges']) : $w['payments']);
+            $record[] = sprintf('%.2f',$balance);
+            /* If the start of the date range is later than programStart
+             * and the current item dated earlier than that
+             * set the running balance aside as opening balance
+             * and when you get to the first date => the start of the range
+             * display the opening balance and then the first wanted item.
+             */
+            if (($this->dateFrom > $this->programStartDate) &&
+                ($w['ddate'] < $this->dateFrom)
+            ) {
+                $opening = $record;
+                continue;
+            }
+            if (!empty($opening) && ($w['ddate'] >= $this->dateFrom)) {
+            //if (true) {}
+                $opening[0] = '--';
+                $opening[1] = 'Opening';
+                $opening[2] = $opening[4];
+                $opening[3] = 'Balance';
+                $data[] = $opening;
+                $opening = array();
+            }
             $data[] = $record;
         }
 
@@ -172,88 +244,328 @@ class ActivityReport extends FannieReportPage
 
     public function calculate_footers($data)
     {
+        $incomeLabels = array('Earning','Refund','Input',
+            'Opening','Balance',
+            'Error: negative charges');
+        $outgoLabels = array('Purchase','Transfer Out','Distribution','Error: positive charges');
+        $footers = array();
         $ret = array();
-        $total = 0.0;
+        $balance = 0.0;
+        $income = 0.0;
+        $outgo = 0.0;
+        $uaf = 0.0;
         foreach($data as $record) {
-            $total += $record[2];
+            $balance += $record[2];
+            if (
+                in_array($record[3], $incomeLabels)
+            ) {
+                $income += $record[2];
+            } elseif (
+                in_array($record[3], $outgoLabels)
+            ) {
+                $outgo += $record[2];
+            } else {
+                $uaf += $record[2];
+            }
         }
-        if ($total > -0.01) {
-            $total = ($total < 0)?0:$total;
+
+        // Subtotal of Earnings/Inputs
+        $ret[0] = "Subtotal:";
+        $ret[1] = '--';
+        $ret[2] = number_format($income,2);
+        if ($this->cardNo == $this->programBankID) {
+            $ret[3] = "Inputs";
+        } else {
+            $ret[3] = "Earnings";
+        }
+        $ret[4] = '--';
+        $footers[] = $ret;
+
+        // Subtotal of Purchases/Disbursements
+        $ret[0] = "Subtotal:";
+        $ret[1] = '--';
+        $ret[2] = number_format($outgo,2);
+        if ($this->cardNo == $this->programBankID) {
+            $ret[3] = "Distributions";
+        } else {
+            $ret[3] = "Purchases";
+        }
+        $ret[4] = '--';
+        $footers[] = $ret;
+
+        // Subtotal of the un-accounted-for.
+        $total = 0.0;
+        $total = ($income + $outgo);
+        $net = ($total - $balance);
+        if ($net < -0.01 || $net > 0.01) {
+            $ret[0] = "Subtotal:";
+            $ret[1] = '--';
+            $ret[2] = number_format($net,2);
+            $ret[3] = '--';
+            $ret[3] = "Un-accounted for";
+            $ret[4] = '--';
+            $footers[] = $ret;
+        }
+
+        if ($balance > -0.01) {
+            $balance = ($balance < 0)?0:$balance;
             $balanceColour = "black";
-            // Probably program-dependent, in config.
-            $totalLabel = "Available for<br />purchases:";
+            // Probably program-dependent.
+            if ($this->cardNo == $this->programBankID) {
+                $balanceLabel = "Available for<br />distribution:";
+            } else {
+                $balanceLabel = "Available for<br />purchases:";
+            }
         } else {
             $balanceColour = "red";
-            $totalLabel = "Owes the<br />Coop:";
+            if ($this->cardNo == $this->programBankID) {
+                $balanceLabel = "Has over-<br />distributed:";
+            } else {
+                $balanceLabel = "Owes the<br />Coop:";
+            }
         }
         $ret[0] = "<span style='color:{$balanceColour};'>" .
-            $totalLabel . "</span>";
+            $balanceLabel . "</span>";
         $ret[1] = '--';
+            //sprintf("%0.2f",$balance)
         $ret[2] = "<span style='color:{$balanceColour};'>" .
-            sprintf("%0.2f",$total) . "</span>";
+            number_format($balance, 2) . "</span>";
         $ret[3] = '--';
 
-        return $ret;
+        $footers[] = $ret;
+        return $footers;
     }
 
     /* Return the appropriate label for the amount.
-     * Needs to be externally configurable.
-     *  Maybe in the CCredPrograms record.
+     * Needs to be externally configurable, in CCredPrograms,
+     * but until then treat all programs the same.
      */
-    private function getTypeLabel ($charges, $payment, $memberNumber,
-        $bankNumber, $programID) {
+    private function getTypeLabel ($charges, $payment, $memberNumber, $bankNumber, $programID) {
         $label = "None";
         if ($memberNumber != $bankNumber) {
-            if ($programID == 1) {
-                $label = ($charges!=0?'Purchase':'Earning');
-            } elseif ($programID == 2) {
-                $label = ($charges!=0?'Purchase':'Earning');
+            $label = "p: $payment c: $charges";
+            if ($charges > 0) {
+                $label = 'Purchase';
+            } elseif ($payment > 0) {
+                $label = 'Earning';
+            } elseif ($payment < 0) {
+                $label = 'Transfer Out';
+            } elseif ($charges < 0) {
+                $label = 'Refund';
             } else {
-                $label = ($charges!=0?'Charge':'Payment');
+                $label = 'No Movement';
             }
         } else {
             if ($payment < 0) {
                 $label = "Distribution";
-            } else {
+            } elseif ($payment > 0) {
                 $label = "Input";
+            } elseif ($charges > 0) {
+                $label = "Error: positive charges";
+            } elseif ($charges < 0) {
+                $label = "Error: negative charges";
+            } else {
+                $label = 'No Movement';
             }
         }
         return $label;
     }
 
-    public function form_content()
-    {
+    /** The form for specifying the report
+     */
+    function form_content(){
 
-        $ret = '';
+        global $FANNIE_PLUGIN_SETTINGS, $FANNIE_OP_DB;
+
+        $dbc = FannieDB::get($FANNIE_PLUGIN_SETTINGS['CoopCredDatabase']);
+?>
+<div id=main>    
+<?php
         if (isset($this->errors[0])) {
-            $ret .= "<p style='font-family:Arial; font-size:1.5em;'>";
-            $ret .= "<b>Errors in previous run:</b>";
+            echo "<p style='font-family:Arial; font-size:1.5em;'>";
+            echo "<b>Errors in previous run:</b>";
             $sep = "<br />";
             foreach ($this->errors as $error) {
-                $ret .= "{$sep}$error";
+                echo "{$sep}$error";
             }
-            $ret .= "</p>";
+            echo "</p>";
         }
+?>
+</div><!-- /#main -->
 
-        /* Needs Program <select>
-         * Would like chained or AJAX <select> of Members in the Program.
-         *  Maybe not in v.1
-         */
-        $ret .= "<form method='get' action='{$_SERVER['PHP_SELF']}'>
-            <b>Member #</b> <input type='text' name='memNum' value='{$this->memNum}'
-            size='6' />
-            <br />
-            <b>Program #</b> <input type='text' name='programID' value='{$this->programID}'
-            size='3' />
-            <br /><br />
-            <input type='submit' value='Report Activity' />
-            </form>";
+<!-- Bootstrap-coded begins $_SERVER['PHP_SELF']-->
+<form method = "get" action="ActivityReport.php" class="form-horizontal">
+<div class="row">
+    <div class="col-sm-6">
+        <div class="form-group">
+            <label class="col-sm-3 control-label">Member<br />in Program</label>
+            <div class="col-sm-8">
+<?php
+            $OP = "{$FANNIE_OP_DB}{$dbc->sep()}";
+            $query = "SELECT c.FirstName, c.LastName, m.programID, m.cardNo
+                FROM CCredMemberships AS m
+                LEFT JOIN {$OP}custdata AS c on m.cardNo = c.CardNo
+                WHERE c.personNum =1
+                ORDER BY programID, LastName, FirstName";
+            $statement = $dbc->prepare_statement("$query");
+            $args = array();
+            $results = $dbc->exec_statement("$statement", $args);
+            echo "<select id='memNum' name='memNum' size=8>";
+            echo "<option value=''>Choose a Member in a Program</option>";
+            while ($row = $dbc->fetch_row($results)) {
+                $desc = sprintf('(%d) %s, %s',
+                    $row['programID'],
+                    $row['LastName'],
+                    $row['FirstName']
+                );
+                printf("<option value='%d|%d'>%s</option>",
+                    $row['programID'],
+                    $row['cardNo'],
+                    $desc
+                );
+            }
+            echo "</select>";
+?>
+                <p class="explain" style="float:none; margin:0 0 0 0.5em;">
+<span style='font-weight:bold;'>Choose a Member of a Program from the list above.
+</span>
+<br/>The (1) refers to the Program in the list below.
+</p>
+            </div><!-- /.col-sm-8 -->
+        </div><!-- /.form-group -->
 
-        return $ret;
+        <div class="form-group">
+            <label class="col-sm-3 control-label">Key to Programs</label>
+            <div class="col-sm-8">
+<?php
+
+            $selectSize = 1;
+            $rslt = $dbc->query("SELECT count(programID) AS ct FROM CCredPrograms");
+            if ($rslt !== False) {
+                $row = $dbc->fetch_row($rslt);
+                $selectSize = min(12,(int)$row['ct']);
+            }
+            echo "<select id='programID' name='programID' size='{$selectSize}'>";
+            echo "<option value='-1' SELECTED>Key to Program Numbers</option>";
+            $ccpModel = new CCredProgramsModel($dbc);
+            $today = date('Y-m-d');
+            foreach($ccpModel->find() as $prog) {
+                $desc = $prog->programName();
+                if ($prog->active()==0) {
+                    $desc .= " (inactive)";
+                }
+                if ($prog->startDate() > $today) {
+                    $desc .= " (Starts {$prog->startDate()})";
+                }
+                if ($prog->endDate() != 'NULL' && 
+                    $prog->endDate() != '0000-00-00' &&
+                    $prog->endDate() < $today) {
+                    $desc .= " (Ended {$prog->endDate()})";
+                }
+                printf("<option value='%d'>(%d) %s</option>",
+                    $prog->programID(),
+                    $prog->programID(),
+                    $desc
+                );
+            }
+            echo "</select>";
+?>
+                <p class="explain" style="float:none; margin:0 0 0 0.5em;">
+<span style='font-weight:normal;'>(No need to choose from the list of Programs above.)
+</span>
+</p>
+            </div><!-- /.col-sm-8 -->
+        </div><!-- /.form-group -->
+    </div><!-- /.col-sm-6 end of left col -->
+    <div class="col-sm-5"><!-- start right col -->
+
+        <div class="form-group">
+            <label class="col-sm-3 control-label">Start Date</label>
+            <div class="col-sm-4">
+                <input type=text id=date1 name=date1 class="form-control date-field" /><!-- required / -->
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="col-sm-3 control-label">End Date</label>
+            <div class="col-sm-4">
+                <input type=text id=date2 name=date2 class="form-control date-field" /><!-- required / -->
+            </div>
+        </div>
+        <div class="form-group">
+            <!-- label class="col-sm-4 control-label"> </label -->
+            <div class="col-sm-12">
+                <p class="explain" style="float:none; margin:0 0 0 0.5em;">
+<span style='font-weight:bold;'>Leave both dates empty to report on all the activity of the member.</span>
+<br/>Leave Start date empty to report from the beginning of the program.</p>
+            </div>
+        </div><!-- /.form-group -->
+        <div class="form-group">
+<?php
+            echo FormLib::date_range_picker();
+?>                            
+        </div>
+    </div><!-- /.col-sm-5 end right col -->
+</div><!-- /.row -->
+
+<div class="row">
+    <div class="col-sm-6"><!-- start left col -->
+        <div class="form-group">
+            <label for="sortable" class="col-sm-3 control-label"
+title="Tick to display with sorting from column heads; un-tick for a plain formt."
+>Sort on Column Heads</label>
+            <input type="checkbox" name="sortable" id="sortable" CHECKED />
+        </div>
+    </div><!-- /.col-sm-6 end of left col -->
+
+    <div class="col-sm-5"><!-- start right col -->
+        <div class="form-group">
+<?php
+            echo "<!-- p>Right Col </p -->";
+?>                            
+        </div>
+    </div><!-- /.col-sm-5 end right col -->
+</div><!-- /.row -->
+<p>
+        <button type=submit name=submit value="Create Report" class="btn btn-default">Create Report</button>
+        <!-- button type=reset name=reset class="btn btn-default">Start Over</button -->
+</p>
+            <!-- input type=hidden name=card_no id=card_no value=0  / -->
+			<input type=hidden name='reportType' id='reportType' value='summary' />
+			<input type=hidden name='subTotals' id='subTotals' value='0' />
+			<input type=hidden name='dbSortOrder' id='dbSortOrder' value='ASC' />
+</form><!-- /.form-horizontal -->
+
+<!-- Bootstrap-coded ends -->
+<?php
+    // /form_content()
+    }
+
+
+    /**
+      User-facing help text explaining how to 
+      use a page.
+      @return [string] html content
+    */
+    public function helpContent()
+    {
+        $help = "";
+        $help .= "<p>" .
+            "Earnings and Purchases of a single member of a program, inlcuding
+            Running Balance, Subtotals and Balance.
+            <br />Use this report for a summary of the Member of a Program.
+            <br />From there you can drill down to receipts." .
+            "</p>" .
+            "<p>It is only necessary to choose from the 'Member in Program' List.
+            <br />The number in parentheses refers to the Program in the 'Key to Programs' List.
+            <br />A person may be a Member of more than one Program." .
+            "</p>" .
+            "<p>It is not necessary to choose from the 'Key to Programs' List." .
+            "</p>" .
+            "";
+        return $help;
     }
 
 }
 
 FannieDispatch::conditionalExec(false);
 
-?>

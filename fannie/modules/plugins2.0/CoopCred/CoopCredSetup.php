@@ -245,6 +245,24 @@ At the West End Food Coop that may be in two hours or perhaps not until the next
         return ob_get_clean();
     }
 
+    /**
+      User-facing help text explaining how to 
+      use a page.
+      @return [string] html content
+    */
+    public function helpContent()
+    {
+        $help = "";
+        $help .= "<p>" .
+            "Configure Coop Cred to fit in your system.
+            <br />Establish some values and ranges of members and departments
+            that will be reserved for Coop Cred and make it easier to establish
+            new Programs." .
+            "</p>" .
+            "";
+        return $help;
+    }
+
 // class CoopCredSetup
 }
 

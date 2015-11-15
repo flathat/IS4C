@@ -137,6 +137,7 @@ class MemberSummaryReport extends FannieReportPage
             /* Which page content to create upon return to draw_page().
              */
             $this->content_function = "report_content";
+
         } else {
             $this->add_script("{$FANNIE_URL}src/CalendarControl.js");
             if (FormLib::get_form_value('pid',0) != 0) {
@@ -633,6 +634,26 @@ title="Tick to display with sorting from column heads; un-tick for a plain formt
 <!-- Bootstrap-coded ends -->
 <?php
     // /form_content()
+    }
+
+    /**
+      User-facing help text explaining how to 
+      use a page.
+      @return [string] html content
+    */
+    public function helpContent()
+    {
+        $help = "";
+        $help .= "<p>" .
+        "The amount that has been Transferred " .
+            "to members of a Coop Cred Program and the amount they have used " .
+            "for purchases." .
+            "";
+        $help .= "<br />Use this report to see detail of members' activity." .
+            "</p>" .
+            "" .
+            "";
+        return $help;
     }
 
 // /class MemberSummaryReport
