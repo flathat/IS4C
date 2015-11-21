@@ -2,6 +2,7 @@
 /*******************************************************************************
 
     Copyright 2013 Whole Foods Co-op
+    Copyright 2015 West End Food Co-op, Toronto
 
     This file is part of CORE-POS.
 
@@ -21,6 +22,14 @@
 
 *********************************************************************************/
 
+/*
+ * 20Nov2015 I can't figure out how to include superDepts with no trans items.
+ *            Simple left join on MasterSuperDepts doesn't do it even if all
+ *            WHERE's allow IS NULL.
+ * 20Nov2015 Includes recalculation taxes for whole store to reflects discounts.
+ *            Was originally coded in posdev 18Sep2015.
+ */
+
 include(dirname(__FILE__) . '/../../config.php');
 if (!class_exists('FannieAPI')) {
     include_once($FANNIE_ROOT.'classlib2.0/FannieAPI.php');
@@ -29,35 +38,41 @@ if (!class_exists('FannieAPI')) {
 class StoreSummaryReport extends FannieReportPage {
 
     protected $required_fields = array('date1', 'date2');
-    protected $show_zero;
 
     public $description = "[Store Summary Report] shows total sales, costs and taxes
        per department for a given date range in dollars as well as a percentage of 
        store-wide sales and costs. It uses actual item cost if known and estimates 
        cost from price and department margin if not; 
-       relies on department margins being accurate.";
+    relies on department margins being accurate.
+        Assumes a two-tax regime.";
 
     public $report_set = 'Sales Reports';
     public $themed = true;
-    protected $sortable = true;
+    protected $sortable = false;
     protected $no_sort_but_style = true;
+    protected $show_zero;
+    protected $zero_cost_dept;
+    protected $zero_margin_cost;
 
     function preprocess()
     {
 
+        parent::preprocess();
+
         $this->title = "Fannie : Store Summary Report";
         $this->header = "Store Summary Report";
-        $this->report_cache = 'none';
-        if (FormLib::get_form_value('sortable') !== '') {
-            $this->no_sort_but_style = false;
-        }
-        if (FormLib::get_form_value('show_zero') !== '') {
-            $this->show_zero = True;
-        } else {
-            $this->show_zero = False;
-        }
-
         if (FormLib::get_form_value('date1') !== ''){
+            $this->report_cache = 'none';
+            if (FormLib::get_form_value('sortable') !== '') {
+                $this->no_sort_but_style = false;
+            }
+            $this->show_zero =
+                (FormLib::get_form_value('show_zero') == '') ? False : True;
+            $this->zero_cost_dept =
+                (FormLib::get_form_value('zero_cost_dept') == '') ? False : True;
+            $this->zero_margin_cost =
+                (FormLib::get_form_value('zero_margin_cost') == '') ? False : True;
+
             $this->content_function = "report_content";
 
             /**
@@ -98,27 +113,41 @@ class StoreSummaryReport extends FannieReportPage {
     function report_description_content(){
         $ret = array();
         if (FormLib::get_form_value('dept',0) == 0){
-            $ret[] = "<p class='explain'>Using the department# the upc was assigned to at time of sale</p>";
+            $ret[] = "<p class='explain'>Using the department# the upc was
+                assigned to at time of sale</p>";
         }
         else{
-            $ret[] = "<p class='explain'>Using the department# the upc is assigned to now</p>";
+            $ret[] = "<p class='explain'>Using the department# the upc is
+                assigned to now</p>";
         }
-        $ret[] = "<p class='explain'>Note: For items where cost is not recorded the margin in the deptMargin table is relied on.</p>";
+        $note = "<p class='explain' style='margin:0.5em 0em 1.0em 0em;'>";
+        $note .= "Note for <b>open ring items:</b> The margin in the departments
+            table is relied on to calculate cost. 
+            If that department margin is zero cost is ";
+		$note .= $this->zero_margin_cost ? "same as price." : "zero.";
+        $note .= "<br />Note for <b>regular items:</b> Where cost is zero ";
+        $note .= $this->zero_cost_dept ? "the departments table is relied on." :
+                    "that cost is used.";
+        $note .= $this->zero_margin_cost
+            ? " If that department margin is zero, cost is same as price."
+            : "";
+        $note .= "</p>";
+        $ret[] = $note;
         return $ret;
     }
 
     function fetch_report_data(){
         global $FANNIE_OP_DB, $FANNIE_COOP_ID;
+
         $d1 = $this->form->date1;
-        $d2 = $this->form->date2;
+        $d2 = (($this->form->date2 == '') ? $d1 : $this->form->date2);
         $dept = FormLib::get_form_value('dept',0);
 
         $dbc = $this->connection;
         $dbc->selectDB($this->config->get('OP_DB'));
 
-        // Can dlog views if they include cost.
-        $dtrans = DTransactionsModel::select_dtrans($d1,$d2);
-        $datestamp = $dbc->identifier_escape('datetime');
+        $dlog = DTransactionsModel::selectDlog($d1,$d2);
+        $datestamp = $dbc->identifier_escape('tdate');
 
         if ( isset($FANNIE_COOP_ID) && $FANNIE_COOP_ID == 'WEFC_Toronto' )
             $shrinkageUsers = " AND (t.card_no not between 99900 and 99998)";
@@ -129,8 +158,9 @@ class StoreSummaryReport extends FannieReportPage {
         $data = array();
 
         $taxNames = array(0 => '');
-        $tQ = $dbc->prepare_statement("SELECT id, rate, description FROM taxrates WHERE id > 0 ORDER BY id");
-        $tR = $dbc->exec_statement($tQ);
+        $tQ = "SELECT id, rate, description FROM taxrates WHERE id > 0 ORDER BY id";
+        $tS = $dbc->prepare_statement("$tQ");
+		$tR = $dbc->exec_statement($tS);
         // Try generating code in this loop for use in SELECT and reporting.
         //  See SalesAndTaxTodayReport.php
         while ( $trow = $dbc->fetch_array($tR) ) {
@@ -140,6 +170,7 @@ class StoreSummaryReport extends FannieReportPage {
         /**
           Margin column was added to departments but if
           deptMargin is present data may not have been migrated
+          i.e. deptMargin is obsolete but may still exist in old systems.
         */
         $margin = 'd.margin';
         $departments_table = $dbc->tableDefinition('departments');
@@ -149,101 +180,114 @@ class StoreSummaryReport extends FannieReportPage {
             $margin = '0.00';
         }
 
-        /* Using department settings at the time of sale.
-         * I.e. The department# from the transaction.
-         *  If that department# no longer exists or is different then the report will be wrong.
-         *  This does not use a departments table contemporary with the transactions.
-         * [0]Dept_name [1]Cost, [2]HST, [3]GST, [4]Sales, [x]Qty, [x]superID, [x]super_name
+		/* Using department settings at the time of sale.
+		 * I.e. The department# from the transaction.
+		 *  If that department# no longer exists or is different then the report will be wrong.
+		 *  This does not use a departments table contemporary with the transactions.
+		 * [0]Dept_name [1]Cost, [2]HST, [3]GST, [4]Sales, [x]Qty, [x]superID, [x]super_name
+         * 10Jun2014 EL Treated margin=0.00 as cost=0 rather than cost=total=100%
+         * 10Jun2014 EL Did not use dept margin for trans_type='I' if cost=0
+         *               i.e. only used dept margin for open rings.
+                     ->Note strange effect on 9900 Pricegun section
+		*/
+
+        /* Does not accept p.cost = 0
+         * t.cost is < 0.00 for Voids, so don't ignore it.
+         * Is t.cost or p.cost = 0 ever correct?
+         * Ultimate default is cost = total.
+         *   cost = total is less dangerous (over-optomistic) than cost = 0.
         */
-        if ($dept == 0){
-            // Change varname to sales or totals
-            $costs = "SELECT
+        $itemZeroArg = ($this->zero_cost_dept) ? 'AND t.cost != 0.00' : '';
+        $marginZeroArg = ($this->zero_margin_cost) ? 't.total' : '0.00';
+        $costsCol="sum(CASE
+                    WHEN t.trans_type = 'I'{$itemZeroArg}
+                        THEN t.cost 
+                     WHEN t.trans_type IN ('I','D') AND $margin > 0.00 
+                         THEN t.total - (t.total * $margin)
+                     WHEN t.trans_type IN ('I','D')
+                         THEN $marginZeroArg
+                     END) AS costs,";
+
+		if ($dept == 0){
+			$totals = "SELECT
                     d.dept_name dname,
-                    sum(CASE WHEN t.trans_type = 'I' THEN t.cost 
-                         WHEN t.trans_type = 'D' AND $margin > 0.00 
-                         THEN t.total - (t.total * $margin) END) AS costs,
-                    sum(CASE WHEN t.tax = 1 THEN t.total * x.rate ELSE 0 END) AS taxes1,
-                    sum(CASE WHEN t.tax = 2 THEN t.total * x.rate ELSE 0 END) AS taxes2,
-                    sum(t.total) AS sales,
-                    sum(t.quantity) AS qty,
-                    s.superID AS sid,
-                    s.super_name AS sname
-                FROM
-                    $dtrans AS t LEFT JOIN
-                    departments AS d ON d.dept_no=t.department LEFT JOIN
-                    MasterSuperDepts AS s ON t.department=s.dept_ID LEFT JOIN
-                    taxrates AS x ON t.tax=x.id ";
+                    {$costsCol}
+					sum(CASE WHEN t.tax = 1 THEN t.total * x.rate ELSE 0 END) AS taxes1,
+					sum(CASE WHEN t.tax = 2 THEN t.total * x.rate ELSE 0 END) AS taxes2,
+					sum(t.total) AS sales,
+					sum(t.quantity) AS qty,
+					s.superID AS sid,
+					s.super_name AS sname
+				FROM $dlog AS t
+                    LEFT JOIN departments AS d ON d.dept_no=t.department
+                    LEFT JOIN MasterSuperDepts AS s ON t.department=s.dept_ID
+                    LEFT JOIN taxrates AS x ON t.tax=x.id ";
                 if ($margin == 'm.margin') {
-                    $costs .= " LEFT JOIN deptMargin AS m ON t.department=m.dept_id ";
+                    $totals .= " LEFT JOIN deptMargin AS m ON t.department=m.dept_id ";
                 }
-                $costs .= "
-                WHERE 
-                    ($datestamp BETWEEN ? AND ?)
-                    AND (s.superID > 0 OR s.superID IS NULL) 
-                    AND t.trans_type in ('I','D')
-                    AND t.trans_status not in ('D','X','Z')
-                    AND t.emp_no not in (9999){$shrinkageUsers}
-                    AND t.register_no != 99
-                    AND t.upc != 'DISCOUNT'
-                    AND t.trans_subtype not in ('CP','IC')
-                GROUP BY
-                    s.superID, s.super_name, d.dept_name, t.department
-                ORDER BY
-                    s.superID, t.department";
+                $totals .= "
+				WHERE ($datestamp BETWEEN ? AND ?)
+					AND (s.superID > 0 OR s.superID IS NULL) 
+                    AND t.trans_type IN ('I','D')
+					AND t.upc != 'DISCOUNT'
+					AND t.trans_subtype not in ('CP','IC'){$shrinkageUsers}
+				GROUP BY
+					s.superID, s.super_name, d.dept_name, t.department
+				ORDER BY
+					s.superID, t.department";
 
-        }
-        /* Using current department settings.
-         * I.e. The department for the upc from the current products table.
-         *  This does not use a departments table contemporary with the transactions.
-        */
-        elseif ($dept == 1){
-            $costs = "SELECT
-                CASE WHEN e.dept_name IS NULL THEN d.dept_name ELSE e.dept_name END AS dname,
-                sum(CASE WHEN t.trans_type = 'I' THEN t.cost 
-                     WHEN t.trans_type = 'D' AND $margin > 0.00 
-                     THEN t.total - (t.total * $margin) END) AS costs,
-                sum(CASE WHEN t.tax = 1 THEN t.total * x.rate ELSE 0 END) AS taxes1,
-                sum(CASE WHEN t.tax = 2 THEN t.total * x.rate ELSE 0 END) AS taxes2,
-                sum(t.total) AS sales,
-                sum(t.quantity) AS qty,
-                CASE WHEN s.superID IS NULL THEN r.superID ELSE s.superID END AS sid,
-                CASE WHEN s.super_name IS NULL THEN r.super_name ELSE s.super_name END AS sname
-            FROM
-                $dtrans AS t LEFT JOIN
-                products AS p ON t.upc=p.upc LEFT JOIN
-                departments AS d ON d.dept_no=t.department LEFT JOIN
-                departments AS e ON p.department=e.dept_no LEFT JOIN
-                MasterSuperDepts AS s ON s.dept_ID=p.department LEFT JOIN
-                MasterSuperDepts AS r ON r.dept_ID=t.department LEFT JOIN
-                taxrates AS x ON t.tax=x.id ";
-            if ($margin == 'm.margin') {
-                $costs .= " LEFT JOIN deptMargin AS m ON t.department=m.dept_id ";
-            }
-            $costs .= "
-            WHERE
-                ($datestamp BETWEEN ? AND ?)
-                AND (s.superID > 0 OR (s.superID IS NULL AND r.superID > 0)
-                    OR (s.superID IS NULL AND r.superID IS NULL))
-                AND t.trans_type in ('I','D')
-                AND t.trans_status not in ('D','X','Z')
-                AND t.emp_no not in (9999){$shrinkageUsers}
-                AND t.register_no != 99
-                AND t.upc != 'DISCOUNT'
-                AND t.trans_subtype not in ('CP','IC')
-            GROUP BY
-                CASE WHEN s.superID IS NULL THEN r.superID ELSE s.superID end,
-                CASE WHEN s.super_name IS NULL THEN r.super_name ELSE s.super_name END,
-                CASE WHEN e.dept_name IS NULL THEN d.dept_name ELSE e.dept_name end,
-                CASE WHEN e.dept_no IS NULL THEN d.dept_no ELSE e.dept_no end
-            ORDER BY
-                CASE WHEN s.superID IS NULL THEN r.superID ELSE s.superID end,
-                CASE WHEN e.dept_no IS NULL THEN d.dept_no ELSE e.dept_no end";
-        }
-        $costsP = $dbc->prepare_statement($costs);
-        $costArgs = array($d1.' 00:00:00', $d2.' 23:59:59');
-        $costsR = $dbc->exec_statement($costsP, $costArgs);
+		}
+		/* Using current department settings.
+		 * I.e. The department for the upc from the current products table.
+		 *  This does not use a departments table contemporary with the transactions.
+		*/
+		elseif ($dept == 1){
+			$totals = "SELECT
+                CASE WHEN e.dept_name IS NULL
+                        THEN d.dept_name
+                        ELSE e.dept_name
+                    END AS dname,
+                {$costsCol}
+				sum(CASE WHEN t.tax = 1 THEN t.total * x.rate ELSE 0 END) AS taxes1,
+				sum(CASE WHEN t.tax = 2 THEN t.total * x.rate ELSE 0 END) AS taxes2,
+				sum(t.total) AS sales,
+				sum(t.quantity) AS qty,
+				CASE WHEN s.superID IS NULL THEN r.superID ELSE s.superID END AS sid,
+				CASE WHEN s.super_name IS NULL THEN r.super_name ELSE s.super_name END AS sname
+			FROM
+            $dlog AS t
+                LEFT JOIN products AS p ON t.upc=p.upc
+                LEFT JOIN departments AS d ON d.dept_no=t.department
+                LEFT JOIN departments AS e ON p.department=e.dept_no
+                LEFT JOIN MasterSuperDepts AS s ON s.dept_ID=p.department
+                LEFT JOIN MasterSuperDepts AS r ON r.dept_ID=t.department
+                LEFT JOIN taxrates AS x ON t.tax=x.id ";
+                if ($margin == 'm.margin') {
+                    $totals .= " LEFT JOIN deptMargin AS m ON t.department=m.dept_id ";
+                }
+            $totals .= "
+			WHERE
+				($datestamp BETWEEN ? AND ?)
+				AND (s.superID > 0 OR (s.superID IS NULL AND r.superID > 0)
+					OR (s.superID IS NULL AND r.superID IS NULL))
+				AND t.trans_type in ('I','D'){$shrinkageUsers}
+				AND t.upc != 'DISCOUNT'
+				AND t.trans_subtype not in ('CP','IC')
+			GROUP BY
+				CASE WHEN s.superID IS NULL THEN r.superID ELSE s.superID end,
+				CASE WHEN s.super_name IS NULL THEN r.super_name ELSE s.super_name END,
+				CASE WHEN e.dept_name IS NULL THEN d.dept_name ELSE e.dept_name end,
+				CASE WHEN e.dept_no IS NULL THEN d.dept_no ELSE e.dept_no end
+			ORDER BY
+				CASE WHEN s.superID IS NULL THEN r.superID ELSE s.superID end,
+				CASE WHEN e.dept_no IS NULL THEN d.dept_no ELSE e.dept_no end";
+		}
 
-        // Array in which totals used in the report are accumulated.
+		$totalsP = $dbc->prepare_statement($totals);
+		$totalArgs = array($d1.' 00:00:00', $d2.' 23:59:59');
+		$totalsR = $dbc->exec_statement($totalsP, $totalArgs);
+
+        // Array of superDepts in which totals used in the report are accumulated.
         $supers = array();
         $curSuper = 0;
         $grandTotal = 0;
@@ -252,7 +296,7 @@ class StoreSummaryReport extends FannieReportPage {
         $this->grandTax1Total = 0;
         $this->grandTax2Total = 0;
 
-        while($row = $dbc->fetch_array($costsR)){
+        while($row = $dbc->fetch_array($totalsR)){
             if ($curSuper != $row['sid']){
                 $curSuper = $row['sid'];
             }
@@ -283,7 +327,7 @@ class StoreSummaryReport extends FannieReportPage {
 
         $superCount=1;
         foreach($supers as $s){
-            if ($s['sales']==0 && !$this->show_zero) {
+            if ($s['sales'] == 0 && !$this->show_zero) {
                 $superCount++;
                 continue;
             }
@@ -291,7 +335,7 @@ class StoreSummaryReport extends FannieReportPage {
             $this->report_headers[] = array("{$s['name']}",'Qty','Costs','% Costs',
                 'DeptC%','Sales','% Sales','DeptS %', 'Margin %','GST','HST');
 
-            // add department records
+            // add a record (line) for each dept in the superDept
             $superCostsSum = $s['costs'];
             $superSalesSum = $s['sales'];
             foreach($s['depts'] as $d){
@@ -347,7 +391,6 @@ class StoreSummaryReport extends FannieReportPage {
             $record[] = $costPercent;
             $record[] = '';
             $record[] = sprintf('$%s',number_format($s['sales'],2));
-                //sprintf('%.2f',$s['sales']);
             $salePercent = 'n/a';
             if ($this->grandSalesTotal > 0)
                 $salePercent = sprintf('%.2f%%',($s['sales'] / $this->grandSalesTotal) * 100);
@@ -401,20 +444,17 @@ class StoreSummaryReport extends FannieReportPage {
                 SELECT m.memDesc, 
                     SUM(t.total) AS Discount,
                     count(*) AS ct
-                FROM $dtrans t
+                FROM $dlog t
                     INNER JOIN {$FANNIE_OP_DB}.memtype m ON t.memType = m.memtype
                 WHERE ($datestamp BETWEEN ? AND ?)
                     AND t.upc = 'DISCOUNT'
-                    AND t.total <> 0
-                    AND t.trans_status not in ('D','X','Z')
-                    AND t.emp_no not in (9999){$shrinkageUsers}
-                    AND t.register_no != 99
+                    AND t.total <> 0{$shrinkageUsers}
                     AND t.trans_subtype not in ('CP','IC')
                 GROUP BY m.memDesc
                 ORDER BY m.memDesc");
-        $discR = $dbc->exec_statement($discQ,$costArgs);
+        $discR = $dbc->exec_statement($discQ,$totalArgs);
         if ($discR === False) {
-            $data[] = array("SQL exec on $dtrans failed");
+            $data[] = array("SQL exec on $dlog failed");
         } else {
            $record = array('','','','','','','','','','','');
             while($discW = $dbc->fetch_row($discR)){
@@ -450,6 +490,35 @@ class StoreSummaryReport extends FannieReportPage {
         $this->summary_data[] = $report;
 
         // End of Discounts
+
+        /** Recalculate Grand Taxes reflecting Discounts
+         */
+        $this->grandTax1Total = 0;
+        $this->grandTax2Total = 0;
+        $query = "SELECT
+            SUM(t.total * ( 1 - (t.percentDiscount/100)) * r.rate) as taxamt,
+            r.description as taxname,
+            r.id as taxid
+            FROM $dlog t
+            JOIN {$FANNIE_OP_DB}.taxrates r ON r.id = t.tax
+            WHERE ( t.{$datestamp} BETWEEN ? AND ? )
+                AND t.`trans_subtype` not in ('CP','IC')
+                AND (t.tax > 0){$shrinkageUsers}
+            GROUP BY t.tax
+            ORDER BY t.tax DESC";
+        $statement = $dbc->prepare_statement($query);
+        $results = $dbc->exec_statement($statement, $totalArgs);
+        while ($res = $dbc->fetch_row($results)) {
+            switch ($res['taxid']) {
+                case 1:
+                    $this->grandTax1Total = $res['taxamt'];
+                    break;
+                case 2:
+                    $this->grandTax2Total = $res['taxamt'];
+                    break;
+            }
+        }
+
 
         /** The summary of grand totals proportions for the whole store.
          */
@@ -509,12 +578,12 @@ class StoreSummaryReport extends FannieReportPage {
         list($lastMonday, $lastSunday) = \COREPOS\Fannie\API\lib\Dates::lastWeek();
         ob_start();
         ?>
-        <form action=StoreSummaryReport.php method=get>
-        <div class="col-sm-5">
+        <form action=<?php echo $_SERVER['PHP_SELF']; ?> method=get>
+        <div class="col-sm-5"><!-- left col -->
             <div class="form-group">
                 <label>Start Date</label>
                 <input type=text id=date1 name=date1 class="form-control date-field" 
-                    value="<?php echo $lastMonday; ?>" />
+                    value="<?php echo $lastMonday; ?>" required />
             </div>
             <div class="form-group">
                 <label>End Date</label>
@@ -528,22 +597,42 @@ class StoreSummaryReport extends FannieReportPage {
                 </select>
             </div>
             <div class="form-group">
-                <label>Sortable
+                <label>
                     <input type="checkbox" name="sortable" />
+                    Sortable column heads
                 </label>
             </div>
             <div class="form-group">
-                <label>Show SuperDepts with $0 or net $0 sales
-                    <input type="checkbox" name="sortable" />
+                <label>
+                    <input type="checkbox" name="show_zero" />
+                    Show SuperDepts with net $0 sales
                 </label>
             </div>
             <p>
                 <button type="submit" class="btn btn-default">Submit</button>
             </p>
-        </div>
-        <div class="col-sm-5">
+        </div><!-- left col -->
+
+        <div class="col-sm-5"><!-- right col -->
             <?php echo FormLib::date_range_picker(); ?>
-        </div>
+
+            <div class="form-group">
+                <label>
+                <input type="checkbox" name="zero_cost_dept" id="zero_cost_dept" CHECKED />
+                For non-open-ring items with cost of zero calculate cost using the
+                department margin.
+                <label>
+            </div>
+
+            <div class="form-group">
+                <label>
+                <input type="checkbox" name="zero_margin_cost" id="zero_margin_cost" CHECKED />
+                If department margin is zero set cost same as price.
+                <br />(If un-ticked cost is zero if margin is zero.)
+                <label>
+            </div>
+
+        </div><!-- right col -->
         </form>
         <?php
 
@@ -561,6 +650,7 @@ class StoreSummaryReport extends FannieReportPage {
            relies on department margins being accurate.
            </p>';
     }
+
 
 // StoreSummaryReport
 }
