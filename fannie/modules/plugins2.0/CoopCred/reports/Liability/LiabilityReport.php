@@ -50,10 +50,14 @@ class LiabilityReport extends FannieReportPage
     protected $reportType = "";
     protected $dbSortOrder;
     protected $pid = 0;
+    protected $no_sort_but_style = true;
+    // For in-page sorting
+    protected $sortable = false;
 
     function preprocess(){
 
-        global $FANNIE_ROOT,$FANNIE_URL,$FANNIE_PLUGIN_LIST,$FANNIE_PLUGIN_SETTINGS;
+        global $FANNIE_ROOT,$FANNIE_URL,$FANNIE_PLUGIN_LIST,$FANNIE_PLUGIN_SETTINGS,
+            $FANNIE_WINDOW_DRESSING;
 
         if (!isset($FANNIE_PLUGIN_LIST) || !in_array('CoopCred', $FANNIE_PLUGIN_LIST)) {
             $this->errors[] = "The Coop Cred plugin is not enabled.";
@@ -129,6 +133,13 @@ class LiabilityReport extends FannieReportPage
                 }
             } else {
                 $this->sortable = False;
+            }
+
+			if (isset($FANNIE_WINDOW_DRESSING) && $FANNIE_WINDOW_DRESSING == True) {
+				$this->has_menus(True);
+                $this->new_tablesorter = true;
+            } else {
+				$this->has_menus(False);
             }
 
             /*
@@ -591,7 +602,7 @@ class LiabilityReport extends FannieReportPage
             <label for="sortable" class="col-sm-4 control-label"
 title="Tick to display with sorting from column heads; un-tick for a plain formt."
 >Sort on Column Heads</label>
-            <input type="checkbox" name="sortable" id="sortable" CHECKED />
+            <input type="checkbox" name="sortable" id="sortable" /> <!-- CHECKED / -->
         </div>
     </div><!-- /.col-sm-5 -->
 </div><!-- /.row -->

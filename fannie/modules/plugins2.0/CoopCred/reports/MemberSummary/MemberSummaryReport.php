@@ -34,7 +34,8 @@ class MemberSummaryReport extends FannieReportPage
 {
 
     public $themed = true;
-    public $description = "[Coop Cred Member Summary Report] Coop Cred: Summary of Payments, Purchases and Net for each member of a Program.";
+    public $description = "[Coop Cred Member Summary Report] Coop Cred:
+        Summary of Payments, Purchases and Net for each member of a Program.";
     public $report_set = 'CoopCred';
     protected $title = "Fannie: Coop Cred Program Members Summary Report";
     protected $header = "Coop Cred Program Members Summary Report";
@@ -49,10 +50,13 @@ class MemberSummaryReport extends FannieReportPage
     protected $reportType = "";
     protected $dbSortOrder;
     protected $pid = 0;
+    protected $no_sort_but_style = true;
+    protected $sortable = false;
 
     function preprocess(){
 
-        global $FANNIE_ROOT,$FANNIE_URL,$FANNIE_PLUGIN_LIST,$FANNIE_PLUGIN_SETTINGS;
+        global $FANNIE_ROOT,$FANNIE_URL,$FANNIE_PLUGIN_LIST,$FANNIE_PLUGIN_SETTINGS,
+            $FANNIE_WINDOW_DRESSING;
 
         if (!isset($FANNIE_PLUGIN_LIST) || !in_array('CoopCred', $FANNIE_PLUGIN_LIST)) {
             $this->errors[] = "The Coop Cred plugin is not enabled.";
@@ -123,6 +127,13 @@ class MemberSummaryReport extends FannieReportPage
                 $this->sortable = False;
             }
 
+			if ($this->config->get('WINDOW_DRESSING')) {
+				$this->has_menus(True);
+                $this->new_tablesorter = true;
+            } else {
+				$this->has_menus(False);
+            }
+
             /*
               Check if a non-html format has been requested
             */
@@ -139,7 +150,6 @@ class MemberSummaryReport extends FannieReportPage
             $this->content_function = "report_content";
 
         } else {
-            $this->add_script("{$FANNIE_URL}src/CalendarControl.js");
             if (FormLib::get_form_value('pid',0) != 0) {
                 $this->pid = FormLib::get_form_value('pid',0);
             }
@@ -221,9 +231,7 @@ class MemberSummaryReport extends FannieReportPage
      */
     function fetch_report_data(){
 
-        //global $FANNIE_TRANS_DB,
-        global $FANNIE_OP_DB, $FANNIE_URL;
-        global $FANNIE_PLUGIN_SETTINGS;
+        global $FANNIE_OP_DB, $FANNIE_URL, $FANNIE_PLUGIN_SETTINGS;
 
         $dbc = FannieDB::get($FANNIE_PLUGIN_SETTINGS['CoopCredDatabase']);
 
@@ -402,13 +410,19 @@ class MemberSummaryReport extends FannieReportPage
                     $record[] = $row['When'];
                 //Member Number
                 $record[] = "<a href='../Activity/index.php?memNum={$row['cardNo']}" .
-                    "&amp;programID={$this->programID}'".
+                    "&amp;programID={$this->programID}".
+                    "&amp;date1={$this->dateFrom}" .
+                    "&amp;date2={$this->dateTo}" .
+                    "'".
                     " target='_CCR_{$row['cardNo']}' title='Details for this member'>" .
                     "{$row['cardNo']}</a>";
                 //Member Name
                 $memberName = sprintf("%s, %s", $row['LastName'], $row['FirstName']);
                 $record[] = "<a href='../Activity/index.php?memNum={$row['cardNo']}" .
-                    "&amp;programID={$this->programID}'".
+                    "&amp;programID={$this->programID}".
+                    "&amp;date1={$this->dateFrom}" .
+                    "&amp;date2={$this->dateTo}" .
+                    "'".
                     " target='_CCR_{$row['cardNo']}' title='Details for this member'>" .
                     "{$memberName}</a>";
                 //trans_num
@@ -445,13 +459,19 @@ class MemberSummaryReport extends FannieReportPage
                 if ($row['cardNo'] != $lastCardNo) {
                     //Member Number
                     $record[] = "<a href='../Activity/index.php?memNum=" .
-                        "{$row['cardNo']}&amp;programID={$this->programID}'".
+                        "{$row['cardNo']}&amp;programID={$this->programID}".
+                        "&amp;date1={$this->dateFrom}" .
+                        "&amp;date2={$this->dateTo}" .
+                        "'".
                         " target='_CCR_{$row['cardNo']}' title='Details for this member'>" .
                         "{$row['cardNo']}</a>";
                     //Member Name
                     $memberName = sprintf("%s, %s", $row['LastName'], $row['FirstName']);
                     $record[] = "<a href='../Activity/index.php?memNum={$row['cardNo']}" .
-                        "&amp;programID={$this->programID}'".
+                        "&amp;programID={$this->programID}".
+                        "&amp;date1={$this->dateFrom}" .
+                        "&amp;date2={$this->dateTo}" .
+                        "'".
                         " target='_CCR_{$row['cardNo']}' title='Details for this member'>" .
                         "{$memberName}</a>";
                     $record[2] = $row['payments'];

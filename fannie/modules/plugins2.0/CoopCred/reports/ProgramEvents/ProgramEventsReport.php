@@ -57,9 +57,15 @@ class ProgramEventsReport extends FannieReportPage {
     protected $bankID = 0;
     protected $errors = array();
     protected $pid = 0;
+    protected $no_sort_but_style = true;
+    protected $sortable = false;
+    protected $dateFrom = "";
+    protected $dateTo = "";
 
     function preprocess(){
-        global $FANNIE_ROOT,$FANNIE_URL,$FANNIE_PLUGIN_LIST,$FANNIE_PLUGIN_SETTINGS;
+
+        global $FANNIE_ROOT,$FANNIE_URL,$FANNIE_PLUGIN_LIST,$FANNIE_PLUGIN_SETTINGS,
+            $FANNIE_WINDOW_DRESSING;
 
         if (!isset($FANNIE_PLUGIN_LIST) || !in_array('CoopCred', $FANNIE_PLUGIN_LIST)) {
             $this->errors[] = "The Coop Cred plugin is not enabled.";
@@ -94,7 +100,7 @@ class ProgramEventsReport extends FannieReportPage {
             // Better to do this in JS in the form.
             if ($_REQUEST['programID'] == "") {
                 $this->errors[] = "Please choose a Program";
-                $this->add_script("{$FANNIE_URL}src/CalendarControl.js");
+                //$this->add_script("{$FANNIE_URL}src/CalendarControl.js");
                 return True;
             }
             $programID = (int)$_REQUEST['programID'];
@@ -121,8 +127,16 @@ class ProgramEventsReport extends FannieReportPage {
                 $this->report_headers = array('When','Member#','Member Name',
                     'Event','$ Amount','Comment');
             } else {
+                $this->sortable = True;
                 $this->report_headers = array('Date','When','Member#','Member Name',
                     'Event','$ Amount','Comment');
+            }
+
+			if ($this->config->get('WINDOW_DRESSING')) {
+				$this->has_menus(True);
+                $this->new_tablesorter = true;
+            } else {
+				$this->has_menus(False);
             }
 
             $this->content_function = "report_content";
@@ -138,7 +152,6 @@ class ProgramEventsReport extends FannieReportPage {
             if (FormLib::get_form_value('pid',0) != 0) {
                 $this->pid = FormLib::get_form_value('pid',0);
             }
-            $this->add_script("{$FANNIE_URL}src/CalendarControl.js");
         }
 
         return True;
@@ -154,8 +167,10 @@ class ProgramEventsReport extends FannieReportPage {
         global $FANNIE_ARCHIVE_METHOD, $FANNIE_ARCHIVE_DB,
             $FANNIE_OP_DB, $FANNIE_TRANS_DB;
 
-        $date1 = FormLib::get_form_value('date1',date('Y-m-d'));
-        $date2 = FormLib::get_form_value('date2',date('Y-m-d'));
+        $date1 = FormLib::get_form_value('date1','');
+        //wrong:$date1 = FormLib::get_form_value('date1',date('Y-m-d'));
+        $date2 = FormLib::get_form_value('date2','');
+        //wrong:$date2 = FormLib::get_form_value('date2',date('Y-m-d'));
         $card_no = FormLib::get_form_value('card_no','0');
 
         $dbc = FannieDB::get($FANNIE_ARCHIVE_DB);
@@ -164,8 +179,10 @@ class ProgramEventsReport extends FannieReportPage {
 
         // date1='' is program-epoch.
         $date1 = (($date1 == '')?$this->programStartDate:$date1);
+        $this->dateFrom = $date1;
         // date2='' is now.
         $date2 = (($date2 == '')?date('Y-m-d'):$date2);
+        $this->dateTo = $date2;
 
         $dlog = DTransactionsModel::select_dlog($date1,$date2);
         $dte = 'tdate';
@@ -264,11 +281,19 @@ class ProgramEventsReport extends FannieReportPage {
             }
             $record[] = $row['When'];
             $record[] = "<a href='../Activity/ActivityReport.php?" .
-                "memNum={$row['card_no']}&amp;programID={$this->programID}'" .
+                "memNum={$row['card_no']}" .
+                "&amp;programID={$this->programID}".
+                "&amp;date1={$this->dateFrom}" .
+                "&amp;date2={$this->dateTo}" .
+                "'".
                 " target='_CCR_{$row['card_no']}' title='Details for this member'>" .
                 "{$row['card_no']}</a>";
             $record[] = "<a href='../Activity/ActivityReport.php?" .
-                "memNum={$row['card_no']}&amp;programID={$this->programID}'" .
+                "memNum={$row['card_no']}" .
+                "&amp;programID={$this->programID}".
+                "&amp;date1={$this->dateFrom}" .
+                "&amp;date2={$this->dateTo}" .
+                "'".
                 " target='_CCR_{$row['card_no']}' title='Details for this member'>" .
                 "{$row['Who']}</a>";
 

@@ -29,9 +29,9 @@ if (!class_exists('FannieAPI')) {
 
 class ActivityReport extends FannieReportPage 
 {
-    public $description = '[Coop Cred] lists all Coop Cred transactions for a given member in a given program';
-    // For Coop Cred what should this be? What does it do? $REPORTS/index.php?
-    public $report_set = 'Membership';
+    public $description = '[Coop Cred Activity Report] lists all Coop Cred
+        transactions for a given member in a given program';
+    public $report_set = 'CoopCred';
     protected $title = "Fannie : Coop Cred Activity Report for a Single Member";
     protected $header = "Coop Cred Single Member Activity Report";
 
