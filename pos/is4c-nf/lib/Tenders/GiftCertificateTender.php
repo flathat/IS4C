@@ -27,12 +27,55 @@
 */
 class GiftCertificateTender extends TenderModule 
 {
+    /* Do these after lanes are upgraded to 1.8
+    protected $amount_tendered;
+
+    public function MarketBucksTender($code, $amt)
+    {
+        parent::__construct($code, $amt);
+        $this->amount_tendered = $this->amount;
+    }
+     */
+
+    /**
+      Allow the tender to be used without specifying an amount tendered
+      @return boolean
+    */
+    public function allowDefault()
+    {
+        return false;
+    }
+
+    /** Maybe use disabledPrompt() from Market Bucks when lanes upgraded.
+     */
 
     /**
       Check for errors
       @return True or an error message string
     */
     public function errorCheck(){
+    if (false) {
+        return DisplayLib::xboxMsg(
+            "GiftCert->errorCheck forced error. amt_tendered: " . $this->amount .
+            " against amount due of: " . CoreLocal::get("amtdue"),
+            DisplayLib::standardClearButton()
+        );
+    }
+
+        if (CoreLocal::get("store") == 'WEFC_Toronto') {
+            // Amount tendered must be a multiple of $5.
+            $intAmount = (int)($this->amount * 100);
+            if (($intAmount % 500) != 0) { 
+                return DisplayLib::boxMsg(
+                    _("The value of the ") . $this->name_string . 
+                    ' ' . _("tendered must be a multiple of \$5."),
+                    '',
+                    false,
+                    DisplayLib::standardClearButton()
+                );
+            }
+        }
+
         return true;
     }
     
@@ -90,10 +133,13 @@ class GiftCertificateTender extends TenderModule
         return MiscLib::base_url().'gui-modules/boxMsg2.php?endorse=check&endorseAmt='.$this->amount;
     }
 
+    /* 12Dec2015 Is this used for Gift Certificates?
+     * Fixed a bug in it.
+    */
     public function add()
     {
         // rewrite WIC as checks
-        if (CoreLocal::get("store")=="wfc" && $this->tender_code='WT'){
+        if (CoreLocal::get("store")=="wfc" && $this->tender_code=='WT'){
             $this->tender_code = "CK";
         }
         parent::add();
