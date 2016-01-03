@@ -102,10 +102,18 @@ class CCredSigSlip extends ReceiptMessage {
             if ($subs !== True) {
                 return ("Error: Coop Cred Program " . $tProgramID . " subtotals.");
             }
+            $xIt = "Debit";
+            $xItCaps = strtoupper($xIt);
+            $inverter = -1;
+            if ($CORE_LOCAL->get("{$programCode}chargeTotal") > 0.005) {
+                $xIt = "Credit";
+                $xItCaps = strtoupper($xIt);
+                $inverter = 1;
+            }
             $labels["$programCode"] = array(
                     "$projectUC '{$programName}' ACCOUNT\n"
-                    , "Tender:{$tTender} Debit Amount:"
-                    , "I ACKNOWLEDGE THE ABOVE DEBIT\n"
+                    , "Tender:{$tTender} {$xIt} Amount:"
+                    , "I ACKNOWLEDGE THE ABOVE {$xItCaps}\n"
                     , "TO MY $projectUC '{$programName}' ACCOUNT\n"
             );
 
@@ -120,7 +128,7 @@ class CCredSigSlip extends ReceiptMessage {
                    ."Date: ".$date."\n"
                    ."REFERENCE #: ".$ref."\n"
                    .$labels["$programCode"][1] . " $"
-                       .number_format(-1 * $CORE_LOCAL->get("{$programCode}chargeTotal"), 2)
+                       .number_format($inverter * $CORE_LOCAL->get("{$programCode}chargeTotal"), 2)
                        ."\n"
                    . $labels["$programCode"][2]
                    . $labels["$programCode"][3]

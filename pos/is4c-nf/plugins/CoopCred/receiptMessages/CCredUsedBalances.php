@@ -117,7 +117,7 @@ class CCredUsedBalances extends ReceiptMessage {
                 $slip .= sprintf("%s: %s %s: \$ %s%s",
                     $projectName,
                     $programName,
-                    _("Remaining"),
+                    _("New Balance"),
                     $acb,
                     $lineEnd . $lineEnd
                 );
@@ -151,7 +151,7 @@ class CCredUsedBalances extends ReceiptMessage {
                 $slip .= sprintf("%s: %s %s: \$ %s%s",
                     $projectName,
                     $programName,
-                    _("Remaining"),
+                    _("New Balance"),
                     $acb,
                     $lineEnd . $lineEnd
                 );
