@@ -679,6 +679,15 @@ class ItemEditorPage extends FanniePage
                 </ul>';
         }
 
+        if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+            $ret .= "<p>" . "Discount options: " .
+                "<br />- Yes: eligible for whole basket, such as Member Appreciation" .
+                "<br />- Trans: eligible for whole basket, such as Member Appreciation" .
+                "<br />- Line: not eligible for whole basket, but item can be discounted: 10DI" .
+                "<br />- No: not eligible for whole basket, ?item cannot be discounted: 10DI" .
+                "" .
+                "</p>";
+        }
         return $ret;
     }
 }
