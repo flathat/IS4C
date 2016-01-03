@@ -99,10 +99,10 @@ Adds a line with the comment [arg] to the transaction.
 <td valign=top><span class="bodytext">
 <!--------------Key----->Coop Cred Query	
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->CQ{ENTER}			
+<!--------------String-->QQ{ENTER}			
 </span></td><td valign=top><span class="bodytext">
 
-Prints the Balance of the Coop Cred account of the current member.
+Prints the Balance of the Coop Cred account(s) of the current member.
 
 </span></td></tr>
 
@@ -156,6 +156,19 @@ If you don't know the Department Number, just enter the price x 100 followed by 
 The system will display a list of departments to choose from.
 Use the arrow keys to move down and up the list and {ENTER} to select the department
 or Clear (CL{ENTER}) to make no choice.
+
+</span></td></tr><tr><!--------------------------------------------------------------->
+
+<td valign=top><span class="bodytext">
+<!--------------Key----->End of Shift
+</span></td><td valign=top><span class="bodytext">
+<!--------------String-->ES{ENTER}
+</span></td><td valign=top><span class="bodytext">
+
+Writes an ENDOFSHIFT record to the transaction.
+If done in error this will probably reduce what should be in a Tender Report
+that is shift based.
+The command may be obsolete.
 
 </span></td></tr><tr><!--------------------------------------------------------------->
 
@@ -309,6 +322,16 @@ where the string [arg] is pre-programmed (eg., PVAPPLE{ENTER})
 </span></td></tr><tr><!--------------------------------------------------------------->
 
 <td valign=top><span class="bodytext">
+<!--------------Key----->Co-op Cred Query
+</span></td><td valign=top><span class="bodytext">
+<!--------------String-->QQ[arg]{ENTER}
+</span></td><td valign=top><span class="bodytext">
+
+See <a href="#QQ">Co-op Cred Query</a>
+
+</span></td></tr><tr><!--------------------------------------------------------------->
+
+<td valign=top><span class="bodytext">
 <!--------------Key----->Refund
 </span></td><td valign=top><span class="bodytext">
 <!--------------String-->RF[arg]{ENTER}
@@ -335,12 +358,26 @@ while the cashier is leaning against the keyboard.
 </span></td></tr><tr><!--------------------------------------------------------------->
 
 <td valign=top><span class="bodytext">
+<!--------------Key----->Reprint Receipt
+</span></td><td valign=top><span class="bodytext">
+<!--------------String-->RP
+</span></td><td valign=top><span class="bodytext">
+
+Print (another copy of) a receipt.
+Choose from a list of today's transactions for the current cashier
+at this register.
+
+</span></td></tr><tr><!--------------------------------------------------------------->
+
+<td valign=top><span class="bodytext">
 <!--------------Key----->Sign off
 </span></td><td valign=top><span class="bodytext">
 <!--------------String-->SO{ENTER}
 </span></td><td valign=top><span class="bodytext">
 
-Cashier sign off. Drawer will open.
+Cashier sign off.
+This returns to the log in screen and opens
+the till drawer if present. You can not sign out in the middle of a transaction.
 
 </span></td></tr><tr><!--------------------------------------------------------------->
 
@@ -365,7 +402,11 @@ apply tare weight to the supplied weight.
 <!--------------String-->TETL{ENTER}	
 </span></td><td valign=top><span class="bodytext">
 
-Makes the entire transaction tax exempt. Tax exemption is reversed by scrolling 
+Makes the entire transaction tax exempt.
+You will be prompted for an optional tax exemption
+ID. This is added to the transaction as a comment for the sake of
+record keeping.
+<br />Tax exemption is reversed by scrolling 
 to the tax exemption notification display and pressing the "void" key
 (VD{ENTER})
 
