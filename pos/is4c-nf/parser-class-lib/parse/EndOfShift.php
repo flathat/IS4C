@@ -26,6 +26,9 @@ class EndOfShift extends Parser
     function check($str)
     {
         if ($str == "ES") {
+            if (CoreLocal::get('store') == 'WEFC_Torontx') {
+                return false;
+            }
             return true;
         }
 
@@ -35,6 +38,16 @@ class EndOfShift extends Parser
     function parse($str)
     {
         $json = $this->default_json();
+
+        if (CoreLocal::get('store') == 'WEFC_Toronto') {
+            $json['output'] = DisplayLib::boxMsg(
+                _("The '${str}' command is not supported at this store."),
+                '',
+                false,
+                DisplayLib::standardClearButton()
+            );
+            return $json;
+        }
 
         CoreLocal::set("memberID", CoreLocal::get('defaultNonMem'));
         CoreLocal::set("memMsg","End of Shift");
