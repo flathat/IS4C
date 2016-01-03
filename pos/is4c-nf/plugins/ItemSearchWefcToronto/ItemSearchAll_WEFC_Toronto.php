@@ -35,33 +35,44 @@ class ItemSearchAll_WEFC_Toronto extends ProductSearch {
 
     public function search($str)
     {
+        global $CORE_LOCAL;
         $ret = array();
         $sql = Database::pDataConnect();
         if (!$sql->table_exists('productUser')) {
             return $ret;
         }
+        $noBrandDepts = "-1";
+        //if (CoreLocal::get('store') == 'WEFC_Toronto') {}
+        if ($CORE_LOCAL->get('store') == 'WEFC_Toronto') {
+            $noBrandDepts = "3000,4900";
+        }
         /*
          * description formatted: BRAND | item | sizeUnitOfMeasure
          * - prefer productUser.description for item
-         * - ?prefer productUser.description for brand
+         * - ?prefer productUser.brand for brand
          * - ?prefer productUser.sizing, without space separator,
          *     for sizeUnitOfMeasure
         */
         $query = "SELECT p.upc,
             CONCAT(
-            CASE WHEN COALESCE(u.brand, '') != ''
-                THEN CONCAT(UPPER(u.brand), ' | ')
+            CASE WHEN (p.department in ({$noBrandDepts}) AND SUBSTR(p.upc,1,5) = '00000')
+                THEN ''
+            WHEN COALESCE(u.brand, '') != ''
+                THEN CONCAT(UPPER(SUBSTR(u.brand,1,14)), ' | ')
             WHEN COALESCE(p.brand, '') != ''
-                THEN CONCAT(UPPER(p.brand), ' | ')
+                THEN CONCAT(UPPER(SUBSTR(p.brand,1,14)), ' | ')
             ELSE '' END,
             CASE WHEN COALESCE(u.description, '') != ''
-                THEN u.description
+                THEN SUBSTR(u.description, 1, 40)
                 ELSE p.description END,
             CASE WHEN COALESCE(p.size,p.unitofmeasure) != ''
             THEN CONCAT(' | ',p.size,p.unitofmeasure) ELSE '' END
             )
                 AS description,
-                p.normal_price, p.special_price, p.scale
+                p.normal_price, p.special_price, p.scale,
+            CASE WHEN p.department in ({$noBrandDepts})
+                THEN 'A ' ELSE 'B ' END
+                AS PTP
                FROM products AS p
                 LEFT JOIN productUser AS u ON p.upc=u.upc
                 WHERE (
@@ -72,7 +83,7 @@ class ItemSearchAll_WEFC_Toronto extends ProductSearch {
                     u.brand LIKE ?
                  )
             AND p.inUse='1'
-            ORDER BY description";
+            ORDER BY PTP, description";
         $args = array(
             '%' . $str . '%',
             '%' . $str . '%',
