@@ -86,6 +86,24 @@ class AutoLoader extends LibraryClass
                     $map[$name] = $path;
                 }
             }
+        // 7May2016 EL This additional == 0 branch shouldn't be needed, but is at the moment.
+        } elseif (!isset($map[$name]) && strpos($name, '\\') == 0) {
+            $pieces = explode('\\', $name);
+            $x = array_shift($pieces);
+            $s = DIRECTORY_SEPARATOR;
+            if (count($pieces) > 2 && $pieces[0] == 'COREPOS' && $pieces[1] == 'common') {
+                $path = dirname(__FILE__) . $s . '..' . $s . '..' . $s . '..' . $s . 'common' . $s;
+                $path .= self::arrayToPath(array_slice($pieces, 2));
+                if (file_exists($path)) {
+                    $map[$name] = $path;
+                }
+            } elseif (count($pieces) > 2 && $pieces[0] == 'COREPOS' && $pieces[1] == 'pos') {
+                $path = dirname(__FILE__) . $s . '..' . $s;
+                $path .= self::arrayToPath(array_slice($pieces, 2));
+                if (file_exists($path)) {
+                    $map[$name] = $path;
+                }
+            }
         } elseif (!isset($map[$name])) {
             // class is unknown
             // rebuild map to see if the definition
