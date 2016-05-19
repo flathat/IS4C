@@ -24,6 +24,7 @@
 
 include_once(dirname(__FILE__).'/../lib/AutoLoader.php');
 
+//class productlist extends NoInputPage 
 class productlist extends NoInputCorePage 
 {
 
@@ -33,11 +34,12 @@ class productlist extends NoInputCorePage
 
     function preprocess()
     {
+        global $CORE_LOCAL;
         $entered = "";
         if (isset($_REQUEST["search"]))
             $entered = strtoupper(trim($_REQUEST["search"]));
-        elseif (CoreLocal::get("pvsearch") != "")
-            $entered = strtoupper(trim(CoreLocal::get("pvsearch")));
+        elseif ($CORE_LOCAL->get("pvsearch") != "")
+            $entered = strtoupper(trim($CORE_LOCAL->get("pvsearch")));
         else{
             $this->temp_num_rows = 0;
             return True;
@@ -131,6 +133,7 @@ class productlist extends NoInputCorePage
 
     function body_content()
     {
+        global $CORE_LOCAL;
         $result = $this->temp_result;
         $num_rows = $this->temp_num_rows;
 
@@ -140,7 +143,7 @@ class productlist extends NoInputCorePage
             $this->add_onload_command("selectSubmit('#search', '#selectform', '#filter-span')\n");
 
             // originally 390
-            if (CoreLocal::get('touchscreen')) {
+            if ($CORE_LOCAL->get('touchscreen')) {
                 $maxSelectWidth = 470;
             } else {
                 $maxSelectWidth = 530;
@@ -164,15 +167,26 @@ class productlist extends NoInputCorePage
 
                 $price = MiscLib::truncate2($price);
 
-                echo "<option value='".$row["upc"]."' ".$selected.">".$row["upc"]." - ".$row["description"]
-                    ." -- [".$price."] ".$Scale."\n";
+	        if ($CORE_LOCAL->get('store') == 'WEFC_Toronto') {
+                    printf("<option value='%s' %s>%s%s | \$%s%s</option>\n",
+                        $row["upc"],
+                        $selected,
+                        ((substr($row['upc'],0,5) == "00000") ? (substr($row['upc'],8) . " - ") : ""),
+                        $row["description"],
+                        $price,
+                        (($Scale != ' ') ? " - $Scale" : '')
+                        );
+                } else {
+                    echo "<option value='".$row["upc"]."' ".$selected.">".$row["upc"]." - ".$row["description"]
+                        ." -- [".$price."] ".$Scale."\n";
+                }
                     
                 $selected = "";
             }
             echo "</select>"
                 . '<div id="filter-span"></div>'
                 ."</div>";
-            if (CoreLocal::get('touchscreen')) {
+            if ($CORE_LOCAL->get('touchscreen')) {
                 echo '<div class="listbox listboxText">'
                     . DisplayLib::touchScreenScrollButtons()
                     . '</div>';
