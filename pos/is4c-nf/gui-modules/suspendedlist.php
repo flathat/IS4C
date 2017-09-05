@@ -56,10 +56,18 @@ class suspendedlist extends NoInputCorePage
             return false;
         }
 
-        $query_local = "SELECT register_no, emp_no, trans_no, SUM(total) AS total "
-            ." FROM suspended "
-            ." WHERE datetime >= " . date("'Y-m-d 00:00:00'")
-            ." GROUP BY register_no, emp_no, trans_no";
+        if (CoreLocal::get("store") == "WEFC_Toronto") {
+            $query_local = "SELECT register_no, emp_no, trans_no, SUM(total) AS total "
+                .", card_no"
+                ." FROM suspended "
+                ." WHERE datetime >= " . date("'Y-m-d 00:00:00'")
+                ." GROUP BY register_no, emp_no, trans_no";
+        } else {
+            $query_local = "SELECT register_no, emp_no, trans_no, SUM(total) AS total "
+                ." FROM suspended "
+                ." WHERE datetime >= " . date("'Y-m-d 00:00:00'")
+                ." GROUP BY register_no, emp_no, trans_no";
+        }
 
         $db_a = Database::tDataConnect();
         $result = "";
@@ -110,9 +118,17 @@ class suspendedlist extends NoInputCorePage
         $selected = "selected";
         for ($i = 0; $i < $num_rows; $i++) {
             $row = $db->fetch_array($result);
-            echo "<option value='".$row["register_no"]."::".$row["emp_no"]."::".$row["trans_no"]."' ".$selected
-                ."> lane ".substr(100 + $row["register_no"], -2)." Cashier ".substr(100 + $row["emp_no"], -2)
-                ." #".$row["trans_no"]." -- $".$row["total"]."\n";
+            if (CoreLocal::get("store") == "WEFC_Toronto") {
+                echo "<option value='".$row["register_no"]."::".$row["emp_no"]."::".$row["trans_no"]."' ".$selected
+                    .">"
+                    ." Mem#" . $row["card_no"] 
+                    ." lane ".substr(100 + $row["register_no"], -2)." Cashier ".substr(100 + $row["emp_no"], -2)
+                    ." #".$row["trans_no"]." -- $".$row["total"]."\n";
+            } else {
+                echo "<option value='".$row["register_no"]."::".$row["emp_no"]."::".$row["trans_no"]."' ".$selected
+                    ."> lane ".substr(100 + $row["register_no"], -2)." Cashier ".substr(100 + $row["emp_no"], -2)
+                    ." #".$row["trans_no"]." -- $".$row["total"]."\n";
+            }
             $selected = "";
         }
 
