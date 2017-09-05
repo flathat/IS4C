@@ -67,6 +67,30 @@ class CoopCredTender extends TenderModule
             $this->amount = $this->DefaultTotal();
         }
 
+
+/* Diagnose.
+        if ((abs($CORE_LOCAL->get("{$pc}memChargeTotal"))+$this->amount) >=
+            ($CORE_LOCAL->get("{$pc}availBal") + 0.005)
+            ) {
+            $memChargeCommitted = $CORE_LOCAL->get("{$pc}availBal") +
+                                $CORE_LOCAL->get("{$pc}memChargeTotal");
+// -
+$mct = $CORE_LOCAL->get("{$pc}memChargeTotal");
+$t_a = $this->amount;
+$ab = ($CORE_LOCAL->get("{$pc}availBal") + 0.005);
+$mCC = $ab + $mct;
+return DisplayLib::xboxMsg(
+    _("The totals for Coop Cred you have in ").
+    '<b>'.  $CORE_LOCAL->get("{$pc}programName"). '</b>' .
+    "</br> memChargeTotal: $mct" .
+    "</br> this_amount: $t_a" .
+    "</br> pc_availBal: $ab" .
+    "</br> memChargeCommitted: $mCC" .
+    "</br> test: " . ($mct + $t_a) . " : " . $ab .
+    "</br> CL to continue" .
+    '');
+*/
+
         /* No Available Balance.
          */
         if ($CORE_LOCAL->get("{$pc}availBal") < 0) {
@@ -76,6 +100,7 @@ class CoopCredTender extends TenderModule
                 '<b>'.  $CORE_LOCAL->get("{$pc}programName"). '</b>' .
                 _(" to cover this purchase."));
         }
+
         /* Tender more than Available Balance
          * the amount remaining less the amount of this type already tendered
          * in the current transaction.
@@ -93,6 +118,7 @@ class CoopCredTender extends TenderModule
                 number_format($memChargeCommitted,2) .
                 '.');
         }
+
         /* Tender more than Amount Due.
          */
         if(MiscLib::truncate2($CORE_LOCAL->get("amtdue")) <
