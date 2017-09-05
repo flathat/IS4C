@@ -1,0 +1,7 @@
+# 19Dec2013 Eric Lee Re: sync/special_mirrors
+# A version of ../special/ for copying (mirroring) tables from this server on
+#  another server.  My use is making realistic test data.
+# See ../special/README on how the files in this directory are used.
+# Generally, a symlink named for a table, pointing to a special handler
+#  that uses mysqldump to transfer tables.
+
