@@ -43,7 +43,8 @@ class ShrinkTool extends FannieRESTfulPage
 
     public function post_upc_description_department_cost_price_qty_reason_handler()
     {
-        global $FANNIE_TRANS_DB, $FANNIE_EMP_NO, $FANNIE_REGISTER_NO;
+        // 13Jan2016 EL.
+        global $FANNIE_TRANS_DB, $FANNIE_EMP_NO, $FANNIE_REGISTER_NO, $FANNIE_STORE_ID;
         $dbc = FannieDB::get($FANNIE_TRANS_DB);
 
         $record = DTrans::$DEFAULTS;
@@ -64,6 +65,7 @@ class ShrinkTool extends FannieRESTfulPage
         $record['numflag'] = $this->reason;
         $record['charflag'] = strlen(FormLib::get('type')) > 0 ? strtoupper(substr(FormLib::get('type'), 0, 1)) : '';
         $record['trans_status'] = 'Z';
+        $record['store_id'] = $FANNIE_STORE_ID;
 
         $info = DTrans::parameterize($record, 'datetime', $dbc->now());
         $query = 'INSERT INTO dtransactions
