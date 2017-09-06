@@ -90,7 +90,7 @@ function WEFC_No_Barcode($data,$offset=0) {
 
     // Distance from the edge of the paper to the first printable character.
     // This varies by printer.
-    $printerMargin = 3;
+    $printerMargin = 3; // 19Jan2016 was 3
     /* You may not need to change anything in the rest of this block
      *  once down, across and printerMargin above are defined.
     */
@@ -101,10 +101,10 @@ function WEFC_No_Barcode($data,$offset=0) {
     $topMargin = $pdf->GetY();
     $top = $topMargin;
     $labelsPerRow = 1;
-        while ( (($labelsPerRow+1) * $across) <= ($pageWidth-$leftMargin) )
+        while ((($labelsPerRow+1) * $across) <= ($pageWidth-$leftMargin))
             $labelsPerRow++;
     $rowsPerPage = 1;
-        while ( (($rowsPerPage+1) * $down) <= ($pageDepth-$topMargin) )
+        while ((($rowsPerPage+1) * $down) <= ($pageDepth-$topMargin))
             $rowsPerPage++;
     $labelsPerPage = $rowsPerPage*$labelsPerRow;
     // Right-most x of a field.  Larger offset implies need for a new line.
@@ -133,12 +133,12 @@ function WEFC_No_Barcode($data,$offset=0) {
     */
     /*
     +-------------------------------------------+
-     .Brand - Flags                    .Vendor  |
+     .Brand - Flags                             |
      .Description                               |
-                                                                                            |
-                PRICE                        .Pkg     |
-     .    PRICE / lb                   .  Order#|
-     .PPU                              .   d/m/y|
+                                                |
+                PRICE                  .     Pkg|
+     .    PRICE / lb                   .     UPC|
+     .PPU        .vendor : sku         .   d/m/y|
     +-------------------------------------------+
     */
     $coords = array();
@@ -147,9 +147,9 @@ function WEFC_No_Barcode($data,$offset=0) {
     $coords['price'] = array('left'=>$left, 'top'=>$top+17);
     $coords['ppu'] = array('left'=>$left, 'top'=>$top+23);
 
-    $coords['vendor'] = array('left'=>$left+68, 'top'=>$top+0);
+    $coords['vendor'] = array('left'=>$left+50, 'top'=>$top+23);
     $coords['pkg'] = array('left'=>$left+68, 'top'=>$top+13);
-    $coords['order'] = array('left'=>$left+68, 'top'=>$top+18);
+    $coords['itemID'] = array('left'=>$left+68, 'top'=>$top+19);
     $coords['today'] = array('left'=>$left+68, 'top'=>$top+23);
 
     /* Find the name of the top, left cell in the label,
@@ -161,11 +161,11 @@ function WEFC_No_Barcode($data,$offset=0) {
     $fj = 0; $fk = 0;
     foreach(array_keys($coords) as $key) {
         $fj = $coords["$key"]['left'] + $coords["$key"]['top'];
-        if ( $fj < $fi ) {
+        if ($fj < $fi) {
             $fi = $fj;
             $firstCell = $key;
         }
-        if ( $fj > $fk ) {
+        if ($fj > $fk) {
             $fk = $fj;
             $lastCell = $key;
         }
@@ -176,7 +176,7 @@ function WEFC_No_Barcode($data,$offset=0) {
      $labelsPerRow
      $rowsPerPage
     */
-    if ( $offset > 0 ) {
+    if ($offset > 0) {
         $offsetRows=0;
         $offsetCols=0;
         $offsetRows = $offset / $labelsPerRow;
@@ -192,7 +192,7 @@ function WEFC_No_Barcode($data,$offset=0) {
     $productFlags = array();
     $pQ = "SELECT bit_number, description FROM prodFlags";
     $pR = $dbc->exec_statement($pQ,array());
-    if ( $pR ) {
+    if ($pR) {
         while($pf = $dbc->fetch_row($pR)){
             $productFlags[$pf['bit_number']] = $pf['description'];
         }
@@ -237,8 +237,14 @@ function WEFC_No_Barcode($data,$offset=0) {
         $scale = $row['scale'];
         $price = '$'.$row['normal_price'];
             $price .= ($scale==1)?" / lb":"";
-        // Why is it in caps to begin with?
-        $desc = ucwords(strtolower($row['description']));
+        /* Why is it in caps to begin with?
+         * 19Jan2016 EL $ITEM/addShelfTag.php no longer folds to upper
+         *           for WEFC_Toronto
+         */
+        $desc = $row['description'];
+        if ($desc == strtoupper($desc)) {
+            $desc = ucwords(strtolower($desc));
+        }
         // Remove "(BULK)", remove 1st char if "^[PB][A-Z][a-z]"
         $brand = $row['brand'];
         $pkg = $row['size'];
@@ -249,40 +255,45 @@ function WEFC_No_Barcode($data,$offset=0) {
         $upc = ltrim($row['upc'],0);
         $tagdate = date('jMy');
         $vendor = $row['vendor'];
+            $vendor .= ($vendor && $sku) ? ' : ' : '';
+            $vendor .= $sku;
         // A string of Product Flags.
         $flagSet = "";
         $numflag = (int)$row['numflag'];
-        if ( $numflag !== 0 ) {
+        if ($numflag !== 0) {
             $flags = array();
             for($fpt=0;$fpt<30;$fpt++) {
-                if ( (1<<$fpt) & $numflag ) {
+                if ((1<<$fpt) & $numflag) {
                     $bit_number = $fpt + 1;
-                    $flags[] = $productFlags[$bit_number];
+                    $flags[] = '' . $productFlags[$bit_number];
                 }
             }
-            $flagSet = ' - ' . implode(' ',$flags);
+            $flagSet = ' - ' . implode(' : ',$flags);
         }
-        $orderCode = '';
-        if ( isset($FANNIE_COOP_ID) && $FANNIE_COOP_ID == 'WEFC_Toronto' ) {
-         $oQ = "SELECT order_code, description
-                        FROM products_$FANNIE_COOP_ID WHERE upc = ?";
-         $oV = array($row['upc']);
-         $oR = $dbc->exec_statement($oQ,$oV);
-         if ( $oR ) {
-            while ( $oRow = $dbc->fetch_row($oR) ) {
-                // Override the one from products.
-                if ( $oRow['description'] != '' )
-                    $desc = $oRow['description'];
-                if ( ctype_digit($oRow['order_code']) ) {
-                    $orderCode = 'ORDER #'.$oRow['order_code'];
-                    break;
-                }
+        $itemID = '';
+        // 19Jan2016 WEFC_Toronto no longer uses order codes.
+        if (False && isset($FANNIE_COOP_ID) && $FANNIE_COOP_ID == 'WEFC_Toronto') {
+            $oQ = "SELECT order_code, description
+                           FROM products_$FANNIE_COOP_ID WHERE upc = ?";
+            $oV = array($row['upc']);
+            $oR = $dbc->exec_statement($oQ,$oV);
+            if ($oR) {
+               while ($oRow = $dbc->fetch_row($oR)) {
+                   // Override the one from products.
+                   if ($oRow['description'] != '')
+                       $desc = $oRow['description'];
+                   if (ctype_digit($oRow['order_code'])) {
+                       $itemID = 'ORDER #'.$oRow['order_code'];
+                       break;
+                   }
+               }
+            } else {
+               $dbc->logger("Failed: $oQ with {$oV[0]}");
             }
-         } else {
-            $dbc->logger("Failed: $oQ with {$oV[0]}");
-         }
-         if ( $orderCode == '' && $upc != '' )
-            $orderCode = "UPC $upc";
+        }
+        if ($itemID == '' && $upc != '') {
+           $itemID = "$upc";
+           //$itemID = "UPC $upc";
         }
         
         // Further massaging.
@@ -290,7 +301,7 @@ function WEFC_No_Barcode($data,$offset=0) {
         $maxBrandWidth = 90; // If Vendor on same line: 65
         $pdf->SetFont('Arial','',10);
         $i=0;
-        while ( $i<10 && $pdf->GetStringWidth($brand) > $maxBrandWidth && strlen($brand) > 20 ) {
+        while ($i<10 && $pdf->GetStringWidth($brand) > $maxBrandWidth && strlen($brand) > 20) {
             $brand = substr($brand,0,-1);
             $i++;
         }
@@ -298,7 +309,7 @@ function WEFC_No_Barcode($data,$offset=0) {
         $maxDescWidth = 90;
         $pdf->SetFont('ScalaSans','B',18);
         $i=0;
-        while ( $i<10 && $pdf->GetStringWidth($desc) > $maxDescWidth && strlen($desc) > 20 ) {
+        while ($i<10 && $pdf->GetStringWidth($desc) > $maxDescWidth && strlen($desc) > 20) {
             $desc = substr($desc,0,-1);
             $i++;
         }
@@ -340,7 +351,14 @@ function WEFC_No_Barcode($data,$offset=0) {
         //    Cell(width, line-height,content,no-border,cursor-position-after,text-align)
         $pdf->Cell(0,0,"$ppu",0,0,'L');
 
-        /*
+        /* Vendor+sku on bottom */
+        $cell = 'vendor';
+        $pdf->SetFont('Arial','',8);
+        $pdf->SetXY($coords["$cell"]['left'],$coords["$cell"]['top']);
+        //    Cell(width, line-height,content,no-border,cursor-position-after,text-align)
+        $pdf->Cell(0,0,"$vendor",0,0,'L');
+
+        /* Vendor on top
         $pdf->SetFont('Arial','',10);
         $cell = 'vendor';
         $pdf->SetXY($coords["$cell"]['left'],$coords["$cell"]['top']);
@@ -349,14 +367,16 @@ function WEFC_No_Barcode($data,$offset=0) {
         */
 
         $cell = 'pkg';
+        $pdf->SetFont('Arial','B',14);
         $pdf->SetXY($coords["$cell"]['left'],$coords["$cell"]['top']);
         //    Cell(width, line-height,content,no-border,cursor-position-after,text-align)
         $pdf->Cell(30,0,"$pkg",0,0,'R');
 
-        $cell = 'order';
+        $cell = 'itemID';
+        $pdf->SetFont('Arial','',8);
         $pdf->SetXY($coords["$cell"]['left'],$coords["$cell"]['top']);
         //    Cell(width, line-height,content,no-border,cursor-position-after,text-align)
-        $pdf->Cell(30,0,"$orderCode",0,0,'R');
+        $pdf->Cell(30,0,"$itemID",0,0,'R');
 
         $pdf->SetFont('Arial','',8);
         $cell = 'today';
