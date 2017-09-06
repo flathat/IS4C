@@ -169,7 +169,7 @@ class BaseItemModule extends ItemModule
                 'size' => '',
                 'unitofmeasure' => '',
                 'modified' => '',
-                'ledesc' => '',
+                'ldesc' => '',
                 'manufacturer' => '',
                 'distributor' => '',
                 'default_vendor_id' => 0,
@@ -583,9 +583,11 @@ HTML;
             }
             $ret .= '</select>';
             $jsVendorID = $rowItem['default_vendor_id'] > 0 ? $rowItem['default_vendor_id'] : 'no-vendor';
-            $ret .= '<select name="subdept[]" id="subdept{{store_id}}" 
+            $ret .= ' ' . '<select name="subdept[]" id="subdept{{store_id}}" 
                 class="form-control chosen-select syncable-input">';
-            $ret .= isset($subs[$rowItem['department']]) ? $subs[$rowItem['department']] : '<option value="0">None</option>';
+            $ret .= sprintf('<option %s value="0">None</option>',
+                    ($rowItem['subdept'] == 0 ? 'selected':''));
+            $ret .= isset($subs[$rowItem['department']]) ? $subs[$rowItem['department']] : '';
             $ret .= '</select>';
             $ret .= '</td>
                 <th class="small text-right">SKU</th>
@@ -685,8 +687,8 @@ HTML;
                 <tr>
                     <th class="small text-right">Case Size</th>
                     <td class="col-sm-1">
-                        <input type="text" name="caseSize" class="form-control input-sm"
-                            id="product-case-size"
+                        <input type="text" name="caseSize"
+                            class="form-control input-sm product-case-size"
                             value="' . $rowItem['caseSize'] . '" 
                             onchange="$(\'#vunits' . $jsVendorID . '\').val(this.value);" 
                             ' . ($jsVendorID == 'no-vendor' || !$active_tab ? 'disabled' : '') . ' />
@@ -822,10 +824,10 @@ HTML;
                 success: function(resp) {
                     if (!resp.error) {
                         $('#local-origin-id').val(resp.localID);
-                        $('.product-case-size').prop('disabled', false);
+                        $('.tab-pane.active .product-case-size').prop('disabled', false);
                         $('#product-sku-field').prop('disabled', false);
                     } else {
-                        $('.product-case-size').prop('disabled', true);
+                        $('.tab-pane.active .product-case-size').prop('disabled', true);
                         $('#product-sku-field').prop('disabled', true);
                     }
                 }
@@ -1036,11 +1038,11 @@ HTML;
             }
             $desc = FormLib::get('descript');
             if (isset($desc[$i])) {
-                $model->description(str_replace("'", '', $desc[$i]));
+                $model->description($desc[$i]);
             }
             $brand = FormLib::get('manufacturer');
             if (isset($brand[$i])) {
-                $model->brand(str_replace("'", '', $brand[$i]));
+                $model->brand($brand[$i]);
             }
             $model->pricemethod(0);
             $model->groupprice(0.00);
@@ -1178,11 +1180,11 @@ HTML;
             }
             $brand = FormLib::get('manufacturer');
             if (isset($brand[0])) {
-                $extra->manufacturer(str_replace("'",'',$brand[0]));
+                $extra->manufacturer($brand[0]);
             }
             $dist = FormLib::get('distributor');
             if (isset($dist[0])) {
-                $extra->distributor(str_replace("'",'',$dist[0]));
+                $extra->distributor($dist[0]);
             }
             $cost = FormLib::get('cost');
             if (isset($cost[0])) {
