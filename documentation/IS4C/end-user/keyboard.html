@@ -27,14 +27,14 @@ some kind, and {ENTER} means pressing the "Enter" key.
 <p>
 <table border=1 cellpadding=5 cellspaceing=0>
 
-<tr><!------------------------------------------------------------------------->
+<tr><!- ----------------------------------------------------------------------- ->
 
 <td valign=top align=center colspan = 3>
 <span class="bodytext">
 <b>General</b>
 
 </span>
-</td></tr><tr><!--------------------------------------------------------------->
+</td></tr><tr><!- ------------------------------------------------------------- ->
 
 	<td valign=top style="width:120px;">
 	<span class="bodytext">
@@ -52,76 +52,89 @@ some kind, and {ENTER} means pressing the "Enter" key.
 	<span class="bodytext">					
 		<b>Effects</b>
 
-	</span></td></tr><tr><!--------------------------------------------------------------->
+	</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Balance Query	
+<!- -------------Key---- ->Balance Query	
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->BQ{ENTER}			
+<!- -------------String- ->BQ{ENTER}			
 </span></td><td valign=top><span class="bodytext">
 
 Prints the Balance of the Store Charge account of the current member.
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Cancel	
+<!- -------------Key---- ->Cancel	
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->CN{ENTER}			
+<!- -------------String- ->CN{ENTER}			
 </span></td><td valign=top><span class="bodytext">
 
 Cancels an entire transaction. Calls up a prompt for a supervisor's password.
 Transaction will be cancelled if password is correct. A partial receipt will print,
 listing items rung in up to the point of cancellation.
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top width=120>
-<!--------------Key----->Clear
+<!- -------------Key---- ->Clear
 </span></td><td valign=top width=120>
-<!--------------String-->CL{ENTER}
+<!- -------------String- ->CL{ENTER}
 </span></td><td valign=top><span class="bodytext">
 				
 Commonly used to reverse incorrect entries and to clear error message boxes
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Comment
+<!- -------------Key---- ->Comment
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->CM[arg]{ENTER}			
+<!- -------------String- ->CM[arg]{ENTER}			
 </span></td><td valign=top><span class="bodytext">
 
 Adds a line with the comment [arg] to the transaction.
 
-	</span></td></tr><tr><!--------------------------------------------------------------->
+	</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Coop Cred Query	
+<!- -------------Key---- ->Coop Cred Query	
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->QQ{ENTER}			
+<!- -------------String- ->QQ{ENTER}			
 </span></td><td valign=top><span class="bodytext">
 
 Prints the Balance of the Coop Cred account(s) of the current member.
 
 </span></td></tr>
 
-<tr><!--------------------------------------------------------------->
+<tr><!- ------------------------------------------------------------- ->
 <td valign=top><span class="bodytext">
-<!--------------Key----->Percent Discount Applied
+<!- -------------Key---- ->Percent Discount Applied
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->[arg]DA{ENTER}
+<!- -------------String- ->[arg]DA{ENTER}
 </span></td><td valign=top><span class="bodytext">
 Applies a percentage discount specified by [arg] to the entire transaction.
 Keys are usually programmed to apply certain standard percentages, e.g.
 5DA{ENTER} and 10DA{ENTER} for discounts of five and ten percent respectively.
 </span></td></tr>
 
-<tr><!--------------------------------------------------------------->
+<tr><!- ------------------------------------------------------------- ->
 <td valign=top><span class="bodytext">
-<!--------------Key----->Percent Discount Item
+<!- -------------Key---- ->Shrink Whole Transaction
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->[arg]DI[upc]{ENTER}
+<!- -------------String- ->DDD{ENTER} or
+<br />SK{ENTER}
+</span></td><td valign=top><span class="bodytext">
+Mark all items in the current transaction as shrink.
+This command will end the current transaction.
+Most reports exclude items marked as shrink.
+<br />Same as SK.
+</span></td></tr>
+
+<tr><!- ------------------------------------------------------------- ->
+<td valign=top><span class="bodytext">
+<!- -------------Key---- ->Percent Discount Item
+</span></td><td valign=top><span class="bodytext">
+<!- -------------String- ->[arg]DI[upc]{ENTER}
 </span></td><td valign=top><span class="bodytext">
 Applies a percentage discount specified by [arg] to the next item you enter.
 Typing/scanning the item code before you press {Enter} is optional.
@@ -129,12 +142,12 @@ Nothing is displayed on the screen until the item is entered.
 Same as PD.
 </span></td></tr>
 
-<tr><!--------------------------------------------------------------->
+<tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Department
+<!- -------------Key---- ->Department
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->[arg]DP[Department]{ENTER}
+<!- -------------String- ->[arg]DP[Department]{ENTER}
 </span></td><td valign=top><span class="bodytext">
 
 When an item with a known department is unscannable, cashier hand-enters in 
@@ -144,12 +157,12 @@ The department keys are usually pre-progammed (e.g. DP020{ENTER}).
 The correct department is obtained from referencing the number against the "Department" table.
 A warning screen will come up with an error beep if [arg]/100 falls outside the accepted department price range set in the same table.
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Department Lookup
+<!- -------------Key---- ->Department Lookup
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->[arg]DP{ENTER}
+<!- -------------String- ->[arg]DP{ENTER}
 </span></td><td valign=top><span class="bodytext">
 
 If you don't know the Department Number, just enter the price x 100 followed by DP{ENTER}.
@@ -157,12 +170,12 @@ The system will display a list of departments to choose from.
 Use the arrow keys to move down and up the list and {ENTER} to select the department
 or Clear (CL{ENTER}) to make no choice.
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->End of Shift
+<!- -------------Key---- ->End of Shift
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->ES{ENTER}
+<!- -------------String- ->ES{ENTER}
 </span></td><td valign=top><span class="bodytext">
 
 Writes an ENDOFSHIFT record to the transaction.
@@ -170,23 +183,23 @@ If done in error this will probably reduce what should be in a Tender Report
 that is shift based.
 The command may be obsolete.
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Foodstamp eligible total
+<!- -------------Key---- ->Foodstamp eligible total
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->FNTL{ENTER}
+<!- -------------String- ->FNTL{ENTER}
 </span></td><td valign=top><span class="bodytext">
 
 Calculates and displays foodstamp eligible amount. System will not accept foodstamp
 tenders without FNTL being first invoked. FNTL automatically triggers TL
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Foodstamp toggle
+<!- -------------Key---- ->Foodstamp toggle
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->FN
+<!- -------------String- ->FN
 </span></td><td valign=top><span class="bodytext">
 
 Reverses the foodstamp eligible status of the next item rung in.
@@ -196,12 +209,12 @@ item in question. If FN is followed by the tax toggle key,
 then both the tax and foodstamp status of the following item rung in are reversed.
 
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Manager's Menu
+<!- -------------Key---- ->Manager's Menu
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->MG{ENTER}
+<!- -------------String- ->MG{ENTER}
 </span></td><td valign=top><span class="bodytext">
 
 Calls up a list box with the following alternatives
@@ -211,12 +224,12 @@ Calls up a list box with the following alternatives
 <li>Tender Reports
 </ul>
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Member Identification
+<!- -------------Key---- ->Member Identification
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->[arg]ID{ENTER}
+<!- -------------String- ->[arg]ID{ENTER}
 </span></td><td valign=top><span class="bodytext">
 
 Search for the member number entered as [arg]. If found, 
@@ -230,15 +243,15 @@ during the transaction. Sales records will reflect the last ID entered.
 
 
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 
 
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Multiple (marked &#64;)
+<!- -------------Key---- ->Multiple (marked &#64;)
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->[arg]*[upc]{ENTER}
+<!- -------------String- ->[arg]*[upc]{ENTER}
 </span></td><td valign=top><span class="bodytext">
 
 Rings up [arg] number of items represented by the upc. Cashiers typically type in
@@ -246,24 +259,24 @@ Rings up [arg] number of items represented by the upc. Cashiers typically type i
 be used in the middle of a longer string in combination with other keys, as in VD5*29 
 (void 5 cups of coffee), or 10*149DP110 (ten items from department 110 at 1.49 each).
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->No Sale
+<!- -------------Key---- ->No Sale
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->NS{ENTER}
+<!- -------------String- ->NS{ENTER}
 </span></td><td valign=top><span class="bodytext">
 
 Opens the cash drawer. Calls up a prompt for a supervisor's password,
 and drawer opens when the password is correct. Works only when there is
 no transaction in progress.
 
-	</span></td></tr><tr><!--------------------------------------------------------------->
+	</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Ontario Meal Tax Rebate
+<!- -------------Key---- ->Ontario Meal Tax Rebate
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->MTL{ENTER}			
+<!- -------------String- ->MTL{ENTER}			
 </span></td><td valign=top><span class="bodytext">
 
 Removes the Ontario Provincial Sales Tax (PST) on items
@@ -279,12 +292,12 @@ that might include items that would qualify if rung in alone.
 not be lost.
 
 </span></td></tr>
-<tr><!--------------------------------------------------------------->
+<tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Percent Discount Item
+<!- -------------Key---- ->Percent Discount Item
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->[arg]PD[upc]{ENTER}
+<!- -------------String- ->[arg]PD[upc]{ENTER}
 </span></td><td valign=top><span class="bodytext">
 
 Applies a percentage discount specified by [arg] to the next item you enter.
@@ -293,12 +306,30 @@ Nothing is displayed on the screen until the item is entered.
 Same as DI.
 
 </span></td></tr>
-<tr><!--------------------------------------------------------------->
 
+<tr><!- ------------------------------------------------------------- ->
 <td valign=top><span class="bodytext">
-<!--------------Key----->Product verification	
+<!- -------------Key---- ->Price Override
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->PV{ENTER}	
+<!- -------------String- ->PO{ENTER}
+</span></td><td valign=top><span class="bodytext">
+Change the price of the currently selected item.
+</span></td></tr>
+
+<tr><!- ------------------------------------------------------------- ->
+<td valign=top><span class="bodytext">
+<!- -------------Key---- ->Partial Receipt
+</span></td><td valign=top><span class="bodytext">
+<!- -------------String- ->PP{ENTER}
+</span></td><td valign=top><span class="bodytext">
+Print a receipt for the transaction up to the current point.
+</span></td></tr>
+
+<tr><!- ------------------------------------------------------------- ->
+<td valign=top><span class="bodytext">
+<!- -------------Key---- ->Product verification	
+</span></td><td valign=top><span class="bodytext">
+<!- -------------String- ->PV{ENTER}	
 </span></td><td valign=top><span class="bodytext">
 
 Calls up a prompt for either a text string or an upc. When action is taken, will
@@ -306,12 +337,12 @@ either generate a list of products matching the text string, or the product
 matching the upc. Selecting an item from the list will result in that
 item being rung in.
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Product verification 
+<!- -------------Key---- ->Product verification 
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->PV[arg]{ENTER} 
+<!- -------------String- ->PV[arg]{ENTER} 
 </span></td><td valign=top><span class="bodytext">
 
 Shows a list of products beginning with the string specified by [arg].
@@ -319,34 +350,34 @@ Selecting an item from the list will result in that item being rung in.
 This variation is usually used for quick "look ups" with "speed keys" 
 where the string [arg] is pre-programmed (eg., PVAPPLE{ENTER})
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Co-op Cred Query
+<!- -------------Key---- ->Co-op Cred Query
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->QQ[arg]{ENTER}
+<!- -------------String- ->QQ[arg]{ENTER}
 </span></td><td valign=top><span class="bodytext">
 
 See <a href="#QQ">Co-op Cred Query</a>
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Refund
+<!- -------------Key---- ->Refund
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->RF[arg]{ENTER}
+<!- -------------String- ->RF[arg]{ENTER}
 </span></td><td valign=top><span class="bodytext">
 
 Refunds the item(s) specified by [arg]. [arg] can take the following forms: RF29
 (refund one cup of coffee), RF3*29 (3 cups of coffee), or RF3*149DP110 (refund 3
 department 11 items at 1.49 each).
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Repeat Input
+<!- -------------Key---- ->Repeat Input
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->RI{ENTER}
+<!- -------------String- ->RI{ENTER}
 </span></td><td valign=top><span class="bodytext">
 
 Re-enter the last input, so that the next occurance of the 
@@ -355,51 +386,85 @@ or manually entered. Note that the key repeats the input, not the
 item. For example, the last input might well be a CL{Enter}, or something sent
 while the cashier is leaning against the keyboard.
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Reprint Receipt
+<!- -------------Key---- ->Reprint Receipt
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->RP
+<!- -------------String- ->RP
 </span></td><td valign=top><span class="bodytext">
 
 Print (another copy of) a receipt.
 Choose from a list of today's transactions for the current cashier
 at this register.
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr>
 
+<tr><!- ------------------------------------------------------------- ->
 <td valign=top><span class="bodytext">
-<!--------------Key----->Sign off
+<!- -------------Key---- ->Round Up
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->SO{ENTER}
+<!- -------------String- ->RU{ENTER}
+</span></td><td valign=top><span class="bodytext">
+Round up the transaction total to the next whole dollar.
+This adds an open ring to the defined donation department and is most commonly
+used for charity / fundraisers.
+</span></td></tr>
+
+<tr><!- ------------------------------------------------------------- ->
+<td valign=top><span class="bodytext">
+<!- -------------Key---- ->Shrink Whole Transaction
+</span></td><td valign=top><span class="bodytext">
+<!- -------------String- ->SK{ENTER} or
+<br />DDD{ENTER}
+</span></td><td valign=top><span class="bodytext">
+Mark all items in the current transaction as shrink.
+This command will end the current transaction.
+Most reports exclude items marked as shrink.
+<br />Same as DDD.
+</span></td></tr>
+
+<tr><!- ------------------------------------------------------------- ->
+<td valign=top><span class="bodytext">
+<!- -------------Key---- ->Sign off
+</span></td><td valign=top><span class="bodytext">
+<!- -------------String- ->SO{ENTER}
 </span></td><td valign=top><span class="bodytext">
 
 Cashier sign off.
 This returns to the log in screen and opens
 the till drawer if present. You can not sign out in the middle of a transaction.
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Tare weight
+<!- -------------Key---- ->Tare weight
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->[arg]TW{ENTER}
+<!- -------------String- ->[arg]TW{ENTER}
 </span></td><td valign=top><span class="bodytext">
 
 Stores tare weight as [arg]/100. Displays tare weight on screen.
 If next item rung in is a weight item with weight supplied, will then
 apply tare weight to the supplied weight.
 
-
-</span></td></tr><tr><!--------------------------------------------------------------->
-
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Tax exempt
+<!- -------------Key---- ->Tax status cycle
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->TETL{ENTER}	
+<!- -------------String- ->{TAB}[...]
+</span></td><td valign=top><span class="bodytext">
+
+For the item under the cursor, cycle through the available tax statuses.
+Press again for the next status.
+
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
+
+<td valign=top><span class="bodytext">
+<!- -------------Key---- ->Tax exempt
+</span></td><td valign=top><span class="bodytext">
+<!- -------------String- ->TETL{ENTER}	
 </span></td><td valign=top><span class="bodytext">
 
 Makes the entire transaction tax exempt.
@@ -410,25 +475,25 @@ record keeping.
 to the tax exemption notification display and pressing the "void" key
 (VD{ENTER})
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Tax toggle
+<!- -------------Key---- ->Tax toggle
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->1TN{ENTER}
+<!- -------------String- ->1TN{ENTER}
 </span></td><td valign=top><span class="bodytext">
 
 Reverses the tax status of the next item rung in. Effective only for one item.
 
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Total
+<!- -------------Key---- ->Total
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->TL{ENTER}		
+<!- -------------String- ->TL{ENTER}		
 </span></td><td valign=top><span class="bodytext">
 
 Calculates amount due, taking into account discount, tax, and any exemptions and
@@ -436,13 +501,13 @@ surcharges. The number is reported on the screen, and represents the amount the
 customer must pay to complete the transaction up to that point. The system will
 not complete a transaction without Total (TL) being invoked at the final stage.
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Total Out
+<!- -------------Key---- ->Total Out
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->TO{ENTER}		
+<!- -------------String- ->TO{ENTER}		
 </span></td><td valign=top><span class="bodytext">
 
 As of 29Mar2014 it seems to be an obsolete command and probably shouldn't be used.
@@ -450,12 +515,12 @@ It seems to have the same effect as Total (TL) but is probably not
 being maintaned.
 
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Void
+<!- -------------Key---- ->Void
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->VD	
+<!- -------------String- ->VD	
 </span></td><td valign=top><span class="bodytext">
 
 Without [arg], VD attempts to void the currently highlighted item. Certain items cannot
@@ -465,12 +530,12 @@ trying to void ten will result in an error screen indicating that only 9 are ava
 for voidling. Notice that VD is a prefix, and cashier must press the "enter" key for
 VD to take effect.
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Void
+<!- -------------Key---- ->Void
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->VD[arg]{ENTER}	
+<!- -------------String- ->VD[arg]{ENTER}	
 </span></td><td valign=top><span class="bodytext">
 
 Attempts to void the item(s) specified in [arg]. [arg] could be a upc or the 
@@ -479,7 +544,7 @@ multiple thereof. eg. [arg] could be simply 29 (a cup of coffee) or 10*29
 VD10*149DP110 (void 10 of department 110 at 1.49 each).
 
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 
 <td valign=top align=center colspan = 3>
@@ -487,7 +552,7 @@ VD10*149DP110 (void 10 of department 110 at 1.49 each).
 <b>Tenders</b>
 
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 	<td valign=top><span class="bodytext">
 		<b>Function</b>
@@ -498,12 +563,12 @@ VD10*149DP110 (void 10 of department 110 at 1.49 each).
 	<td valign=top><span class="bodytext">					
 		<b>Effects</b>
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key-----> &nbsp;
+<!- -------------Key---- -> &nbsp;
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->[arg]
+<!- -------------String- ->[arg]
 </span></td><td valign=top><span class="bodytext">
 
 "Tender" refers to the type, or form, of payment, or currency that the customer offers to pay for goods.
@@ -517,22 +582,22 @@ e.g. $10.00 as 1000
 Just enter another Tender command.
 The transaction is not complete until Tender(s) in the total amount have been entered.
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Cash Tender
+<!- -------------Key---- ->Cash Tender
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->[arg]CA{ENTER}		
+<!- -------------String- ->[arg]CA{ENTER}		
 </span></td><td valign=top><span class="bodytext">
 
 Tenders the amount [arg]/100 in cash
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Other Tenders
+<!- -------------Key---- ->Other Tenders
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->[arg][Other string]{ENTER}		
+<!- -------------String- ->[arg][Other string]{ENTER}		
 </span></td><td valign=top><span class="bodytext">
 
 The system searches for [Other string] (which includes CA) in the table "tender".
@@ -540,12 +605,12 @@ If a match is found, will tender the amount [arg]/100 accordingly. Some of these
 other strings are: CK (check), CC (credit card), EF (electronic foodstamp),
 FS (paper foodstamp), CX (corporate charge), MI (employee charge).
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Choose Tender
+<!- -------------Key---- ->Choose Tender
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->[arg]TT{ENTER}		
+<!- -------------String- ->[arg]TT{ENTER}		
 </span></td><td valign=top><span class="bodytext">
 
 The system presents a list of tenders from which you can choose.
@@ -554,19 +619,19 @@ or Clear (CL{ENTER}) to make no choice.
 <br />Be aware that some of the list tender types may not be supported at your coop.
 <br />Without [arg] only the list is shown, but no tender takes place.
 
-</span></td></tr><!--------------------------------------------------------------->
+</span></td></tr><!- ------------------------------------------------------------- ->
 
 </table>
 <p> &nbsp; </p>
 <table border=1 cellpadding=5 cellspaceing=0 style="display:none;">
-</td></tr><tr><!--------------------------------------------------------------->
+</td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top align=center colspan = 3>
 <span class="bodytext">
 <b>Other Keys (F-keys apply only to the Microsoft Natural layout)</b>
 
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 
 	<td valign=top style="width:120px;"><span class="bodytext">
@@ -578,74 +643,74 @@ or Clear (CL{ENTER}) to make no choice.
 	<td valign=top><span class="bodytext">					
 		<b>Effects</b>
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Up arrow
+<!- -------------Key---- ->Up arrow
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->ASCII 38		
+<!- -------------String- ->ASCII 38		
 </span></td><td valign=top><span class="bodytext">
 
 Highlight item above the currently hightlighted item
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Down arrow
+<!- -------------Key---- ->Down arrow
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->ASCII 40		
+<!- -------------String- ->ASCII 40		
 </span></td><td valign=top><span class="bodytext">
 
 Highlight item below the currently hightlighted item
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Left arrow
+<!- -------------Key---- ->Left arrow
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->ASCII 37		
+<!- -------------String- ->ASCII 37		
 </span></td><td valign=top><span class="bodytext">
 
 Same as up arrow
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->Right arrow
+<!- -------------Key---- ->Right arrow
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->ASCII 39		
+<!- -------------String- ->ASCII 39		
 </span></td><td valign=top><span class="bodytext">
 
 Same as down arrow
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->F4/Lock 
+<!- -------------Key---- ->F4/Lock 
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->ASCII 115		
+<!- -------------String- ->ASCII 115		
 </span></td><td valign=top><span class="bodytext">
 
 Lock screen. Brings up a password prompt. The screen can only be unlocked by the
 password of the cashier currently logged in, or by a supervisor's password.
 
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->F6
+<!- -------------Key---- ->F6
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->ASCII 117		
+<!- -------------String- ->ASCII 117		
 </span></td><td valign=top><span class="bodytext">
 
 Repeat last input
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->F10
+<!- -------------Key---- ->F10
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->ASCII 121		
+<!- -------------String- ->ASCII 121		
 </span></td><td valign=top><span class="bodytext">
 
 Request weight data from scanner scale. This provides a mechanism for cashiers
@@ -653,12 +718,12 @@ to try to bring a non-responsive scale back to life in the middle of a transacti
 More often than not, however, when the scale in non-reponsive, it is also non-reponsive
 to the keyboard altogether.
 
-</span></td></tr><tr><!--------------------------------------------------------------->
+</span></td></tr><tr><!- ------------------------------------------------------------- ->
 
 <td valign=top><span class="bodytext">
-<!--------------Key----->&#64;	
+<!- -------------Key---- ->&#64;	
 </span></td><td valign=top><span class="bodytext">
-<!--------------String-->*			
+<!- -------------String- ->*			
 </span></td><td valign=top><span class="bodytext">
 
 See "Multiple" above
