@@ -20,6 +20,9 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 *********************************************************************************/
+/*
+ * 13Jan2016 EL Add link to ShrinkEditor
+ */
 
 require(dirname(__FILE__) . '/../../config.php');
 if (!class_exists('FannieAPI')) {
@@ -38,6 +41,7 @@ class ShrinkIndex extends FannieRESTfulPage
         return '
             <ul>
                 <li><a href="ShrinkTool.php">Enter Shrink</a></li>
+                <li><a href="ShrinkEditor.php">Edit Today\'s Shrink Items</a></li>
                 <li><a href="ShrinkReasonEditor.php">Edit Shrink Reasons</a></li>
                 <li><a href="../../reports/DDD/">Report Shrink Items</a></li>
             </ul>';
