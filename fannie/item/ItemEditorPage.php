@@ -27,6 +27,9 @@ if (!class_exists('FannieAPI')) {
 if (!function_exists('updateProductAllLanes')) {
     include('laneUpdates.php');
 }
+if (!function_exists('updateProductAllLanes_logged')) {
+    include('laneUpdates_logged.php');
+}
 if (!function_exists('updateAllLanes')) {
     include('laneUpdates_WEFC_Toronto.php');
 }
@@ -610,6 +613,7 @@ class ItemEditorPage extends FanniePage
             updateAllLanes($upc, array('products','productUser'));
         } else {
             updateProductAllLanes($upc);
+            //updateProductAllLanes_logged($upc, $dbc);
         }
 
         if ($audited) {
@@ -679,7 +683,7 @@ class ItemEditorPage extends FanniePage
                 </ul>';
         }
 
-        if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+        if (FannieConfig::config('COOP_ID', '') == 'WEFC_Toronto') {
             $ret .= "<p>" . "Discount options: " .
                 "<br />- Yes: eligible for whole basket, such as Member Appreciation" .
                 "<br />- Trans: eligible for whole basket, such as Member Appreciation" .
