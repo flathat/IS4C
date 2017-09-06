@@ -40,7 +40,14 @@ class AuthIndexPage extends FanniePage {
     Class for the Authorization User Interface index page.
     ";
     public $themed = true;
-    
+
+    // 18Jan2016 EL Added this func.
+    public function __construct()
+    {
+        parent::__construct();
+        $this->auth_classes = array();
+    }
+
     function body_content()
     {
         $priv = validateUserQuiet('admin');

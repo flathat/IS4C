@@ -38,6 +38,13 @@ class AuthChangePassword extends FannieRESTfulPage
     Change a user's password";
     public $themed = true;
 
+    // 18Jan2016 EL Added this func.
+    public function __construct()
+    {
+        parent::__construct();
+        $this->auth_classes = array();
+    }
+
     public function post_handler()
     {
         $this->changed = false;
@@ -98,6 +105,18 @@ class AuthChangePassword extends FannieRESTfulPage
 
         return ob_get_clean();
     }
+
+    // EL Added.
+    public function helpContent()
+    {
+        $ret = '';
+        $ret .= '<p>New Passwords may only contain letters (upper and lower case),
+                numbers, and underscore (_).
+                <br />They may not contain special characters such as "#" and "%".
+                </p>';
+        return $ret;
+    }
+
 }
 
 FannieDispatch::conditionalExec();
