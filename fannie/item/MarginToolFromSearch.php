@@ -318,7 +318,7 @@ class MarginToolFromSearch extends FannieRESTfulPage
                                 FROM products AS p LEFT JOIN vendorItems AS v ON p.upc=v.upc
                                 LEFT JOIN vendors AS n ON v.vendorID=n.vendorID
                                 WHERE p.upc=? ORDER BY v.vendorID');
-            $tag = new ShelfTagModel($dbc);
+            $tag = new ShelftagsModel($dbc);
             for($i=0; $i<count($this->upcs);$i++) {
                 $upc = $this->upcs[$i];
                 if (!isset($this->newprices[$i])) {
@@ -347,7 +347,7 @@ class MarginToolFromSearch extends FannieRESTfulPage
             }
         }
 
-        echo $FANNIE_URL . 'newbatch/BatchManagementTool.php?startAt=' . $id;
+        echo $FANNIE_URL . 'batches/newbatch/BatchManagementTool.php?startAt=' . $id;
 
         return false;
     }
@@ -394,7 +394,7 @@ class MarginToolFromSearch extends FannieRESTfulPage
         $ret = '';
 
         // list super depts & starting margins
-        list($in_sql, $args) = $dbc->safeInClause($this->upcs);
+        list($in_sql, $args) = $dbc->safeInClause($this->depts);
         $superQ = "SELECT m.superID, super_name,
                     SUM(cost) AS totalCost,
                     SUM(CASE WHEN p.cost = 0 THEN 0 ELSE p.normal_price END) as totalPrice
