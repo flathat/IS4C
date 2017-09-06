@@ -788,6 +788,9 @@ class AdvancedItemSearch extends FannieRESTfulPage
                     SELECT p.upc, 
                         p.brand,
                         p.description, 
+                        CASE WHEN COALESCE(p.unitofmeasure,\'\') != \'\'
+                            THEN CONCAT(p.size, \' \',p.unitofmeasure)
+                            ELSE p.size END AS pkg,
                         m.super_name, 
                         p.department, 
                         d.dept_name,
@@ -857,6 +860,9 @@ class AdvancedItemSearch extends FannieRESTfulPage
             SELECT p.upc, 
                 p.brand,
                 p.description, 
+                CASE WHEN COALESCE(p.unitofmeasure,\'\') != \'\'
+                    THEN CONCAT(p.size, \' \',p.unitofmeasure)
+                    ELSE p.size END AS pkg,
                 m.super_name, 
                 p.department, 
                 d.dept_name,
@@ -939,13 +945,14 @@ class AdvancedItemSearch extends FannieRESTfulPage
         $ret .= '<table class="table search-table">';
         $ret .= '<thead><tr>
                 <th><input type="checkbox" onchange="toggleAll(this, \'.upcCheckBox\');" /></th>
-                <th>UPC</th><th>Brand</th><th>Desc</th><th>Super</th><th>Dept</th>
+                <th>UPC</th><th>Brand</th><th>Desc</th><th>Pkg</th><th>Super</th><th>Dept</th>
                 <th>Retail</th><th>On Sale</th><th>Sale</th>
                 </tr></thead><tbody>';
         foreach ($data as $upc => $record) {
             $ret .= sprintf('<tr>
                             <td><input type="checkbox" name="u[]" class="upcCheckBox" value="%s" %s 
                                 onchange="checkedCount(\'#selection-counter\', \'.upcCheckBox\');" /></td>
+                            <td>%s</td>
                             <td>%s</td>
                             <td>%s</td>
                             <td>%s</td>
@@ -959,6 +966,7 @@ class AdvancedItemSearch extends FannieRESTfulPage
                             \COREPOS\Fannie\API\lib\FannieUI::itemEditorLink($upc),
                             $record['brand'],
                             $record['description'],
+                            $record['pkg'],
                             $record['super_name'],
                             $record['department'], $record['dept_name'],
                             $record['normal_price'],
