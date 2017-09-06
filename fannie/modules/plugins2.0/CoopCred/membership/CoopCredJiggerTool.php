@@ -50,6 +50,7 @@ class CoopCredJiggerTool extends FanniePage {
     private $cn2;
     private $name1;
     private $name2;
+    private $comment;
     private $memberBeingEdited;
     private $programBankNumber;
     private $programPaymentDepartment;
@@ -120,7 +121,12 @@ class CoopCredJiggerTool extends FanniePage {
         $ccpModel = new CCredProgramsModel($dbc);
         $ccpModel->programID($this->programID);
         $inputOK = null;
-        $prog = array_pop($ccpModel->find());
+        /* PHP not quite happy with this idiom:
+         * "Only variables should be passed by reference Line"
+         * $prog = array_pop($ccpModel->find());
+         */
+        $progs = $ccpModel->find();
+        $prog = array_pop($progs);
         if ($prog == null) {
             $this->errors .= "<em>Error: Program ID {$this->programID} is not known.</em>";
             return True;
@@ -166,6 +172,7 @@ class CoopCredJiggerTool extends FanniePage {
             $this->amount = FormLib::get_form_value('amount');
             $this->cn1 = FormLib::get_form_value('memFrom');
             $this->cn2 = FormLib::get_form_value('memTo');
+            $this->comment = FormLib::get_form_value('comment');
 
             /* This "back" technique allows the form to display but loses any
              *  input values.
@@ -196,7 +203,7 @@ class CoopCredJiggerTool extends FanniePage {
                 return True;
             }
 
-            //EL From# as dummy for fix.
+            //EL From# as dummy for Fix.
             if ($this->cn1 > 0) {
                 $q = $dbc->prepare_statement("SELECT FirstName,LastName
                     FROM {$OP}custdata
@@ -251,13 +258,16 @@ class CoopCredJiggerTool extends FanniePage {
         $ret = "<form action=\"CoopCredJiggerTool.php\" method=\"post\">";
         $ret .= "<p style='font-size:1.2em; margin-top:1.0em;'>";
         $ret .= "<span style='font-size:1.4em;'>Program: {$this->programName}</span><br />";
-        $ret .= sprintf("\$%.2f will be %s %s (#%d)",
+        $ret .= sprintf("\$%.2f %s<br />will be %s %s (#%d)",
             $this->amount,
+            (($this->comment != "") ? " - $this->comment" : ""),
             (($this->amount > 0) ? "added (credited) to:" : "removed (debited) from:"),
             $this->name2,
             $this->cn2
         );
-        $ret .= "<br />The Program Bank account will not be changed.";
+        if ($this->memberBeingEdited != $this->programBankNumber) {
+            $ret .= "<br />The Program Bank account will not be changed.";
+        }
         $ret .= "</p>";
 
         $ret .= "<p>";
@@ -272,6 +282,7 @@ class CoopCredJiggerTool extends FanniePage {
         $ret .= "<input type=\"hidden\" name=\"memIN\" value=\"{$this->memberBeingEdited}\" />";
         $ret .= "<input type=\"hidden\" name=\"memEDIT\" value=\"{$this->memberBeingEdited}\" />";
         $ret .= "<input type=\"hidden\" name=\"programID\" value=\"{$this->programID}\" />";
+        $ret .= "<input type=\"hidden\" name=\"comment\" value=\"{$this->comment}\" />";
         $ret .= "</form>";
         
         return $ret;
@@ -288,22 +299,40 @@ class CoopCredJiggerTool extends FanniePage {
 
         $ret = '';
         $ret .= "<p>";
+        // Say what you're gonna do ...
+        $ret .= sprintf("\$%.2f %s<br />%s %s (Member #%d %s)",
+            $this->amount,
+            (($this->comment != "") ? " - $this->comment" : ""),
+            (($this->amount > 0) ? "Input (added) to" : "removed (debited) from"),
+            $this->programName,
+            $this->cn2,
+            $this->name2);
 
         $dtrans['trans_no'] = $this->getTransNo($this->CORRECTION_CASHIER,$this->CORRECTION_LANE);
         $dtrans['trans_id'] = 1;
-        $this->doInsert($dtrans,$this->amount,$this->dept,$this->cn2);
+        $this->doInsert($dtrans,$this->amount,$this->dept,$this->cn2,
+            $this->comment);
 
         $dtrans['trans_id']++;
-        $this->doInsert($dtrans,-1*$this->amount,$this->CORRECTION_DEPT,$this->cn2);
+        $this->doInsert($dtrans,-1*$this->amount,$this->CORRECTION_DEPT,$this->cn2, '');
 
         // Say what you did ...
-        $ret .= "OK.<br />";
-        $ret .= sprintf("Receipt: %d-%d-%d",
+        $ret .= "<br />OK.<br />";
+        $rrp  = "{$FANNIE_URL}admin/LookupReceipt/RenderReceiptPage.php";
+        $tdy = explode('-',date('Y-m-d'));
+        $transNum = sprintf("%d-%d-%d",
             $this->CORRECTION_CASHIER,
             $this->CORRECTION_LANE,
             $dtrans['trans_no']);
+        $target = " target='_rcpt'";
+        $rcpt = sprintf("<a href='%s?year=%d&month=%d&day=%d&receipt=%s'%s>%s</a>",
+                $rrp,
+                $tdy[0],$tdy[1],$tdy[2],
+                $transNum,$target,$transNum);
+        $ret .= sprintf("Receipt: %s", $rcpt);
         $ret .= "</p>";
 
+        // ... and link back to the Member Editor.
         $ret .= "<p><a href='{$FANNIE_URL}mem/MemberEditor.php?memNum={$this->memberBeingEdited}'>" .
             "Return to the main Member Editor page</a></p>";
 
@@ -333,14 +362,44 @@ class CoopCredJiggerTool extends FanniePage {
         $ret .= "</p>";
 
         $ret .= "<p>This form is for fixing problems, usually errors, not for Transfers.";
-        $ret .= "<br />The amounts involved do not come from or go back to the " .
-            "Program Bank account.</p>";
-        $ret .= "<p style=\"font-size:1.2em;\">";
-        $ret .= "Fix $ <input type=\"text\" name=\"amount\" size=\"5\" /> ";
+        if ($memNum != $this->programBankNumber) {
+            $ret .= "<br />The amounts involved do not come from or go back to the " .
+                "Program Bank account.";
+        }
+        $ret .= "</p>";
 
-        $ret .= "<ul><li>If fixing to <b>reduce</b> the amount the member has to spend,
+        $ret .= "<table border=0>";
+        $ret .= "<tr style='vertical-align:top;'>";
+        $ret .= "<td>";
+        $ret .= "<p style='font-size:1.2em; margin:0 1.5em 0 0;'>";
+        $ret .= "Fix $ <input type=\"text\" id=\"amount\" name=\"amount\" ".
+            "size=\"5\" value='" .
+            ((FormLib::get_form_value('amount',False) !== False)
+            ? FormLib::get_form_value('amount') : "")
+            . "'/> ";
+        $ret .= "</p>";
+        $ret .= "</td>";
+        $ret .= "<td colspan='1'>";
+        $ret .= "<p style='font-size:1.2em; margin:0;'>";
+        $ret .= "<input type='text' name='comment' size='30' maxlength='30' value='" .
+            ((FormLib::get_form_value('comment',False) !== False)
+            ? FormLib::get_form_value('comment') : "")
+            . "'/>";
+        $ret .= "</p>";
+        $ret .= "<p><span style='font-size:1.0em;'>Comment (optional), " .
+            "for example the reason for the fix.";
+        $ret .= "<br />(up to 30 characters)</span>";
+        $ret .= "</p>";
+        $ret .= "</td>";
+        $ret .= "</tr>";
+        $ret .= "</table>";
+
+        $toSpend = ($this->memberBeingEdited != $this->programBankNumber) ?
+            "the member has to spend" :
+            "in the Program Bank";
+        $ret .= "<ul><li>If fixing to <b>reduce</b> the amount {$toSpend},
             <br />prefix it with '-' : <span style='font-weight:bold;'>-10.87</span>";
-        $ret .= "<li>If fixing to <b>increase</b> the amount the member has to spend,
+        $ret .= "<li>If fixing to <b>increase</b> the amount {$toSpend},
             <br />use no prefix : <span style='font-weight:bold;'>14.27</span>";
         $ret .= "</ul></p>";
         $ret .= "<p>";
@@ -364,14 +423,22 @@ class CoopCredJiggerTool extends FanniePage {
     function getTransNo($emp,$register){
         global $FANNIE_TRANS_DB;
         $dbc = FannieDB::get($FANNIE_TRANS_DB);
-        $q = $dbc->prepare_statement("SELECT max(trans_no) FROM dtransactions WHERE register_no=? AND emp_no=?");
-        $r = $dbc->exec_statement($q,array($register,$emp));
+        $q = "SELECT max(trans_no) FROM dtransactions WHERE register_no=? AND emp_no=?";
+        $s = $dbc->prepare_statement($q);
+        $r = $dbc->exec_statement($s,array($register,$emp));
         $n = array_pop($dbc->fetch_row($r));
         return (empty($n)?1:$n+1);    
     // getTransNo()
     }
 
-    function doInsert($dtrans,$amount,$department,$cardno){
+    /* Insert rows for the input to dtransactions.
+     * @return True or an error message.
+     * @param department Department number for the purchase
+     * @param comment Optional, from the operator.
+     *
+     * Probably more robust to do this with a model.
+     */
+    function doInsert($dtrans,$amount,$department,$cardno,$comment=''){
         global $FANNIE_OP_DB, $FANNIE_TRANS_DB;
         $dbc = FannieDB::get($FANNIE_TRANS_DB);
         $OP = $FANNIE_OP_DB.$dbc->sep();
@@ -425,16 +492,21 @@ class CoopCredJiggerTool extends FanniePage {
         }
         $defaults['upc'] = abs($amount).'DP'.$department;
 
-        if (isset($this->depts[$department]))
-            $defaults['description'] = $this->depts[$department];
-        else {
-            $nameP = $dbc->prepare_statement("SELECT dept_name FROM {$OP}departments WHERE dept_no=?");
-            $nameR = $dbc->exec_statement($nameP,$department);
-            if ($dbc->num_rows($nameR) == 0) {
-                $defaults['description'] = 'CORRECTIONS';
-            } else {
-                $nameW = $dbc->fetch_row($nameR);
-                $defaults['description'] = $nameW['dept_name'];
+        if ($comment != "") {
+            $defaults['description'] = $comment;
+        } else {
+            if (isset($this->depts[$department]))
+                $defaults['description'] = $this->depts[$department];
+            else {
+                $nameQ = "SELECT dept_name FROM {$OP}departments WHERE dept_no=?";
+                $nameP = $dbc->prepare_statement($nameQ);
+                $nameR = $dbc->exec_statement($nameP,$department);
+                if ($dbc->num_rows($nameR) == 0) {
+                    $defaults['description'] = 'CORRECTIONS';
+                } else {
+                    $nameW = $dbc->fetch_row($nameR);
+                    $defaults['description'] = $nameW['dept_name'];
+                }
             }
         }
 
@@ -458,6 +530,24 @@ class CoopCredJiggerTool extends FanniePage {
         $dbc->exec_statement($prep, $args);
 
     // doInsert()
+    }
+
+    /**
+      User-facing help text explaining how to use a page.
+      @return [string] html content
+    */
+    public function helpContent()
+    {
+        $ret = '';
+        $ret .= "<p>This tool is for fixing problems, usually errors, not for Transfers " .
+            "or for Inputs.";
+        if ($this->memberBeingEdited != $this->programBankNumber) {
+            $ret .= "<br />The amounts involved do not come from or go back to the " .
+                "Program Bank account.";
+        }
+        $ret .= "<br />If the Fix needs to be back-dated see the System Administrator.";
+        $ret .= "</p>";
+        return $ret;
     }
 
     // class CoopCredJiggerTool

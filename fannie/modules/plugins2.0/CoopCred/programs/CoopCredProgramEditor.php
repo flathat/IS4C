@@ -1509,10 +1509,11 @@ $ccmModel->whichDB($FANNIE_PLUGIN_SETTINGS['CoopCredDatabase']);
       User-facing help text explaining how to 
       use a page.
       @return [string] html content
+        $hbIcon = $this->config->get('URL') . "src/img/buttons/help16.png";
     */
     public function helpContent()
     {
-        $hbIcon = $this->config->get('URL') . "src/img/buttons/help16.png";
+        $hbIcon = FannieConfig::config('URL', '') . "src/img/buttons/help16.png";
         $help = "";
         $help .= "<p>Use the <img src='". $hbIcon . "' /> " .
             "Question-mark helps in the page iteself.</p>

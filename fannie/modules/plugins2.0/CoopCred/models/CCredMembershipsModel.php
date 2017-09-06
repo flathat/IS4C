@@ -30,6 +30,10 @@ class CCredMembershipsModel extends BasicModel
 
     protected $name = "CCredMemberships";
 
+    /* Needs the "plugin:" prefix. The name is key to $FANNIE_PLUGIN_SETTINGS
+     */
+    protected $preferred_db = 'plugin:CoopCredDatabase';
+
     protected $unique = array('cardNo','programID');
 
     protected $columns = array(

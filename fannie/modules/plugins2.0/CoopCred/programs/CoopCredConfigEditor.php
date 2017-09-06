@@ -22,6 +22,7 @@
 
 *********************************************************************************/
 /*
+ *  6Sep2017 $edtd stub; Use whichDB.
  * 20Feb2015 Cloned from CoopCredProgramEditor.php for Coop Cred Configuration
  *           See the notes in CoopCredProgramEditor.php re program flow.
  */
@@ -60,6 +61,7 @@ class CoopCredConfigEditor extends FanniePage {
         if (FormLib::get_form_value('action') == ''){
             $dbc = FannieDB::get($FANNIE_PLUGIN_SETTINGS['CoopCredDatabase']);
             $config = new CCredConfigModel($dbc);
+            $config->whichDB($FANNIE_PLUGIN_SETTINGS['CoopCredDatabase']);
             $id = (FormLib::get_form_value('configno') != '') ?
                 (int)FormLib::get_form_value('configno') : 1;
             $config->configID($id);
@@ -175,6 +177,7 @@ class CoopCredConfigEditor extends FanniePage {
         if ($id != -1) {
 
             $config = new CCredConfigModel($dbc);
+            $config->whichDB($FANNIE_PLUGIN_SETTINGS['CoopCredDatabase']);
             $config->configID($id);
             $loadOK = $config->load();
             // Assuming the lookup/load didn't fail, load values to local vars.
@@ -356,6 +359,7 @@ class CoopCredConfigEditor extends FanniePage {
         $ret .= "</tr>";
 
         // First row of inputs.
+        $edtd = ''; // 6Sep2017 I don't know what it is supposed to be.
         $ret .= "<tr class='vTop'>";
         $ret .= "<td class='iCenter'{$edtd}>";
         /* Not editable.
@@ -528,6 +532,7 @@ class CoopCredConfigEditor extends FanniePage {
         /* Save changes to or Create the Config proper.
          */
         $config = new CCredConfigModel($dbc);
+        $config->whichDB($FANNIE_PLUGIN_SETTINGS['CoopCredDatabase']);
         $config->configID($configno);
 
         $config->dummyTenderCode($dummytender);

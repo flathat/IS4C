@@ -38,7 +38,7 @@ class ActivityReport extends FannieReportPage
     protected $errors = array();
     // headers vary by Program
     protected $report_headers = array('Date', 'Receipt', 'Amount', 'Type', 'Running');
-    protected $sort_direction = 1;
+    protected $sort_direction = 0;
     protected $required_fields = array('memNum', 'programID');
     protected $cardNo = 0;
     protected $programID = 0;
@@ -118,6 +118,33 @@ class ActivityReport extends FannieReportPage
         return parent::preprocess();
     }
 
+    /**
+      Define any CSS needed
+      @return A CSS string
+    */
+    function css_content(){
+    $css =
+"p.explain {
+    font-family: Arial;
+    font-size: 1.0em;
+    color: black;
+    margin: 0 0 0 0;
+}
+";
+    $css .=
+    "p.expfirst {
+        margin-top:1.2em;
+}
+";
+    $css .=
+"H4.report {
+    line-height:1.3em;
+    margin-bottom:0.2em;
+}
+";
+        return $css;
+    }
+
     public function report_description_content()
     {
         global $FANNIE_URL;
@@ -126,9 +153,9 @@ class ActivityReport extends FannieReportPage
             $this->memberFullName,
             $this->cardNo,
             $this->programName);
-        $desc[] = "<h2>$msg</h2>";
+        $desc[] = "<h3>$msg</h3>";
         // Date range
-        $desc[] = sprintf("<H3 class='report'>From %s to %s</H3>",
+        $desc[] = sprintf("<H4 class='report'>From %s to %s</H4>",
             (($this->dateFrom == $this->programStartDate)?"Program Start":
                 date("F j, Y",strtotime("$this->dateFrom"))),
             (($this->dateTo == date('Y-m-d'))?"Today":
@@ -168,52 +195,97 @@ class ActivityReport extends FannieReportPage
         }
         $fromSpec .= ")";
 
-        $q = $dbc->prepare_statement("SELECT charges,transNum,payments,
+        /*
+        $q = "SELECT cardNo,charges,transNum,payments,
             year(tdate) AS year, month(tdate) AS month, day(tdate) AS day,
             date(tdate) AS ddate
                 FROM $fromSpec AS s 
                 WHERE s.cardNo=?
                 AND programID=?{$dateSpec}
-                ORDER BY tdate ASC");
-        $args=array($this->cardNo,$this->programID);
+                ORDER BY tdate ASC,transNum";
+         */
+        $q = "SELECT cardNo,charges,transNum,payments,
+            year(tdate) AS year, month(tdate) AS month, day(tdate) AS day,
+            date(tdate) AS ddate
+                FROM $fromSpec AS s 
+                WHERE programID=?{$dateSpec}
+                ORDER BY tdate ASC,transNum";
+        /* Need to parse transNum and sort the parts numerically
+         * or reformat it as %05d-%05d-%05d so it will sort alpha.
+         * Same in Liability report.
+         */
+        $s = $dbc->prepare_statement($q);
+        $args=array($this->programID);
+        //$args=array($this->cardNo,$this->programID);
         if ($this->hasDates) {
             $args[] = "{$this->epoch} 00:00:00";
-            //$args[] = "$this->dateFrom 00:00:00";
             $args[] = "{$this->dateTo} 23:59:59";
         }
-        $r = $dbc->exec_statement($q,$args);
+        $r = $dbc->exec_statement($s,$args);
 
         $data = array();
         $rrp  = "{$FANNIE_URL}admin/LookupReceipt/RenderReceiptPage.php";
         $balance = 0.0;
         $opening = array();
-        while($w = $dbc->fetch_row($r)) {
-            if ($w['charges'] == 0 && $w['payments'] == 0) {
+        $lastRow = array();
+        while($row = $dbc->fetch_row($r)) {
+            if ($row['charges'] == 0 && $row['payments'] == 0) {
+                continue;
+            }
+            /* Possibly context from previous record
+             */
+
+            /* A Reimbursement-of-Bank pair:
+             *  First: non-bank, .payments is negative
+             *  Second: bank, .payments is positive, same absolute amount.
+             * Compare details of this item to the previous one to see
+             * If it is the second of a Reimbursement-of-Bank pair:
+             * - isBank and previous isn't
+             * - Same day
+             * - Same emp and reg, next trans
+             * - 'payment' inverse of previous
+             */
+            $reimburseBank = 0;
+            if ($row['cardNo'] == $this->programBankID && !empty($lastRow)) {
+                list($emp,$reg,$trans) = explode('-',$row['transNum']);
+                list($lastEmp,$lastReg,$lastTrans) = explode('-',$lastRow['transNum']);
+                if (
+                    $lastRow['cardNo'] != $this->programBankID &&
+                    $row['payments'] > 0 &&
+                    (($row['payments'] + $lastRow['payments']) == 0) &&
+                    (substr($row['tdate'],0,10) == substr($lastRow['tdate'],0,10)) &&
+                    $emp == $lastEmp &&
+                    $reg == $lastReg &&
+                    $trans == ($lastTrans + 1)
+                ) {
+                    $reimburseBank = 1;
+                }
+            }
+            //
+            if ($row['cardNo'] != $this->cardNo) {
+                $lastRow = $row;
                 continue;
             }
             $record = array();
-            // This Y/M/D format is sortable.
-            //$record[] = sprintf('%d/%d/%d',$w['year'],$w['month'],$w['day']);
-            // Is this format sortable?
-            $record[] = $w['ddate'];
+            $record[] = $row['ddate'];
             if (FormLib::get('excel') !== '') {
-                $record[] = $w['transNum'];
+                $record[] = $row['transNum'];
             } else {
                 // Receipt#, linked to Receipt Renderer, new tab
                 $record[] = sprintf("<a href='{$rrp}?year=%d&month=%d&day=%d&receipt=%s' " .
                     "target='_CCRA_%s'" .
                     ">%s</a>",
-                    $w['year'],$w['month'],$w['day'],
-                    $w['transNum'],
-                    $w['transNum'],
-                    $w['transNum']
+                    $row['year'],$row['month'],$row['day'],
+                    $row['transNum'],
+                    $row['transNum'],
+                    $row['transNum']
                 );
             }
             // Amount
-            $record[] = sprintf('%.2f', ($w['charges'] != 0 ? (-1 * $w['charges']) : $w['payments']));
-            $record[] = $this->getTypeLabel($w['charges'],$w['payments'],
-                $this->cardNo,$this->programBankID,$this->programID);
-            $balance += ($w['charges'] != 0 ? (-1 * $w['charges']) : $w['payments']);
+            $record[] = sprintf('%.2f', ($row['charges'] != 0 ? (-1 * $row['charges']) : $row['payments']));
+            $record[] = $this->getTypeLabel($row['charges'],$row['payments'],
+                $this->cardNo,$this->programBankID,$this->programID,$reimburseBank);
+            $balance += ($row['charges'] != 0 ? (-1 * $row['charges']) : $row['payments']);
             $record[] = sprintf('%.2f',$balance);
             /* If the start of the date range is later than programStart
              * and the current item dated earlier than that
@@ -222,21 +294,24 @@ class ActivityReport extends FannieReportPage
              * display the opening balance and then the first wanted item.
              */
             if (($this->dateFrom > $this->programStartDate) &&
-                ($w['ddate'] < $this->dateFrom)
+                ($row['ddate'] < $this->dateFrom)
             ) {
                 $opening = $record;
                 continue;
             }
-            if (!empty($opening) && ($w['ddate'] >= $this->dateFrom)) {
-            //if (true) {}
-                $opening[0] = '--';
-                $opening[1] = 'Opening';
+            if (!empty($opening) && ($row['ddate'] >= $this->dateFrom)) {
+                /* The year, month and day values have be be real, not 0.
+                 * otherwise the JS sort sorts them at the end.
+                 */
+                $opening[0] = $this->dateFrom;
+                $opening[1] = '--';
                 $opening[2] = $opening[4];
-                $opening[3] = 'Balance';
+                $opening[3] = 'Opening Balance';
                 $data[] = $opening;
                 $opening = array();
             }
             $data[] = $record;
+            $lastRow = $row;
         }
 
         return $data;
@@ -244,10 +319,13 @@ class ActivityReport extends FannieReportPage
 
     public function calculate_footers($data)
     {
-        $incomeLabels = array('Earning','Refund','Input',
-            'Opening','Balance',
+        // NB: Refund is a reverse Purchase, not Income.
+        $incomeLabels = array('Earning','Input','Transfer Back',
+            'Opening','Balance', 'Opening Balance',
             'Error: negative charges');
-        $outgoLabels = array('Purchase','Transfer Out','Distribution','Error: positive charges');
+        $outgoLabels = array('Purchase','Refund',
+            'Transfer Out','Distribution',
+            'Error: positive charges');
         $footers = array();
         $ret = array();
         $balance = 0.0;
@@ -340,7 +418,8 @@ class ActivityReport extends FannieReportPage
      * Needs to be externally configurable, in CCredPrograms,
      * but until then treat all programs the same.
      */
-    private function getTypeLabel ($charges, $payment, $memberNumber, $bankNumber, $programID) {
+    private function getTypeLabel ($charges, $payment, $memberNumber, $bankNumber,
+        $programID, $reimburseBank=0) {
         $label = "None";
         if ($memberNumber != $bankNumber) {
             $label = "p: $payment c: $charges";
@@ -359,7 +438,11 @@ class ActivityReport extends FannieReportPage
             if ($payment < 0) {
                 $label = "Distribution";
             } elseif ($payment > 0) {
-                $label = "Input";
+                if ($reimburseBank) {
+                    $label = "Transfer Back";
+                } else {
+                    $label = "Input";
+                }
             } elseif ($charges > 0) {
                 $label = "Error: positive charges";
             } elseif ($charges < 0) {

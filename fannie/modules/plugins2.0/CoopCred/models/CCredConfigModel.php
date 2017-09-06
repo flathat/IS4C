@@ -31,6 +31,10 @@ class CCredConfigModel extends BasicModel
     // The actual name of the table.
     protected $name = 'CCredConfig';
 
+    /* Needs the "plugin:" prefix. The name is key to $FANNIE_PLUGIN_SETTINGS
+     */
+    protected $preferred_db = 'plugin:CoopCredDatabase';
+
     protected $columns = array(
         'configID' => array('type'=>'SMALLINT(6)', 'default'=>1, 'primary_key'=>True,
             'increment'=>False),

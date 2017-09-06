@@ -197,7 +197,7 @@ See also: Coop Cred History Task
             $laneR = $dbL->query($laneQ);
             if ($laneR === False) {
                 echo $this->cronMsg("Failed query on: ".$lane['host'] .
-                " query: $query");
+                " query: $laneQ");
                 $errors = True;
                 continue;
             }

@@ -31,6 +31,10 @@ class CCredMemCreditBalanceModel extends ViewModel
     // Actual name of view being created.
     protected $name = "CCredMemCreditBalance";
 
+    /* Needs the "plugin:" prefix. The name is key to $FANNIE_PLUGIN_SETTINGS
+     */
+    protected $preferred_db = 'plugin:CoopCredDatabase';
+
     protected $columns = array(
     'programID' => array('type'=>'INT'),
     'cardNo' => array('type'=>'INT'),

@@ -30,6 +30,10 @@ class CCredHistorySumModel extends BasicModel
 
     protected $name = "CCredHistorySum";
 
+    /* Needs the "plugin:" prefix. The name is key to $FANNIE_PLUGIN_SETTINGS
+     */
+    protected $preferred_db = 'plugin:CoopCredDatabase';
+
     protected $columns = array(
         // FK to coop_cred.CCredPrograms
         'programID' => array('type'=>'INT', 'not_null'=>True, 'default'=>0, 'index'=>True),

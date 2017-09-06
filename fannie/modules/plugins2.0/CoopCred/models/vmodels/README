@@ -1,0 +1,5 @@
+What is this about? It causes the install/plugins page to abort
+Sep 24 01:21:36 posdev.westendfood.coop fannie[27921]: (debug) Dropped view CCredHistoryToday prior to re-creating.
+Sep 24 01:21:36 posdev.westendfood.coop fannie[27921]: (debug) Created view CCredHistoryToday specified in CCredHistoryTodayModel
+Sep 24 01:21:36 posdev.westendfood.coop fannie[27921]: (debug) Invalid accessor: CCredHistoryTodayModel:: generate Line 1333, /var/www/IS4C/fannie/classlib2.0/data/models/BasicModel.php
+

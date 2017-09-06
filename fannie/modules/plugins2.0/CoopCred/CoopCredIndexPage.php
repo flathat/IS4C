@@ -297,10 +297,18 @@ class CoopCredIndexPage extends FanniePage
       User-facing help text explaining how to 
       use a page.
       @return [string] html content
+        $hbIcon = $this->config->get('URL') . "src/img/buttons/help16.png";
     */
+    /*
+        Site Map crashes "Call to a member function get() on a non-object" if $config
+    if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {}
+    if (isset($FANNIE_COOP_ID) && $FANNIE_COOP_ID == 'WEFC_Toronto') {}
+    $FCI = FannieConfig::config('COOP_ID', '');
+    if ($FCI == 'WEFC_Toronto') {}
+     */
     public function helpContent()
     {
-        $hbIcon = $this->config->get('URL') . "src/img/buttons/help16.png";
+        $hbIcon = FannieConfig::config('URL', '') . "src/img/buttons/help16.png";
         $help = "";
         $help .= "<p>Use the <img src='". $hbIcon . "' /> " .
             "Question-mark helps in the page iteself.</p>

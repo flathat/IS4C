@@ -22,14 +22,16 @@
 
 *********************************************************************************/
 
-/* Things TO DO.
+/*
+ *  7Jul16 EL Use namespaced MemberModule to keep it from being listed twice.
+ * Things TO DO.
  * 21Mar15:
  *  Is usage of getEditJavascript() to load the JS for Ajax correct?.
  *  Detect actual changes, then get and use the modifiedBy value.
  * For bootstrapped v.2 re-code the table with floating divs.
  */
 
-class CoopCredMember extends MemberModule 
+class CoopCredMember extends \COREPOS\Fannie\API\member\MemberModule
 {
 
     protected $regularMemberMin = 1;
@@ -316,15 +318,22 @@ class CoopCredMember extends MemberModule
 
         if ($memNum == $programBankNumber) {
             $today = date('Y-m-d');
-            $cellContent = "<p style='margin:0em; font-family:Arial;line-height:1.0em;'>
-                <a href=\"{$FANNIE_URL}{$this->pluginHome}reports/ProgramEvents/".
-                "ProgramEventsReport.php?date1=&amp;date2=&amp;card_no={$memNum}".
+            $todayM = date('m');
+            $fiscalY = date('Y');
+            if ($todayM < 4) {
+                $fiscalY--;
+            }
+            $startFiscal = sprintf("%d-04-01", $fiscalY);
+            $cellContent = "<p style='margin:0em; font-family:Arial;line-height:1.0em;'>";
+            $reportLink = "<a href=\"{$FANNIE_URL}{$this->pluginHome}reports/ProgramEvents/".
+                "ProgramEventsReport.php?date1={$startFiscal}&amp;date2=&amp;card_no={$memNum}".
                 "&amp;sortable=on" .
                 "&amp;programID={$programID}\"
-                title='List inputs to and payments from the program before today'
+                title='List inputs to and payments from the program this fiscal year'
                 target='_coop_cred_events'
-                >Event History</a>
-                <br />
+                >Events this Fiscal</a>";
+            $cellContent .= $reportLink;
+            $reportLink = "
                 <a href=\"{$FANNIE_URL}{$this->pluginHome}reports/ProgramEvents/".
                 "ProgramEventsReport.php?date1={$today}&amp;date2={$today}".
                 "&amp;sortable=on" .
@@ -333,8 +342,19 @@ class CoopCredMember extends MemberModule
                 title='List inputs to and payments from the program today'
                 target='_coop_cred_events'
                 >Events Today</a>
-                </p>
                 ";
+            $cellContent .= "<br />" . $reportLink;
+            $reportLink = "<a id='arlink' name='arlink' " .
+                "href=\"{$FANNIE_URL}{$this->pluginHome}reports/" .
+                "Activity/ActivityReport.php?" .
+                "date1={$startFiscal}&amp;" .
+                "memNum={$memNum}&amp;programID={$programID}\"" .
+                " title='List inputs to and payments from the program'" .
+                " target='_coop_cred_activity'" .
+                ">" .
+                "Activity this Fiscal</a>";
+            $cellContent .= "<br />" . $reportLink;
+            $cellContent .= "</p>";
         } else {
             $template = '<input type="text" size=8 maxlength=10 id="maxbal" ' .
                 'name="maxbal" value="%.2f" >';
@@ -382,10 +402,16 @@ class CoopCredMember extends MemberModule
                 title='Input (deposit) external funds to the Program Account'
                 >Input Coop Cred</a>";
         } elseif ($memNum >= $this->regularMemberMin && $memNum <= $this->regularMemberMax) {
+            $todayM = date('m');
+            $fiscalY = date('Y');
+            if ($todayM < 4) {
+                $fiscalY--;
+            }
+            $startFiscal = sprintf("%d-04-01", $fiscalY);
             $reportLink = "<a id='arlink' name='arlink' " .
                 "href=\"{$FANNIE_URL}{$this->pluginHome}reports/" .
                 "Activity/ActivityReport.php?" .
-                "memNum={$memNum}&amp;programID={$programID}\"" .
+                "memNum={$memNum}&amp;programID={$programID}&amp;date1={$startFiscal}\"" .
                 " title='List earnings and purchases for this member'" .
                 " target='_blank'" .
                 "><p style='margin:0em; font-family:Arial;line-height:1.0em;'>" .
@@ -409,6 +435,9 @@ class CoopCredMember extends MemberModule
             "Let the Member make purchases against money in an account. " .
             "<br />A Member may have an account in (be a member of) more than one Program." .
             "<br />'Balance' shows how much is left in the account." .
+            "<br />'Max Balance' The maximum Credit the Member may acquire. " .
+            "0.00 means to use the default for the Program. Enter another value to override " .
+            "the Program default." .
             "<br />Un-ticking 'OK' will suspend the account when member data is refreshed on lanes. " .
             "<br />Use the 'Transfer' link to add money to the account from the Program Bank." .
             "<br />The Member is allowed to use all accounts in the Program dropdown " .
@@ -465,6 +494,7 @@ class CoopCredMember extends MemberModule
         //$dbc = $this->db();
         global $FANNIE_URL;
         global $FANNIE_PLUGIN_LIST,$FANNIE_PLUGIN_SETTINGS;
+        global $FANNIE_UPDATE_LANES;
 
         if (!isset($FANNIE_PLUGIN_LIST) || !in_array('CoopCred', $FANNIE_PLUGIN_LIST)) {
             return '';
@@ -531,9 +561,12 @@ class CoopCredMember extends MemberModule
                  * There doesn't seem to be a mechanism for displaying them
                  *  if they are returned here.
                  */
-                $laneTest = $obj->pushToLanesCoopCred();
-                if ($laneTest != true) {
-                    break;
+                if (!isset($FANNIE_UPDATE_LANES) ||
+                    $FANNIE_UPDATE_LANES == True) {
+                    $laneTest = $obj->pushToLanesCoopCred();
+                    if ($laneTest != true) {
+                        break;
+                    }
                 }
             }
             /* I.e. was it an update? */
@@ -568,9 +601,12 @@ class CoopCredMember extends MemberModule
                      * There doesn't seem to be a mechanism for displaying them
                      *  if they are returned here.
                      */
-                    $laneTest = $ccmModel->pushToLanesCoopCred();
-                    if ($laneTest != true) {
-                        return 'Error: Problem adding Coop Cred membership data to lane.<br />';
+                    if (!isset($FANNIE_UPDATE_LANES) ||
+                        $FANNIE_UPDATE_LANES == True) {
+                        $laneTest = $ccmModel->pushToLanesCoopCred();
+                        if ($laneTest != true) {
+                            return 'Error: Problem adding Coop Cred membership data to lane.<br />';
+                        }
                     }
                 }
             }

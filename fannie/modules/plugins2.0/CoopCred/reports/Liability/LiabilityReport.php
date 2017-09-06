@@ -35,7 +35,8 @@ class LiabilityReport extends FannieReportPage
 {
 
     public $themed = true;
-    public $description = "[Coop Cred Liability Report] Coop Cred: Summary of Inputs, Payments, Purchases and Unspent for each Program.";
+    public $description = "[Coop Cred Liability Report] Coop Cred:
+        Summary of Inputs, Payments, Purchases and Unspent for each Program.";
     public $report_set = 'CoopCred';
     protected $title = "Fannie: Coop Cred Program Liability Report";
     protected $header = "Coop Cred Program Liability Report";
@@ -53,6 +54,7 @@ class LiabilityReport extends FannieReportPage
     protected $no_sort_but_style = true;
     // For in-page sorting
     protected $sortable = false;
+    protected $printerFriendly = false;
 
     function preprocess(){
 
@@ -119,6 +121,7 @@ class LiabilityReport extends FannieReportPage
             $this->sortable = FormLib::get_form_value('sortable','0');
             $this->subTotals = FormLib::get_form_value('subTotals','0');
             $this->dbSortOrder = FormLib::get_form_value('dbSortOrder','DESC');
+		    $this->printerFriendly = FormLib::get_form_value('printerFriendly','0');
             if ($this->sortable == True) {
                 if ($this->reportType == 'summary') {
                     $this->sort_column = 0; // 1st column is 0
@@ -203,6 +206,9 @@ class LiabilityReport extends FannieReportPage
          *  an HTML tag
          */
         $ret = array();
+        if ($this->printerFriendly) {
+            return $ret;
+        }
         $ret[] = sprintf("<H3 class='report'>Coop Cred: Inputs, Payments,
             Purchases and Unspent for %s<br />From %s to %s</H3>",
             (($this->programID == 0) ? "<br />{$this->programName}" :
@@ -300,13 +306,13 @@ class LiabilityReport extends FannieReportPage
                 'Member<br />Unspent',
                 'Disbursements -<br />Payments'
             );
-            $selectFields = "programID, cardNo, charges, payments, tdate";
+            $selectFields = "programID, cardNo, charges, payments, tdate, transNum";
             $todayQuery = "";
             if ($this->dateTo == date('Y-m-d')) {
                 $todayQuery = " UNION SELECT {$selectFields} FROM CCredHistoryToday";
             }
-            //c.FirstName, c.LastName,
             $query = "SELECT h.programID, h.cardNo, h.charges, h.payments, h.tdate,
+                h.transNum,
                 m.isBank,
                 p.programName
                 FROM (SELECT {$selectFields} FROM CCredHistory{$todayQuery}) as h
@@ -318,7 +324,11 @@ class LiabilityReport extends FannieReportPage
                 WHERE 1=1 {$programWhere}
                 AND c.personNum =1
                 AND h.tdate BETWEEN ? AND ?
-                ORDER BY h.programID, h.cardNo";
+                ORDER BY h.programID, h.tdate, h.transNum";
+            /* Need to parse transNum and sort the parts numerically
+             * or reformat it as %05d-%05d-%05d so it will sort alpha.
+             * Same in Activity report.
+             */
 
 
         // summary
@@ -363,6 +373,7 @@ class LiabilityReport extends FannieReportPage
             $lastProgramID = 0;
             $record = array('',0,0,0,0,0,0,0);
             $rowCount = 0;
+            $lastRow = array();
             while ($row = $dbc->fetch_array($results)) {
                 if ($row['programID'] != $lastProgramID && $lastProgramID != 0) {
                     // Finish the Program row.
@@ -408,23 +419,53 @@ class LiabilityReport extends FannieReportPage
                         $record[5] = $row['charges'];
                     }
                 } else {
+                    /* Compare details of this item to the previous one to see
+                     * If it is the second of a Reimbursement-of-Bank pair:
+                     *   make it reverse the previous action.
+                     * - isBank and previous isn't
+                     * - Same day
+                     * - Same emp and reg, next trans
+                     * - 'payment' inverse of previous
+                     */
+                    $reimburseBank = 0;
                     if ($row['isBank'] == 1) {
-                        if ($row['payments'] > 0) {
-                            $record[1] += $row['payments'];
-                        } else {
+                        list($emp,$reg,$trans) = explode('-',$row['transNum']);
+                        list($lastEmp,$lastReg,$lastTrans) = explode('-',$lastRow['transNum']);
+                        if (
+                            $lastRow['isBank'] == 0 &&
+                            $row['payments'] > 0 &&
+                            (($row['payments'] + $lastRow['payments']) == 0) &&
+                            (substr($row['tdate'],0,10) == substr($lastRow['tdate'],0,10)) &&
+                            $emp == $lastEmp &&
+                            $reg == $lastReg &&
+                            $trans == ($lastTrans + 1)
+                        ) {
+                            $reimburseBank = 1;
+                        }
+                        if ($reimburseBank) {
                             $record[2] += $row['payments'];
+                        } else {
+                            if ($row['payments'] > 0) {
+                                $record[1] += $row['payments'];
+                            } else {
+                                $record[2] += $row['payments'];
+                            }
                         }
                     } else {
+                        /* Payments is self-correcting for Reimbursement-of-Bank
+                         * because $row['payments'] can be + or - .
+                         */
                         $record[4] += $row['payments'];
                         $record[5] += $row['charges'];
                     }
                 }
                 $lastProgramID = $row['programID'];
+                $lastRow = $row;
                 $rowCount++;
             }
             if ($rowCount > 0) {
-                // Finish the last Program row.
-                $record[2] = ($record[2] * -1); // as positive
+                // Finish the last Program record.
+                $record[2] = ($record[2] * -1); // Disbursements as positive
                 $record[3] = ($record[1] - $record[2]);
                 $record[6] = ($record[4] - $record[5]);
                 $record[7] = ($record[2] - $record[4]);
@@ -447,6 +488,9 @@ class LiabilityReport extends FannieReportPage
     */
     function report_end_content(){
         $ret = array();
+        if ($this->printerFriendly) {
+            return $ret;
+        }
         $ret[] = "<p class='explain'><br /><a name='notes'><b>Notes:</b></a></p>";
         $ret[] = "<p class='explain'><b>Total</b> of <b>Undisbursed</b>" .
             " is the difference between Total Inputs and Total Disbursements." .
@@ -600,10 +644,17 @@ class LiabilityReport extends FannieReportPage
         </div>
         <div class="form-group">
             <label for="sortable" class="col-sm-4 control-label"
-title="Tick to display with sorting from column heads; un-tick for a plain formt."
->Sort on Column Heads</label>
+            title="Tick to display with sorting from column heads; un-tick for a plain formt."
+            >Sort on Column Heads</label>
             <input type="checkbox" name="sortable" id="sortable" /> <!-- CHECKED / -->
         </div>
+
+        <div class="form-group">
+                <label class="col-sm-4 control-label" for="printerFriendly"
+                title="Tick to reduce the amount of explanation on the report."
+                >Printer Friendly</label>
+                <input class="" type="checkbox" name="printerFriendly" id="printerFriendly" />
+        </div><!-- /.form-group -->
     </div><!-- /.col-sm-5 -->
 </div><!-- /.row -->
 <p>

@@ -61,6 +61,8 @@ class ProgramEventsReport extends FannieReportPage {
     protected $sortable = false;
     protected $dateFrom = "";
     protected $dateTo = "";
+    protected $transferOut = 0;
+    protected $otherOut = 0;
 
     function preprocess(){
 
@@ -82,6 +84,7 @@ class ProgramEventsReport extends FannieReportPage {
         }
 
         $config = new CCredConfigModel($dbc);
+        $config->whichDB($FANNIE_PLUGIN_SETTINGS['CoopCredDatabase']);
         $config->configID(1);
         $loadOK = $config->load();
         if (!$loadOK) {
@@ -106,6 +109,7 @@ class ProgramEventsReport extends FannieReportPage {
             $programID = (int)$_REQUEST['programID'];
 
             $ccpModel = new CCredProgramsModel($dbc);
+            $ccpModel->whichDB($FANNIE_PLUGIN_SETTINGS['CoopCredDatabase']);
             $ccpModel->programID($programID);
             $prog = array_pop($ccpModel->find());
             if ($prog != null) {
@@ -231,7 +235,8 @@ class ProgramEventsReport extends FannieReportPage {
             LEFT JOIN {$OP}departments m ON m.dept_no = d.department
             WHERE d.department = {$this->paymentDepartment}
               AND ({$dte} BETWEEN ? AND ?)
-            ORDER BY DATE_FORMAT(d.{$dte}, '%Y-%m-%d %H:%i')";
+            ORDER BY d.{$dte}, d.card_no";
+            //ORDER BY DATE_FORMAT(d.{$dte}, '%Y-%m-%d %H:%i')";
         $args = array();
         $args[] = $date1 . ' 00:00:00';
         $args[] = $date2 . ' 23:59:59';
@@ -249,8 +254,8 @@ class ProgramEventsReport extends FannieReportPage {
           Build array of results, without totals.
         */
         $ret = array();
-        $transferOut = 0;
-        $otherOut = 0;
+        $this->transferOut = 0;
+        $this->otherOut = 0;
         $rowCount = 0;
         while ($row = $dbc->fetch_array($result)){
             $memberNumber = $row['card_no'];
@@ -264,15 +269,17 @@ class ProgramEventsReport extends FannieReportPage {
             if ($row['trans_status'] == 'R') {
                 if ($memberNumber == $this->programBankID) {
                     /* $transferOut is not used.
-                    $transferOut += $row['total'];
                      */
+                    $this->transferOut += $row['total'];
                     $suffix = " Refund";
                     continue;
                 } else {
                     /* $otherOut is not used.
-                    $otherOut += $row['total'];
                      */
+                    //$this->otherOut += $row['total'];
+                    $row['total'] = 0.00;
                     $suffix = " Reversed";
+                    $row['Comment'] = "X " . $row['Comment'];
                 }
             }
             $record = array();
@@ -383,6 +390,11 @@ class ProgramEventsReport extends FannieReportPage {
             "<br />It is relative to the starting day of the report" .
             " and thus may not be meaningful if the opening balance was not zero." .
             "</p>";
+        $ret[] = "<p class='explain'><b>X Comment</b>".
+            " Items with 'X' at the start of the Comment" .
+            " are not included in the Balance" .
+            " because the amount is in the following item." .
+            "</p>";
         $ret[] = "<p class='explain'><b><a href='{$_SERVER['PHP_SELF']}?pid=" .
             $this->programID . "'>" .
             "Start again from the form.</a></b></p>";
@@ -399,11 +411,13 @@ class ProgramEventsReport extends FannieReportPage {
             foreach($data as $row){
                 $sumProgram += $row[5];
             }
+            $sumProgram += $this->otherOut;
             return array('Balance',null,null,null,null,number_format($sumProgram,2),'');
         } else {
             foreach($data as $row){
                 $sumProgram += $row[4];
             }
+            $sumProgram += $this->otherOut;
             return array('Balance',null,null,null,number_format($sumProgram,2),'');
         }
     }
@@ -442,6 +456,7 @@ class ProgramEventsReport extends FannieReportPage {
             echo "<select id='programID' name='programID' class='form-control'>";
             echo "<option value=''>Choose a Program</option>";
             $ccpModel = new CCredProgramsModel($dbc);
+            $ccpModel->whichDB($FANNIE_PLUGIN_SETTINGS['CoopCredDatabase']);
             $today = date('Y-m-d');
             foreach($ccpModel->find() as $prog) {
                 $desc = $prog->programName();
