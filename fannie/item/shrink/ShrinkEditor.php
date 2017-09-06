@@ -20,6 +20,9 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 *********************************************************************************/
+/*
+ * EL: Report Total Retail and Total Cost instead of UnitPrice and Total Price
+ */
 
 require(dirname(__FILE__) . '/../../config.php');
 if (!class_exists('FannieAPI')) {
@@ -76,10 +79,12 @@ class ShrinkEditor extends FannieRESTfulPage
             $args[] = $json['register_no'];
             $args[] = $json['trans_no'];
             $args[] = $json['trans_id'];
+            //$args[] = 'IS NULL';
             $args[] = $json['store_id'];
 
             $prep = $dbc->prepare($query);
             $res = $dbc->execute($prep, $args);
+$dbc->logger("ShrinkUpdate: $query \n" . print_r($args,True));
             if ($res) {
                 $successes++;
             }
@@ -111,7 +116,7 @@ class ShrinkEditor extends FannieRESTfulPage
             SELECT upc,
                 description,
                 quantity,
-                unitPrice,
+                cost,
                 total,
                 emp_no,
                 register_no,
@@ -129,7 +134,7 @@ class ShrinkEditor extends FannieRESTfulPage
         $result = $dbc->query($query);
         $ret = '<form action="' . $_SERVER['PHP_SELF'] . '" method="post">';
         $ret .= '<table class="table">';
-        $ret .= '<tr><th>UPC</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Total</th>
+        $ret .= '<tr><th>UPC</th><th>Description</th><th>Qty</th><th>Total Cost</th><th>Total Retail</th>
                  <th>Reason</th><th>Loss</th></tr>';
         while ($row = $dbc->fetch_row($result)) {
             $id = array(
@@ -149,7 +154,7 @@ class ShrinkEditor extends FannieRESTfulPage
                         $row['upc'], $id,
                         $row['description'],
                         $row['quantity'],
-                        $row['unitPrice'],
+                        $row['cost'],
                         $row['total']);
             $ret .= '<td><select name="reason[]" class="form-control">';
             foreach ($reasons as $id => $label) {
@@ -168,9 +173,11 @@ class ShrinkEditor extends FannieRESTfulPage
         }
         $ret .= '</table>';
         $ret .= '<p>
-            <button type="submit" class="btn btn-default">Update Quantities</button>
+            <button type="submit" class="btn btn-default">Update Items</button>
             |
             <a href="ShrinkTool.php" class="btn btn-default">Enter More Items</a>
+            |
+            <a href="index.php" class="btn btn-default">Home</a>
             </p>';
         $ret .= '</form>';
 
