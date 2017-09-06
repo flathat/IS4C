@@ -22,6 +22,12 @@
 *********************************************************************************/
 
 /* ChangeLog
+ * 24Aug2017 Begin support of CiviGroup 41 Email Opt-In and Fannie memEmailOption.
+ * 31May2016 Fix using $insertMembership for both _membership and _membership_log,
+ *            i.e. use $insertMembershipLog.
+ *            But luckily there was no apparent harm/loss because $inserMembership
+ *             wasn't being used for INSERTs.
+ * 31Jan2016 Option changeReportLevel to control verbosity of logging.
  * 24May2015 Option to fill in placeholder NEW MEMBER records after every run.
  * 22Apr2015 For CiviCRM 4.6.2
  *           More vars in the external config file.
@@ -73,13 +79,17 @@ Add records that don't exist in the other database,
 
 /* Return an array of all the IS4C data for a single member.
  *  For WEFC_Toronto there is never more than one person for custdata.CardNo
- *  None of the other tables has more than one row for a given card_no.
+ *  None of the other tables, except Notes, has more than one row for
+ *  a given card_no.
  *  In Civi, there can be more than one _phone, _email, _address.
 */
 function selectIS4C ($member_id) {
 
     global $dbConn2;
     global $dieMail;
+    global $FANNIE_COOP_ID;
+    global $supportVolunteerInterest;
+    global $debug;
 
     $selWhere = "1";
 
@@ -88,6 +98,16 @@ function selectIS4C ($member_id) {
     $orderBy = "";
 
     $distinct = "";
+
+    /* I have trouble understanding passing NULL between
+     * MySQL and PHP. Try using is_null() to test PHP vars.
+     */
+    $optInChunk1 = ($FANNIE_COOP_ID == 'WEFC_Toronto')
+        ? ", COALESCE(o.opt_in, -1) AS opt_in"
+        : "";
+    $optInChunk2 = ($FANNIE_COOP_ID == 'WEFC_Toronto')
+        ? "LEFT JOIN memEmailOption o ON c.CardNo = o.card_no"
+        : "";
 
     $selectMember = "SELECT $distinct
 c.CardNo
@@ -100,11 +120,13 @@ c.CardNo
 , d.start_date, d.end_date
 , t.pref
 , r.upc as member_card_upc
+{$optInChunk1}
 FROM custdata c
 LEFT JOIN meminfo m ON c.CardNo = m.card_no
 LEFT JOIN memDates d ON c.CardNo = d.card_no
 LEFT JOIN memContact t ON c.CardNo = t.card_no
 LEFT JOIN memberCards r ON c.CardNo = r.card_no
+{$optInChunk2}
 WHERE c.CardNo = $member_id
 $orderBy
 $selLimit;";
@@ -122,6 +144,19 @@ $selLimit;";
 
     // Should this test for >1 row? >1 not expected.
     $row = $dbConn2->fetch_row($member);
+
+    /* Volunteer Interest
+     */
+    if ($supportVolunteerInterest) {
+        $vQ = "SELECT cardno FROM memberNotes WHERE cardno = $member_id
+            AND note LIKE '%volunteer%'";
+        $vR = $dbConn2->query("$vQ");
+        $row['Volunteer'] = ($dbConn2->numRows($vR) > 0) ? 1 : 0;
+        if ($debug) {
+            $msg = "row[Volunteer]: {$row["Volunteer"]}";
+            goOrDie($msg);
+        }
+    }
 
     return($row);
 
@@ -200,6 +235,46 @@ function getCiviSecondPhone($contactId) {
 // getCiviSecondPhone()
 }
 
+
+/* Return the member's current status in a CiviCRM Group.
+ * Return:
+ * '' if not in the group
+ * .status if in it and NOT NULL. (Added, Removed, Pending)
+ * 'NULL' if .status IS NULL
+ */
+function getCiviGroupStatus($civiContactId, $groupID) {
+    global $dbConn;
+    global $dieMail;
+
+    $functionName = "getCiviGroupStatus";
+    $retVal = '';
+
+    $sel = "SELECT COALESCE(status,'NULL') as status
+        FROM civicrm_group_contact
+    WHERE contact_id = $civiContactId AND group_id = $groupID";
+
+    $rslt = $dbConn->query("$sel");
+    if ( $dbConn->errno ) {
+        $message = sprintf("% failed: %s\n", $functionName, $dbConn->error);
+        dieHere("$message", $dieMail);
+    }
+
+    if ( $rslt ) {
+        if ( $dbConn->num_rows($rslt) > 0 ) {
+            $row = $dbConn->fetch_row($rslt);
+            $retVal = $row['status'];
+        }
+    } else {
+        $msg = sprintf("%s failed on: %s", $functionName, $sel);
+        dieHere("$msg", $dieMail);
+    }
+
+    return($retVal);
+
+// getCiviGroupStatus()
+}
+
+
 /* Return an array of all the is_primary CiviCRM data for a single member.
  * Use is_primary=1 to get only the first/primary email,address,phone
 */
@@ -209,12 +284,21 @@ function selectCivi ($member_id) {
     global $dieMail;
     global $memberCardTable;
     global $memberCardField;
+    global $FANNIE_COOP_ID;
+    global $optInGroupID;
 
     $selWhere = "1";
 
     // Syntax: "LIMIT 10"
     $selLimit = "";
     //$selLimit = "LIMIT 1";
+
+    $optInChunk1 = ($FANNIE_COOP_ID == 'WEFC_Toronto')
+        ? ", CASE WHEN g.status IS NULL THEN 'null' ELSE g.status END as opt_in_status"
+        : "";
+    $optInChunk2 = ($FANNIE_COOP_ID == 'WEFC_Toronto')
+        ? "LEFT JOIN civicrm_group_contact g ON m.contact_id = g.contact_id AND g.group_id = {$optInGroupID}"
+        : "";
 
     $selectMember = "SELECT
 c.id as contact_id
@@ -230,6 +314,7 @@ c.id as contact_id
  ,m.join_date, m.start_date, m.end_date, m.status_id as msi
 ,v.{$memberCardField} as mcard
 ,s.abbreviation as province
+{$optInChunk1}
 FROM
 civicrm_membership m INNER JOIN civicrm_contact c ON c.id = m.contact_id
 LEFT JOIN civicrm_email e ON m.contact_id = e.contact_id AND e.is_primary = 1
@@ -237,6 +322,7 @@ LEFT JOIN civicrm_address a ON m.contact_id = a.contact_id AND a.is_primary = 1
 LEFT JOIN civicrm_phone p ON m.contact_id = p.contact_id AND p.is_primary = 1
 LEFT JOIN {$memberCardTable} v ON m.contact_id = v.entity_id
 LEFT JOIN civicrm_state_province s ON s.id = a.state_province_id
+{$optInChunk2}
 WHERE m.id = $member_id
 ORDER BY c.id
 $selLimit;";
@@ -264,6 +350,7 @@ $selLimit;";
 function assignLocalI ($row, $is4cOps, $updated) {
 
     global $dbConn2;
+    global $dbNow;
     // table-arrays.
     // in core_op
     // Card#, Person#, Name
@@ -278,6 +365,8 @@ function assignLocalI ($row, $is4cOps, $updated) {
     global $memberCards;
     // in core_trans
     global $stockpurchases;
+    // Whether opted-in to WEFC Email
+    global $memEmailOption;
 
     // DML arrays.
     global $insertCustdata;
@@ -286,6 +375,7 @@ function assignLocalI ($row, $is4cOps, $updated) {
     global $insertMemDates;
     global $insertMemberCards;
     global $insertStockpurchases;
+    global $insertMemEmailOption;
 
     global $updateCustdata;
     global $updateMeminfo;
@@ -293,6 +383,7 @@ function assignLocalI ($row, $is4cOps, $updated) {
     global $updateMemDates;
     global $updateMemberCards;
     global $updateStockpurchases;
+    global $updateMemEmailOption;
 
     /* custdata
     */
@@ -553,6 +644,51 @@ WHERE card_no = $memberCards[card_no]
     /* stockpurchases
     */
 
+    /* #'a memEmailOption
+     * If 'Added' or 'Removed'
+     * null means it never existed, so do nothing, right?
+    */
+    if ( $row[opt_in_status] != "null" && $row[opt_in_status] != "" ) {
+
+        $memEmailOption[card_no] = $custdata[CardNo];
+        /* Will quoting array indexes run afoul of other quoting
+         * in the statement storage or execution?
+            $memEmailOption['opt_in'] = 1;
+         */
+        if ($row[opt_in_status] == "Added") {
+            $memEmailOption[opt_in] = 1;
+        } elseif ($row[opt_in_status] == "Removed") {
+            $memEmailOption[opt_in] = 0;
+        } elseif ($row[opt_in_status] == "Pending") {
+            $memEmailOption[opt_in] = 2;
+        } else {
+            // Default to opt_out
+            // Should never happen
+            $memEmailOption[opt_in] = 0;
+            //$noop = 1;
+        }
+
+        if ( $is4cOps[memEmailOption] == "insert" ) {
+            // Compose the insert statement.
+            $insertMemEmailOption = "INSERT INTO memEmailOption (
+card_no
+,opt_in
+)
+VALUES (
+        {$memEmailOption[card_no]}
+, {$memEmailOption[opt_in]}
+);";
+        } else {
+            // Compose the update statement.
+            $updateMemEmailOption = "UPDATE memEmailOption SET
+opt_in = $memEmailOption[opt_in]
+WHERE card_no = $memEmailOption[card_no]
+;";
+        }
+
+    // memberCards, if anything to record.
+    }
+
 // assignLocalI
 }
 
@@ -563,6 +699,8 @@ WHERE card_no = $memberCards[card_no]
 function assignLocalC ($row, $civiOps, $updated, $civiContactId, $civiMemberId) {
 
     global $dbConn;
+    global $dbNow;
+    global $debug;
     // Base
     global $civicrm_contact;
     // Membership#
@@ -572,7 +710,7 @@ function assignLocalC ($row, $civiOps, $updated, $civiContactId, $civiMemberId) 
     global $civicrm_membership_log;
     // email
     global $civicrm_email;
-    // addres
+    // address
     global $civicrm_address;
     // phone
     global $civicrm_phone;
@@ -580,6 +718,14 @@ function assignLocalC ($row, $civiOps, $updated, $civiContactId, $civiMemberId) 
     global $civicrm_value_identification_and_cred;
     // Datestamp
     global $civicrm_log;
+    // Group membership
+    global $civicrm_group_contact;
+    // History of group membership
+    global $civicrm_subscription_history;
+    global $supportEmailOptIn;
+    global $optInGroupID;
+    global $supportVolunteerInterest;
+    global $volunteerInterestGroupID;
 
     global $adminId;
 
@@ -593,6 +739,8 @@ function assignLocalC ($row, $civiOps, $updated, $civiContactId, $civiMemberId) 
     global $insertPhone;
     global $insertMemberCard;
     global $insertLog;
+    global $insertGroupContact;
+    global $insertSubscriptionHistory;
 
     global $updateContact;
     global $updateMembership;
@@ -601,9 +749,13 @@ function assignLocalC ($row, $civiOps, $updated, $civiContactId, $civiMemberId) 
     global $updatePhone;
     global $updateMemberCard;
     global $updateLog;
+    global $updateGroupContact;
+    global $updateSubscriptionHistory;
 
     global $memberCardTable;
     global $memberCardField;
+
+    $funcName = 'assignLocalC';
 
     // #'u
     /* In general:
@@ -776,7 +928,7 @@ function assignLocalC ($row, $civiOps, $updated, $civiContactId, $civiMemberId) 
     if ( $civiOps[civicrm_membership_log] == "insert" ) {
         $civicrm_membership_log['modified_id'] = "$adminId";
         $civicrm_membership_log['modified_date'] = "$updated";
-        $insertMembership = "INSERT INTO civicrm_membership_log
+        $insertMembershipLog = "INSERT INTO civicrm_membership_log
         (id
         , membership_id
         , status_id
@@ -1079,16 +1231,208 @@ function assignLocalC ($row, $civiOps, $updated, $civiContactId, $civiMemberId) 
     '$civicrm_log[modified_date]'
     )";
 
+    /* Add member to the Opt-In Group
+     * and note the History
+     */
+    if ($supportEmailOptIn) {
+    //$civicrm_group_contact[status] = $row['opt_in'];
+        //$civicrm_group_contact[status] =
+        if ($row['opt_in'] == 1) {
+            $status = 'Added';
+        } elseif ($row['opt_in'] == 0) {
+            $status = 'Removed';
+        } elseif ($row['opt_in'] == 2) {
+            $status = 'Pending';
+        } else {
+            $status = 'NULL';
+        }
+        if ($debug) {
+            $current_opt_in_status = getCiviGroupStatus($civiContactId, $optInGroupID);
+            $msg = "{$funcName}: Status at update: Civi:{$current_opt_in_status}  IS4C:{$status}".
+                " row[opt_in]: {$row["opt_in"]}";
+            goOrDie("$msg");
+        }
+        /* status = NULL is legitimate but is it what is wanted?
+         * Why would you ever want to INSERT NULL?
+            $civicrm_group_contact['status'] = ($status == 'NULL') ? NULL : "'{$status}'";
+         */
+        if ( $civiOps[civicrm_group_contact_opt] == "insert" ) {
+            if ($status != 'NULL' && $status != 'Pending') {
+                $civicrm_group_contact['group_id'] = $optInGroupID;
+                $civicrm_group_contact['contact_id'] = $civiContactId;
+                $civicrm_group_contact['status'] = $status;
+                $insertGroupContact[] = "INSERT INTO civicrm_group_contact
+                (id
+                , group_id
+                , contact_id
+                , status)
+                VALUES
+                ('',
+                {$civicrm_group_contact[group_id]},
+                {$civicrm_group_contact[contact_id]},
+                '{$civicrm_group_contact[status]}'
+                )";
+                // History
+                $civicrm_subscription_history['group_id'] = $optInGroupID;
+                $civicrm_subscription_history['contact_id'] = $civiContactId;
+                $civicrm_subscription_history['status'] = $status;
+                $civicrm_subscription_history['date'] = $dbNow;
+                $civicrm_subscription_history['method'] = 'Admin';
+                $insertSubscriptionHistory[] = "INSERT INTO civicrm_subscription_history
+                (id
+                , group_id
+                , contact_id
+                , status
+                , date
+                , method
+            )
+                VALUES
+                ('',
+                {$civicrm_subscription_history[group_id]},
+                {$civicrm_subscription_history[contact_id]},
+                '{$civicrm_subscription_history[status]}',
+                '{$civicrm_subscription_history['date']}',
+                '{$civicrm_subscription_history[method]}'
+                )";
+            }
+        } elseif ( $civiOps[civicrm_group_contact_opt] == "update" ) {
+            /* Only if it has changed, yes?
+             * Does IS4C=NULL mean Civi=Removed?
+             *   No. Set to NULL. Only Added may be mailed to.
+                    $civicrm_group_contact[status],
+             */
+            $current_opt_in_status = getCiviGroupStatus($civiContactId, $optInGroupID);
+            if ($debug) {
+                $msg = "{$funcName}: Status at update: Civi:{$current_opt_in_status}  IS4C:{$status}";
+                goOrDie("$msg >");
+            }
+            if ($current_opt_in_status != '' && 
+                    $current_opt_in_status != 'Pending'
+            )  {
+                if ($current_opt_in_status != $status &&
+                    $status != 'Pending'
+                )  {
+                    if ($status == 'NULL') {
+                        $status = NULL;
+                    }
+                    $civicrm_group_contact['status'] = $status;
+                    $civicrm_group_contact['group_id'] = $optInGroupID;
+                    $civicrm_group_contact['contact_id'] = $civiContactId;
+                    $updateGroupContact[] = sprintf("UPDATE civicrm_group_contact
+                        SET status = %s
+                        WHERE group_id = %d AND contact_id = %d",
+                    $dbConn->escape($civicrm_group_contact['status']),
+                    $civicrm_group_contact[group_id],
+                    $civicrm_group_contact[contact_id]
+                    );
+                    // History
+                    $civicrm_subscription_history['group_id'] = $optInGroupID;
+                    $civicrm_subscription_history['contact_id'] = $civiContactId;
+                    $civicrm_subscription_history['status'] = $status;
+                    $civicrm_subscription_history['date'] = $dbNow;
+                    $civicrm_subscription_history['method'] = 'Admin';
+                    $insertSubscriptionHistory[] = sprintf("INSERT INTO civicrm_subscription_history
+                    (id
+                    , group_id
+                    , contact_id
+                    , status
+                    , date
+                    , method
+                    )
+                    VALUES
+                    ('', %d, %d, %s, '%s', '%s')",
+                    $civicrm_subscription_history[group_id],
+                    $civicrm_subscription_history[contact_id],
+                    $dbConn->escape($civicrm_subscription_history[status]),
+                    $civicrm_subscription_history['date'],
+                    $civicrm_subscription_history[method]
+                    );
+                }
+            }
+        } else {
+            $noop = 1;
+            if ($debug) {
+                $message = "In {$funcName}: civiOps[civicrm_group_contact_opt] is >".
+                    $civiOps[civicrm_group_contact_opt] . "<";
+                goOrDie("$message >");
+            }
+        }
+    }
+
+    /* Add member to the Volunteer from Form Group
+     *  and note the History.
+     * All maintenance is Civi-side, no update.
+     */
+    if ($supportVolunteerInterest) {
+        if ( $civiOps[civicrm_group_contact_vol] == "insert" ) {
+            $civicrm_group_contact['group_id'] = $volunteerInterestGroupID;
+            $civicrm_group_contact['contact_id'] = $civiContactId;
+            $civicrm_group_contact['status'] = 'Added';
+            $insertGroupContact[] = "INSERT INTO civicrm_group_contact
+            (id
+            , group_id
+            , contact_id
+            , status)
+            VALUES
+            ('',
+            {$civicrm_group_contact[group_id]},
+            {$civicrm_group_contact[contact_id]},
+            '{$civicrm_group_contact[status]}'
+            )";
+            // History
+            $civicrm_subscription_history['group_id'] = $volunteerInterestGroupID;
+            $civicrm_subscription_history['contact_id'] = $civiContactId;
+            $civicrm_subscription_history['status'] = 'Added';
+            $civicrm_subscription_history['date'] = $dbNow;
+            $civicrm_subscription_history['method'] = 'Admin';
+            $insertSubscriptionHistory[] = "INSERT INTO civicrm_subscription_history
+            (id
+            , group_id
+            , contact_id
+            , status
+            , date
+            , method
+        )
+            VALUES
+            ('',
+            {$civicrm_subscription_history[group_id]},
+            {$civicrm_subscription_history[contact_id]},
+            '{$civicrm_subscription_history[status]}',
+            '{$civicrm_subscription_history['date']}',
+            '{$civicrm_subscription_history[method]}'
+            )";
+        } elseif ( $civiOps[civicrm_group_contact_vol] == "none" ) {
+            $noop = 1;
+            if ($debug) {
+                $message = "In {$funcName}: civiOps[civicrm_group_contact_vol] is >".
+                    $civiOps[civicrm_group_contact_vol] . "<";
+                goOrDie("$message >");
+            }
+        } else {
+            $noop = 1;
+            if ($debug) {
+                $message = "In {$funcName}: civiOps[civicrm_group_contact_vol] is >".
+                    $civiOps[civicrm_group_contact_vol] . "<";
+                goOrDie("$message >");
+            }
+        }
+    }
+
 // assignLocalC
 }
 
 /* Assign IS4C data to the local Civi arrays.
  * Create and store the $insert* and $update* statement arrays.
  * Only for civicrm_log and maybe civicrm_membership_log.
+ *
+ * 26Aug2017
+ * Why a separate function for logs?
+ * Should _subscription_history be here? Isn't, at this point.
 */
 function assignLocalClog ($row, $civiOps, $updated, $civiContactId, $civiMemberId) {
 
     global $dbConn;
+    global $dbNow;
     // Base
     global $civicrm_contact;
     // Membership#
@@ -1098,7 +1442,7 @@ function assignLocalClog ($row, $civiOps, $updated, $civiContactId, $civiMemberI
     global $civicrm_membership_log;
     // email
     global $civicrm_email;
-    // addres
+    // address
     global $civicrm_address;
     // phone
     global $civicrm_phone;
@@ -1228,7 +1572,7 @@ function toCivi($mode, $member, $updated) {
         goOrDie("In $funcName debug: $debug > ");
 
     if ($dryRun) {
-        echo "Bailing on dryRun.\n";
+        echo "$funcName bailing on dryRun.\n";
         return True;
     }
 
@@ -1286,12 +1630,14 @@ function toCivi($mode, $member, $updated) {
     $row = selectIS4C($member);
 
     if ($debug) {
-        $msg = "IS4C member: $member first: {$row[FirstName]} last: {$row[LastName]}
-        street: {$row[street]}
-        start_date: {$row[start_date]}
-        pref: {$row[pref]}
-        upc: {$row[member_card_upc]}
-        ";
+        // Quotes in escaped array indexes OK
+        $msg = "In {$funcName}: IS4C member: $member " .
+            "first: {$row["FirstName"]} last: {$row["LastName"]}\n" .
+        "street: " . trim($row["street"]) . "\n" .
+        "start_date: {$row["start_date"]}\n" .
+        "pref: {$row["pref"]}\n" .
+        "card upc: {$row["member_card_upc"]}\n" .
+        "";
         goOrDie($msg);
     }
 
@@ -1301,13 +1647,13 @@ function toCivi($mode, $member, $updated) {
     */
     $civiOps = searchCivi2($member, $row);    // see 't
     if ( preg_match("/^Error/", $civiOps[0][0]) ) {
-        dieHere("{$civiOps[0][0]}", $dieMail);
+        dieHere("In {$funcName} Error in civiOps: {$civiOps[0][0]}", $dieMail);
     }
 
     if ($debug) {
         print_r($civiOps);
         //foreach ($civiOps as $key => $value) { echo "civiOps $key :: $value\n";    }
-        goOrDie("After searchCivi2: civiContactId: $civiContactId");
+        goOrDie("In {$funcName}: After searchCivi2: civiContactId: $civiContactId");
     }
 
     // Populate the local arrays
@@ -1315,7 +1661,7 @@ function toCivi($mode, $member, $updated) {
     assignLocalC($row, $civiOps, $updated, $civiContactId, $member);
 
     if ($debug) {
-        goOrDie("Before toCivi DML for member: $member debug: $debug");
+        goOrDie("In {$funcName}: Before toCivi DML for member: $member debug: $debug");
         1;
     }
 
@@ -1364,7 +1710,7 @@ function toCiviLog($mode, $member, $updated) {
         goOrDie("In $funcName debug: $debug > ");
 
     if ($dryRun) {
-        echo "Bailing on dryRun.\n";
+        echo "$funcName bailing on dryRun.\n";
         return True;
     }
 
@@ -1423,12 +1769,12 @@ function toCiviLog($mode, $member, $updated) {
     $row = selectIS4C($member);
 
     if ($debug) {
-        $msg = "IS4C member: $member first: {$row[FirstName]} last: {$row[LastName]}
-        street: {$row[street]}
-        start_date: {$row[start_date]}
-        pref: {$row[pref]}
-        upc: {$row[member_card_upc]}
-        ";
+        $msg = "In {$funcName}: IS4C member: $member " .
+            "first: {$row["FirstName"]} last: {$row["LastName"]}\n" .
+        "street: {$row["street"]}\n" .
+        "start_date: {$row["start_date"]}\n" .
+        "pref: {$row["pref"]}\n" .
+        "card upc: {$row["member_card_upc"]}\n" .
         goOrDie($msg);
     }
 
@@ -1631,6 +1977,7 @@ function adjustIS4C($tempMember, $newMember, $updated) {
     global $is4cTableNames;
     global $is4cOps;
     global $dieMail;
+    global $supportEmailOptIn;
 
     $funcName = "adjustIS4C";
     if ( $debug > 0 )
@@ -1673,6 +2020,13 @@ function adjustIS4C($tempMember, $newMember, $updated) {
         $statements[] = "UPDATE memberCards set card_no = $newMember WHERE card_no = $tempMember";
     }
     $statements[] = "UPDATE memberNotes set cardno = $newMember WHERE cardno = $tempMember";
+    if ($supportEmailOptIn) {
+        /* This may not exist.
+         * How to use $is4cOps[memEmailOption] to know?
+         * Would it be insert, b/c the member is new?
+         */
+        $statements[] = "UPDATE memEmailOption set card_no = $newMember WHERE card_no = $tempMember";
+    }
     //   Set the datestamp to what it was originally, to agree with what Civi is now.
     $statements[] = "UPDATE custdata SET LastChange = '$updated' WHERE CardNo = $newMember";
     $statement = "";
@@ -1711,14 +2065,15 @@ function toIS4C($mode, $member, $updated) {
     global $is4cTableNames;
     global $dieMail;
 
+    $funcName = 'toIS4C';
     if ($debug)
-        $ans = readline("In toIS4C mode: $mode $member > ");
+        $ans = readline("In $funcName mode: $mode $member > ");
 
     // debug=2 allows inserts and updates while displaying messages.
     //$debug = 2;
 
     if ($dryRun) {
-        echo "Bailing on dryRun.";
+        echo "$funcName bailing on dryRun.";
         return True;
     }
 
@@ -1801,9 +2156,11 @@ function getLatestRun($file) {
 
 }
 
-// Clear the test records from the IS4C tables.
-// CardNo or card_no range between 4000 and 6000
+/* Clear the test records from the IS4C tables.
+ * CardNo or card_no range between 4000 and 6000
 function clearIS4C($low = 417, $high = 1500) {
+ */
+function clearIS4C($low = 0, $high = 0) {
 
     global $dbConn2;
     global $is4cTables;
@@ -1879,19 +2236,32 @@ function searchIS4C2($member) {
 
     global $dbConn2;
     global $dieMail;
+    global $FANNIE_COOP_ID;
+    global $supportEmailOptIn;
 
     $is4cOps = array();
+    /*
+     * Better  to depend on $supportEmailOptIn = 1?
+     */
+    $optInChunk1 = ($FANNIE_COOP_ID == 'WEFC_Toronto')
+        ? ", o.card_no as oCard"
+        : "";
+    $optInChunk2 = ($FANNIE_COOP_ID == 'WEFC_Toronto')
+        ? "LEFT JOIN memEmailOption o ON c.CardNo = o.card_no"
+        : "";
 
     $sel = "SELECT c.CardNo as cCard,
-    i.card_no as iCard,
-    t.card_no as tCard,
-    d.card_no as dCard,
-    r.card_no as rCard
+    i.card_no as iCard
+    , t.card_no as tCard
+    , d.card_no as dCard
+    , r.card_no as rCard
+{$optInChunk1}
     FROM custdata c
 LEFT JOIN meminfo i ON c.CardNo = i.card_no
 LEFT JOIN memContact t ON c.CardNo = t.card_no
 LEFT JOIN memDates d ON c.CardNo = d.card_no
 LEFT JOIN memberCards r ON c.CardNo = r.card_no
+{$optInChunk2}
     WHERE c.CardNo = ${member};";
 
     $rslt = $dbConn2->query("$sel");
@@ -1911,6 +2281,10 @@ LEFT JOIN memberCards r ON c.CardNo = r.card_no
         $is4cOps['memContact'] = ( $row[tCard] != "" ) ? "update" : "insert";
         $is4cOps['memDates'] = ( $row[dCard] != "" ) ? "update" : "insert";
         $is4cOps['memberCards'] = ( $row[rCard] != "" ) ? "update" : "insert";
+        // Defeat pending testing.
+        if (False && array_key_exists('oCard',$row)) {
+            $is4cOps['memEmailOption'] = ( $row[oCard] != "" ) ? "update" : "insert";
+        }
         break;
     }
 
@@ -1931,6 +2305,11 @@ function searchCivi2($member, $is4cData=array()) {
     global $memberCardTable;
     global $memberCardField;
     global $debug;
+    global $FANNIE_COOP_ID;
+    global $supportEmailOptIn;
+    global $optInGroupID;
+    global $supportVolunteerInterest;
+    global $volunteerInterestGroupID;
 
     // Because we can only return one thing, assign this global to avoid another lookup.
     global $civiContactId;
@@ -2011,6 +2390,28 @@ $selLimit;";
         break;
     }
 
+    if ($supportEmailOptIn) {
+        $status = getCiviGroupStatus($civiContactId, $optInGroupID);
+        if ($status == '') {
+            $civiOps['civicrm_group_contact_opt'] = "insert";
+        } else {
+            $civiOps['civicrm_group_contact_opt'] = "update";
+        }
+    }
+
+    /* For Volunteer.
+     * Only insert. The rest of maintenance is Civi-side only.
+     * "none" means "do nothing"; there is not "update". May not be needed.
+     */
+    if ($supportVolunteerInterest && $is4cData['Volunteer'] == 1) {
+        $status = getCiviGroupStatus($civiContactId, $volunteerInterestGroupID);
+        if ($status == '') {
+            $civiOps['civicrm_group_contact_vol'] = "insert";
+        } else {
+            $civiOps['civicrm_group_contact_vol'] = "none";
+        }
+    }
+
     if ( $debug )
         goOrDie("In searchCivi2: rows: $rows  civiContactId: $civiContactId");
 
@@ -2019,8 +2420,9 @@ $selLimit;";
 // searchCivi2
 }
 
-// Insert any new records for this Individual or Organization.
-// Return "OK" if all OK or abort returning message on any error.
+/* Insert any new records for this Individual or Organization.
+ * Return "OK" if all OK or abort returning message on any error.
+ */
 function insertToIS4C($mode) {
 
     global $dbConn2;
@@ -2032,17 +2434,23 @@ function insertToIS4C($mode) {
     global $insertMemDates;
     global $insertMemberCards;
     global $insertStockpurchases;
+    global $insertMemEmailOption;
 
     global $debug;
+
+    $funcName = 'isertToIS4C';
 
     $statements = array($insertMeminfo,
         $insertMemContact,
         $insertMemDates,
-        $insertMemberCards);
+        $insertMemberCards,
+        $insertMemEmailOption
+    );
     $statement = "";
 
-    if ( $debug > 0 )
-        echo "In insertToIS4C debug: $debug\n";
+    if ( $debug > 0 ) {
+        echo "In $funcName debug: $debug\n";
+    }
 
     foreach ($statements as $statement) {
         if ( $statement != "" ) {
@@ -2053,10 +2461,10 @@ function insertToIS4C($mode) {
             }
             $rslt = $dbConn2->query("$statement");
             if ( $dbConn2->errno ) {
-                return(sprintf("Error: Insert failed: %s\n", $dbConn2->error));
+                return(sprintf("Error in {$funcName}: Insert failed: %s\n", $dbConn2->error));
             }
             if ( ! $rslt ) {
-                return("Failed: $statement");
+                return("Failed at {$funcName}: $statement");
             }
         }
     }
@@ -2076,16 +2484,16 @@ function insertToIS4C($mode) {
             }
             $rslt = $dbConn2->query("$statement");
             if ( $dbConn2->errno ) {
-                return(sprintf("Error: Insert failed: %s\n", $dbConn2->error));
+                return(sprintf("Error in {$funcName}: Insert failed: %s\n", $dbConn2->error));
             }
             if ( ! $rslt ) {
-                return("Failed: $statement");
+                return("Failed at {$funcName}: $statement");
             }
         }
     }
     else {
         if ( $debug > 0 )
-            echo "No custdata to insert. Mode: $mode\n";
+            echo "In {$funcName} no custdata to insert. Mode: $mode\n";
         1;
     }
 
@@ -2109,17 +2517,22 @@ function updateIS4C($mode) {
     global $updateMemDates;
     global $updateMemberCards;
     global $updateStockpurchases;
+    global $updateMemEmailOption;
 
     global $debug;
+
+    $funcName = 'updateIS4C';
 
     $statements = array($updateMeminfo,
         $updateMemContact,
         $updateMemDates,
-        $updateMemberCards);
+        $updateMemberCards,
+        $updateMemEmailOption
+    );
     $statement = "";
 
     if ( $debug > 0 )
-        echo "In updateIS4C debug: $debug\n";
+        echo "In $funcName debug: $debug\n";
 
     foreach ($statements as $statement) {
         if ( $statement != "" ) {
@@ -2132,10 +2545,10 @@ function updateIS4C($mode) {
             }
             $rslt = $dbConn2->query("$statement");
             if ( $dbConn2->errno ) {
-                return(sprintf("Error: Update failed: %s\n", $dbConn2->error));
+                return(sprintf("Error in {$funcName}: Update failed: %s\n", $dbConn2->error));
             }
             if ( ! $rslt ) {
-                return("Failed: $statement");
+                return("Failed at {$funcName}: $statement");
             }
         }
     }
@@ -2151,16 +2564,16 @@ function updateIS4C($mode) {
             }
             $rslt = $dbConn2->query("$statement");
             if ( $dbConn2->errno ) {
-                return(sprintf("Error: Update failed: %s\n", $dbConn2->error));
+                return(sprintf("Error in {$funcName}: Update failed: %s\n", $dbConn2->error));
             }
             if ( ! $rslt ) {
-                return("Failed: $statement");
+                return("Failed at {$funcName}: $statement");
             }
         }
     }
     else {
         if ( $debug > 0 )
-            echo "No custdata to update. Mode: $mode\n";
+            echo "In $funcName no custdata to update. Mode: $mode\n";
         1;
     }
 
@@ -2171,8 +2584,9 @@ function updateIS4C($mode) {
 // updateIS4C
 }
 
-// Insert any new records for this Individual or Organization.
-// Return "OK" if all OK or abort returning message on any error.
+/* Insert any new records for this Individual or Organization.
+ * Return "OK" if all OK or abort returning message on any error.
+ */
 function insertToCivi() {
 
     global $dbConn;
@@ -2180,13 +2594,18 @@ function insertToCivi() {
 
     global $insertContact;
     global $insertMembership;
+    global $insertMembershipLog;
     global $insertEmail;
     global $insertAddress;
     global $insertPhone;
     global $insertMemberCard;
     global $insertLog;
+    global $insertGroupContact;
+    global $insertSubscriptionHistory;
 
     global $debug;
+
+    $funcName = 'insertToCivi';
 
     $statements = array();
     $statements[] = $insertContact;
@@ -2197,11 +2616,13 @@ function insertToCivi() {
     $statements = array_merge($statements,$insertPhone);
     $statements[] = $insertMemberCard;
     $statements[] = $insertLog;
+    $statements = array_merge($statements,$insertGroupContact);
+    $statements = array_merge($statements,$insertSubscriptionHistory);
 
     $statement = "";
 
     if ( $debug > 0 )
-        echo "In insertToCivi debug: $debug\n";
+        echo "In $funcName debug: $debug\n";
 
     foreach ($statements as $statement) {
         if ( $statement != "" ) {
@@ -2212,10 +2633,10 @@ function insertToCivi() {
             }
             $rslt = $dbConn->query("$statement");
             if ( $dbConn->errno ) {
-                return(sprintf("Error: Insert failed: %s\n", $dbConn->error));
+                return(sprintf("Error in {$funcName}: Insert failed: %s\n", $dbConn->error));
             }
             if ( ! $rslt ) {
-                return("Failed: $statement");
+                return("Failed at {$funcName}: $statement");
             }
         }
     }
@@ -2238,10 +2659,15 @@ function updateCivi() {
     global $updateAddress;
     global $updatePhone;
     global $updateMemberCard;
-    // civicrm_log is never updated, only inserted-to.
-    //global $updateLog;
+    global $updateGroupContact;
+    /* Logs are never updated, only inserted-to.
+     * civicrm_log
+     * global $updateLog;
+     * global $updateSubscriptionHistory;
+     */
 
     global $debug;
+    $funcName = 'updateCivi';
 
     $statements = array();
     $statements[] = $updateContact;
@@ -2250,11 +2676,12 @@ function updateCivi() {
     $statements = array_merge($statements,$updateAddress);
     $statements = array_merge($statements,$updatePhone);
     $statements[] = $updateMemberCard;
+    $statements = array_merge($statements,$updateGroupContact);
 
     $statement = "";
 
     if ( $debug > 0 )
-        echo "In updateCivi debug: $debug\n";
+        echo "In $funcName debug: $debug\n";
 
     foreach ($statements as $statement) {
         if ( $statement != "" ) {
@@ -2265,10 +2692,10 @@ function updateCivi() {
             }
             $rslt = $dbConn->query("$statement");
             if ( $dbConn->errno ) {
-                return(sprintf("Error: Update failed: %s\n", $dbConn->error));
+                return(sprintf("Error in {$funcName}: Update failed: %s\n", $dbConn->error));
             }
             if ( ! $rslt ) {
-                return("Failed: $statement");
+                return("Failed at {$funcName}: $statement");
             }
         }
     }
@@ -2294,6 +2721,8 @@ function clearIs4cWorkVars() {
     global $memberCards;
     // in core_trans
     global $stockpurchases;
+    // Whether opted-in to WEFC Email
+    global $memEmailOption;
 
     // in core_op
     // Card#, Person#, Name
@@ -2329,12 +2758,18 @@ function clearIs4cWorkVars() {
         $stockpurchases[$field] = "";
     }
 
+    $flds = array_keys($memEmailOption);
+    foreach ($flds as $field) {
+        $memEmailOption[$field] = "";
+    }
+
     global $insertCustdata;
     global $insertMeminfo;
     global $insertMemContact;
     global $insertMemDates;
     global $insertMemberCards;
     global $insertStockpurchases;
+    global $insertMemEmailOption;
 
     global $updateCustdata;
     global $updateMeminfo;
@@ -2342,6 +2777,7 @@ function clearIs4cWorkVars() {
     global $updateMemDates;
     global $updateMemberCards;
     global $updateStockpurchases;
+    global $updateMemEmailOption;
 
     $insertCustdata = array();
     $insertMeminfo = "";
@@ -2349,6 +2785,7 @@ function clearIs4cWorkVars() {
     $insertMemDates = "";
     $insertMemberCards = "";
     $insertStockpurchases = "";
+    $insertMemEmailOption = "";
 
     $updateCustdata = array();
     $updateMeminfo = "";
@@ -2356,6 +2793,7 @@ function clearIs4cWorkVars() {
     $updateMemDates = "";
     $updateMemberCards = "";
     $updateStockpurchases = "";
+    $updateMemEmailOption = "";
 
 // clearIs4cWorkVars
 }
@@ -2375,7 +2813,7 @@ function clearCiviWorkVars() {
     global $civicrm_membership_log;
     // email
     global $civicrm_email;
-    // addres
+    // address
     global $civicrm_address;
     // phone
     global $civicrm_phone;
@@ -2383,6 +2821,10 @@ function clearCiviWorkVars() {
     global $civicrm_value_identification_and_cred;
     // Datestamp
     global $civicrm_log;
+    // Current membership and status in a group.
+    global $civicrm_group_contact;
+    // History of membership and status in a group.
+    global $civicrm_subscription_history;
 
     $flds = array_keys($civicrm_contact);
     foreach ($flds as $field) {
@@ -2424,6 +2866,16 @@ function clearCiviWorkVars() {
         $civicrm_log[$field] = "";
     }
 
+    $flds = array_keys($civicrm_group_contact);
+    foreach ($flds as $field) {
+        $civicrm_group_contact[$field] = "";
+    }
+
+    $flds = array_keys($civicrm_subscription_history);
+    foreach ($flds as $field) {
+        $civicrm_subscription_history[$field] = "";
+    }
+
     /* SQL DML statements
     */
     global $insertContact;
@@ -2434,6 +2886,8 @@ function clearCiviWorkVars() {
     global $insertPhone;
     global $insertMemberCard;
     global $insertLog;
+    global $insertGroupContact;
+    global $insertSubscriptionHistory;
 
     global $updateContact;
     global $updateMembership;
@@ -2442,6 +2896,8 @@ function clearCiviWorkVars() {
     global $updatePhone;
     global $updateMemberCard;
     global $updateLog;
+    global $updateGroupContact;
+    global $updateSubscriptionHistory;
 
     /* SQL insert statements
      *  Are arrays if multiple is possible, e.g. email or phone
@@ -2454,6 +2910,8 @@ function clearCiviWorkVars() {
     $insertPhone = array();
     $insertMemberCard = "";
     $insertLog = "";
+    $insertGroupContact = array();
+    $insertSubscriptionHistory = array();
 
     /* SQL update statements
      *  Are arrays if multiple is possible, e.g. email or phone
@@ -2465,6 +2923,8 @@ function clearCiviWorkVars() {
     $updatePhone = array();
     $updateMemberCard = "";
     $updateLog = "";
+    $updateGroupContact = array();
+    $updateSubscriptionHistory = array();
 
 // clearCiviWorkVars
 }
@@ -3072,18 +3532,18 @@ if (!function_exists('cron_msg')) {
 set_time_limit(0);
  */
 
-/* Development-related vars.
+/* #'d Development-related vars.
 */
 /*
  * Controls some monitoring and info.
  * 0= production, 1=notify, no-write to db, 2=notify but write to db.
  */
-$debug = 0;
+$debug = 2;     // Restore to 0 for production
 /*
  * Whether dieHere() =1 sends email or =0 Displays the message.
  * Optional arg to dieHere(); defaults to 1.
  */
-$dieMail = 1;    // -> Restore to 1 for production
+$dieMail = 0;    // Restore to 1 for production
 /*
  * Used in composing vars for Civi db access.
  */
@@ -3092,7 +3552,7 @@ $dev = "";
 /*
  * 0=normal, 1=return from to[ISC4C|Civi]() without changing anything.
  */
-$dryRun = 0;
+$dryRun = 0;        // Restore to 0 for production
 
 /* The log files will be created if they don't exist
  * as long as fannie/logs is writeableC.
@@ -3146,7 +3606,9 @@ $is4cTableNames = array('custdata',
     'memContact',
     'memDates',
     'memberCards',
-    'stockpurchases');
+    'stockpurchases',
+    'memEmailOption'
+    );
 $civiTableNames = array('civicrm_contact',
     'civicrm_membership',
     'civicrm_email',
@@ -3154,7 +3616,10 @@ $civiTableNames = array('civicrm_contact',
     'civicrm_phone',
     "$memberCardTable",
     'civicrm_membership_log',
-    'civicrm_log');
+    'civicrm_log',
+    'civicrm_group_contact',
+    'civicrm_subscription_history'
+    );
 
     $civicrm_membership_status = array(
         'New' => 1,
@@ -3167,6 +3632,22 @@ $civiTableNames = array('civicrm_contact',
  *  Must exist in civicrm_membership_type.
  */
 $dummy_membership_type = NULL;
+
+/* Would these be better in Civi Config?
+ * Should COOP_ID block assignment?
+ */
+$supportEmailOptIn = 0;
+$supportVolunteerInterest = 0;
+$volunteerInterestGroupID = 0;
+$optInGroupID = 0;
+if ($FANNIE_COOP_ID == 'WEFC_Toronto') {
+    $supportEmailOptIn = 1;
+    $optInGroupID = ($dev == "") ? 42 : 41;
+    $optInTable = 'memEmailOption';
+    $supportVolunteerInterest = 1;
+    $volunteerInterestGroupID = ($dev == "") ? 30 : 57;
+    //echo "Done new opts assignments.\n";
+}
 
 /* CiviCRM civicrm_contact.id authorizing modifications.
  * Used in civicrm_log.
@@ -3279,13 +3760,20 @@ $stockpurchases = array(
     "card_no" => "",
     "x" => ""
 );
+// Whether member opted in to WEFC email
+$memEmailOption = array(
+    "card_no" => "",
+    "opt_in" => ""
+    );
 
 $is4cTables = array("core_op|custdata|CardNo",
     "core_op|meminfo|card_no",
     "core_op|memContact|card_no",
     "core_op|memDates|card_no",
     "core_op|memberCards|card_no",
-    "core_trans|stockpurchases|card_no");
+    "core_trans|stockpurchases|card_no",
+    "core_op|memEmailOption|card_no"
+);
 
 $insertCustdata = array();
 $insertMeminfo = "";
@@ -3293,6 +3781,7 @@ $insertMemContact = "";
 $insertMemDates = "";
 $insertMemberCards = "";
 $insertStockpurchases = "";
+$insertMemEmailOption = "";
 
 $updateCustdata = array();
 $updateMeminfo = "";
@@ -3300,6 +3789,7 @@ $updateMemContact = "";
 $updateMemDates = "";
 $updateMemberCards = "";
 $updateStockpurchases = "";
+$updateMemEmailOption = "";
 
 // Operation: insert or update
 $is4cOps = array();
@@ -3463,6 +3953,32 @@ $civicrm_log = array(
     "x" => ""
 );
 
+// Current membership and status in Group
+$civicrm_group_contact = array(
+    "id" => "",
+    "group_id" => "",
+    "contact_id" => "",
+    "status" => "",
+// usually not assigned
+    "location_id" => "",
+// usually not assigned
+    "email_id" => "",
+    "x" => ""
+);
+
+// History of membership and status in Group
+$civicrm_subscription_history = array(
+    "id" => "",
+    "contact_id" => "",
+    "group_id" => "",
+    "date" => "",
+    "method" => "",
+    "status" => "",
+// usually NULL
+    "tracking" => "",
+    "x" => ""
+);
+
 $civiTables = array("dbname|civicrm_contact|id",
     "dbname|civicrm_membership|contact_id",
     "dbname|civicrm_membership_log|membership_id",
@@ -3470,7 +3986,10 @@ $civiTables = array("dbname|civicrm_contact|id",
     "dbname|civicrm_address|contact_id",
     "dbname|civicrm_phone|contact_id",
     "dbname|{$memberCardTable}|contact_id",
-    "dbname|civicrm_log|entity_id");
+    "dbname|civicrm_log|entity_id",
+    "dbname|civicrm_group_contact|contact_id",
+    "dbname|civicrm_subscription_history|contact_id"
+);
 
 /* SQL insert statements
  *  Are arrays if multiple is possible, e.g. email or phone
@@ -3483,6 +4002,8 @@ $insertAddress = array();
 $insertPhone = array();
 $insertMemberCard = "";
 $insertLog = "";
+$insertGroupContact = array();
+$insertSubscriptionHistory = array();
 
 /* SQL update statements
  *  Are arrays if multiple is possible, e.g. email or phone
@@ -3494,6 +4015,8 @@ $updateEmail = array();
 $updatePhone = array();
 $updateMemberCard = "";
 $updateLog = "";
+$updateGroupContact = array();
+$updateSubscriptionHistory = array();
 
 // Operation: insert or update
 $civiOps = array();
@@ -3510,11 +4033,18 @@ clearCiviWorkVars();
 // The "@" prevents the error from being reported immediately,
 //  but the test further on will still see it.
 if ( ! $dev ) {
-$dbConn = new SQLManager($CIVICRM_SERVER,$CIVICRM_SERVER_DBMS,$CIVICRM_DB,
+    $dbConn = new SQLManager($CIVICRM_SERVER,$CIVICRM_SERVER_DBMS,
+        $CIVICRM_DB,
         $CIVICRM_SERVER_USER,$CIVICRM_SERVER_PW);
 } else {
-    $dbConn = new SQLManager($CIVICRM_SERVER,$CIVICRM_SERVER_DBMS,$CIVICRM_DB_DEV,
-            $CIVICRM_SERVER_USER_DEV,$CIVICRM_SERVER_PW_DEV);
+    $dbConn = new SQLManager($CIVICRM_SERVER,$CIVICRM_SERVER_DBMS,
+        $CIVICRM_DB,
+        $CIVICRM_SERVER_USER,$CIVICRM_SERVER_PW);
+    /*
+    $dbConn = new SQLManager($CIVICRM_SERVER,$CIVICRM_SERVER_DBMS,
+        $CIVICRM_DB_DEV,
+        $CIVICRM_SERVER_USER_DEV,$CIVICRM_SERVER_PW_DEV);
+     */
 }
 
 $message = $dbConn->error();
@@ -3594,7 +4124,7 @@ fwrite($reporter, "STARTED: $dbNow\n");
 /* End of open the log files */
 
 
-// #'N ->True in production.
+// #'N True in production.
 //     False in development, False to disable getting actual data and use local source instead.
 if ( False ) {
 
@@ -3742,7 +4272,7 @@ echo "Got real list in $outFile\n";
 else {
     // During dev't use this instead of getting from dbms
     echo "Using updateMembers.txt\n";
-    echo "dryRun: $dryRun\n";
+    echo "dryRun: $dryRun  debug: $debug\n";
     $allMembers = file("../logs/updateMembers_real.txt", FILE_IGNORE_NEW_LINES);
 }
 
@@ -3809,14 +4339,19 @@ while ( $ami <= $lastAmi ) {
         if ( $d1 == $d2 ) {
             $noChange++;
             $msg = " $m1:$d1 = $m2:$d2 -> do nothing\n";
-            fwrite($reporter, $msg);
-            if ( $debug > 0 )
+            if ( $changeReportLevel > 1 ) {
+                fwrite($reporter, $msg);
+            }
+            if ( $debug > 0 ) {
                 echo $msg;
+            }
         }
         elseif ( "$d1" < "$d2" ) {
             $msg = " $m1:$d1 < $m2:$d2 -> update $s1\n";
             $problems[] = $msg;
-            fwrite($reporter, $msg);
+            if ( $changeReportLevel > 0 ) {
+                fwrite($reporter, $msg);
+            }
             if ( $debug > 0 )
                 echo $msg;
             if ( $s1 == "I" ) {
@@ -3827,13 +4362,17 @@ while ( $ami <= $lastAmi ) {
                 toCivi("update", $m1, $d2);
             } else {
                 $msg = "Unknown s1 >${s1}< for update.";
-                fwrite($reporter, " $msg\n");
+                if ( $changeReportLevel > 0 ) {
+                    fwrite($reporter, " $msg\n");
+                }
                 dieHere("$msg", $dieMail);
             }
         }
         else {
             $msg = "How can ami# $prevAmi >$d1< be > >$d2< ?";
-            fwrite($reporter, " $msg\n");
+            if ( $changeReportLevel > 0 ) {
+                fwrite($reporter, " $msg\n");
+            }
             dieHere("$msg", $dieMail);
         }
 
@@ -3864,12 +4403,16 @@ while ( $ami <= $lastAmi ) {
                     $msg .= " as $asMember";
                 } else {
                     $msg = "Unknown s1 >${s1}< for add.";
-                    fwrite($reporter, " $msg\n");
+                    if ( $changeReportLevel > 0 ) {
+                        fwrite($reporter, " $msg\n");
+                    }
                     dieHere("$msg", $dieMail);
                 }
                 $msg .= "\n";
                 $problems[] = $msg;
-                fwrite($reporter, $msg);
+                if ( $changeReportLevel > 0 ) {
+                    fwrite($reporter, $msg);
+                }
                 // Force exit
                 $ami++;
             }
@@ -3899,14 +4442,20 @@ while ( $ami <= $lastAmi ) {
             $asMember = toCivi("insert", $m1, $d1);
             $msg .= " as $asMember";
         } else {
-            fwrite($reporter, " $msg\n");
+            if ( $changeReportLevel > 0 ) {
+                fwrite($reporter, " $msg\n");
+            }
             $msg2 = "Unknown s1 >${s1}< for add.";
-            fwrite($reporter, " $msg2\n");
+            if ( $changeReportLevel > 0 ) {
+                fwrite($reporter, " $msg2\n");
+            }
             dieHere("$msg2", $dieMail);
         }
         $msg .= "\n";
         $problems[] = $msg;
-        fwrite($reporter, $msg);
+        if ( $changeReportLevel > 0 ) {
+            fwrite($reporter, $msg);
+        }
 
         // Get the next pair.
         //  Shift the current #*2 to #*1.
@@ -3931,12 +4480,16 @@ while ( $ami <= $lastAmi ) {
                 $msg .= " as $asMember";
             } else {
                 $msg = "Unknown s1 >${s1}< for add.";
-                fwrite($reporter, " $msg\n");
+                if ( $changeReportLevel > 0 ) {
+                    fwrite($reporter, " $msg\n");
+                }
                 dieHere("$msg", $dieMail);
             }
             $msg .= "\n";
             $problems[] = $msg;
-            fwrite($reporter, $msg);
+            if ( $changeReportLevel > 0 ) {
+                fwrite($reporter, $msg);
+            }
             // Force exit
             $ami++;
         }
