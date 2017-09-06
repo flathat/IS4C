@@ -23,6 +23,12 @@
 
 /* --COMMENTS - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+ * 22Jan2016 EL WEFC_Toronto blocks for not-strtoupper()
+ *              description size=30
+ *              Code HTML input values with " so embedded ' are preserved:
+ *                brand, description, vendor
+ *              Re-organized fields.
+ *              "Shelf Tag Batch" instead of "Barcode page"
     * 25Mar2013 AT Merged changes between CORE and flathat
     * 21Mar2013 EL Hacked FANNIE_POUNDS_AS_POUNDS until established.
     *              Use input description width 30, not 27, OK per AT.
@@ -46,6 +52,7 @@ $dbc = FannieDB::get($FANNIE_OP_DB);
 $upc = BarcodeLib::padUPC(FormLib::get('upc'));
 $product = new ProductsModel($dbc);
 $product->upc($upc);
+$product->load();
 $tagData = $product->getTagData();
 
 $prodQ = $dbc->prepare_statement("SELECT p.*,s.superID FROM products AS p
@@ -84,56 +91,69 @@ $ppo = $tagData['pricePerUnit'];
 <body>
 <div class="container-fluid">
 <form method='post' action='addShelfTag1.php'>
-<input type='hidden' name=upc value='<?php echo $upc; ?>'>
-<div class="form-group form-inline">
-    <label>Description</label>
-    <input type='text' name='description' maxlength=30
-        class="form-control focus"
-<?php
-echo "value='".strtoupper($desc)."'";
-?>
->
+<div class="form-group form-inline" style="margin-top:0.75em;">
 <label>Brand</label>
     <input type='text' name='brand' maxlength=15 
         class="form-control"
 <?php 
-echo "value='".strtoupper($brand)."'"; 
+if (isset($FANNIE_COOP_ID) && $FANNIE_COOP_ID == 'WEFC_Toronto') {
+    echo "value=\"".$brand."\"";
+} else {
+    echo "value=\"".strtoupper($brand)."\"";
+}
 ?>
 >
-</div>
+
+    <label>Description</label>
+    <input type='text' name='description' maxlength=30 size=30
+        class="form-control focus"
+<?php
+if (isset($FANNIE_COOP_ID) && $FANNIE_COOP_ID == 'WEFC_Toronto') {
+    echo "value=\"".$desc."\"";
+} else {
+    echo "value=\"".strtoupper($desc)."\"";
+}
+?>
+>
+</div><!-- form group -->
+
 <div class="form-group form-inline">
-<label>Units</label>
-    <input type='text' name='units' size=10
+<label>Case size</label>
+    <input type='text' name='units' size=5
         class="form-control"
 <?php
 echo "value='".$units."'";
 ?>
 >
-<label>Size</label>
+
+<label>Package Size</label>
 <input type='text' name='size' size=10
     class="form-control"
 <?php
 echo "value='".$size."'";
 ?>
 >
-</div>
+</div><!-- form group -->
+
 <div class="form-group form-inline">
-<label>PricePer</label>
+<label>Price</label>
+<span class="alert-success h3">
+    <strong><?php printf("%.2f",$price); ?></strong>
+</span>
+&nbsp; <label>PricePer</label>
 <input type=text name=ppo
     class="form-control"
 <?php echo "value=\"$ppo\"" ?> />
+</div><!-- form group -->
+
+<div class="form-group form-inline">
 <label>Vendor</label>
 <input type='text' name='vendor'
     class="form-control"
 <?php
-echo "value='$vendor'";
+echo "value=\"$vendor\"";
 ?>
 >
-</div>
-<div class="form-group form-inline">
-<label># Tags</label>
-<input type="text" name="count" size="3" value="1" 
-    class="form-control" />
 <label>SKU</label>
 <input type='text' name='sku' size=8
     class="form-control"
@@ -141,25 +161,29 @@ echo "value='$vendor'";
 echo "value='".$sku."'";
 ?>
 >
-</div>
-<p>
-<label>Price</label>
-<span class="alert-success h3">
-    <strong><?php printf("%.2f",$price); ?></strong>
-</span>
-<input type='hidden' name='price' size=8 value=<?php echo $price; ?> />
-<button type="submit" class="btn btn-default"
-    name="submit" value="New">Create Tag</button>
-</p>
+</div><!-- form group -->
+
 <div class="form-group form-inline">
-<label>Barcode page</label>
+<label># Tags</label>
+<input type="text" name="count" size="3" value="1" 
+    class="form-control" />
+
+<label>Shelf Tag batch</label>
 <select name=subID class="form-control">
 <?php
 $qm = new ShelfTagQueuesModel($dbc);
 echo $qm->toOptions($superID);
 ?>
 </select>
-</div>
+</div><!-- form group -->
+
+<div class="form-group form-inline">
+<button type="submit" class="btn btn-default"
+    name="submit" value="New">Create Tag</button>
+</div><!-- form group -->
+
+<input type='hidden' name=upc value='<?php echo $upc; ?>'>
+<input type='hidden' name='price' size=8 value=<?php echo $price; ?> />
 </form>
 </div>
 </body>
