@@ -56,6 +56,10 @@ class SiteMap extends FannieRESTfulPage
             if (!$obj->discoverable) {
                 continue;
             }
+            /* 3 set's from CORE issue #718 esp setConfig */
+            $obj->setConfig($this->config);
+            $obj->setLogger($this->logger);
+            $obj->setConnection($this->connection);
             $reflect = new ReflectionClass($obj);
             $url = $FANNIE_URL . str_replace($FANNIE_ROOT, '', $reflect->getFileName());
             if (!isset($sets[$obj->page_set])) {
