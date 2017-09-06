@@ -22,7 +22,61 @@
 *********************************************************************************/
 
 /* #'Z--COMMENTZ { -  - - - - - - - - - - - - - - - - - - - - - -
+5Apr16 This was written for Mike Chudy's Excel export format that is no longer used.
+       It is, at this point, so hacked and strange and jiggered as to be
+       worse than useless.  If you want to do something like this, start over.
 
+       3Apr16 vendorItems additions didn't happen, why?
+              Because the vendorID assignment was wrong, was 0, not 10.
+
+       3Apr16 Needs to INSERT to ProdUpdate after all changes to products.
+             Gather $upcs array().  See $BATCHES/UNFI/load-classes/*.php
+              and their calls to ProdUpdateModel->logManyUpdates.
+              OR
+INSERT INTO prodUpdate (
+            upc,
+            description,
+            price,
+            salePrice,
+            cost,
+            dept,
+            tax,
+            fs,
+            scale,
+            modified,
+            forceQty,
+            noDisc,
+            inUse,
+            likeCode,
+            storeID
+)
+SELECT
+p.upc,
+description,
+normal_price,
+special_price,
+cost,
+department,
+tax,
+foodstamp,
+scale,
+modified,
+qttyEnforced,
+discount,
+inUse,
+NULL,
+store_id
+FROM products p
+WHERE upc in implode($upcs,',')
+WHERE department in (2000,8200)
+AND upc REGEXP "^0{8}6"
+
+    30Mar16 Jiggered for canning_lables, a raw Chudy format not massaged for Export.
+            - minimal coding for this increasingly hacky thing
+            - Don't overwrite or update any existing record
+            - default_vendor_id =10
+            - line_item_discountable =1
+            -------------------
     20Aug13 Quantity-enforced prices with more than two decimals.
      4Jul13 Require admin priv.
     20Jun13 7-digit PLU in UPC field.
@@ -150,6 +204,21 @@ if (basename(__FILE__) != basename($_SERVER['PHP_SELF'])) {
     return;
 }
 $dbc = FannieDB::get($FANNIE_OP_DB);
+if (!$dbc) {
+    echo "DB::get failed.\n";
+    return;
+} else {
+    $r = $dbc->query("SELECT NOW() as now FROM dual");
+    $j = $dbc->fetch_array($r);
+    //echo "now: " . $j['now'] . "\n";
+    $x = print_r($dbc,true);
+    //echo $x;
+    //return;
+    $noop = 1;
+}
+
+/*
+ */
 require($FANNIE_ROOT.'auth/login.php');
 
 if ( !validateUserQuiet('admin') ) {
@@ -288,42 +357,55 @@ if ( isset($_REQUEST['product_csv']) && $_REQUEST['product_csv'] != "" ) {
         // Remove one (there may only be one) split from the list and process it.
         $current = array_pop($filestoprocess);
 
-        // #'C --CONSTANTS- - - - - - - - - - - - - - - - - - - - - - - - - - - -
+        /* #'C --CONSTANTS- - - - - - - - - - - - - - - - - - - - - - - - - - - -
+            A:0 B:1 C:2 D:3 E:4 F:5 G:6 H:7 I:8 J:9 K:10 L:11 M:12 N:13
+            O:14 P:15 Q:16 R:17 S:18 T:19 U:20 V:21 W:22 X:23 Y:24 Z:25
 
-        /* Indexes to the array returned by fgetcsv, the column number in the .csv file.
+            The fields I really need:
+            A=0 UPC
+            B=1 vendor name
+            C=2 department name
+            D=3 brand
+            R=17 description
+            Q=16 price
+            O=14 cost
+            L=11 case-size
+            M=12 size
+            N=13 unitofmeasure
+
+         * Indexes to the array returned by fgetcsv, the column number in the .csv file.
             "first" = 0.
         {
         */
         $UPC = 0;                               // G:A:0 "Supplier UPC". UPC or PLU.
-        $SEARCH = 1;                        // B:B:1 search_description, for productUser.description
-//  $STD = 1;                               // B:B:1 STD y/n "in use". Values?
-        $VENDOR_NAME = 2;               // E:C:2 Distributor
-        $ORDER_CODE = 3;                // -:D:3 ORDER_CODE, from Buying system
-        $DEPT_NAME = 4;                 // F:E:4 Department
-        $BRAND_NAME = 5;                // C:F:5 Brand deptMargin.dept_ID
+        $SEARCH = 5; // fake                // B:B:1 search_description, for productUser.description
+        $VENDOR_NAME = 1;               // E:C:2 Distributor
+        $ORDER_CODE = 15; // fake don't use               // -:D:3 ORDER_CODE, from Buying system
+        $DEPT_NAME = 2;                 // F:E:4 Department
+        $BRAND_NAME = 3;                // C:F:5 Brand deptMargin.dept_ID
 // 14Jan13 PRODUCER_MEMBER  apparently dropped.
 // $PRODUCER_MEMBER = 8;        // S:I:8 Producer Member
 // 15Jan13 New.
 // G - "in use" (this is new, as per email this evening)
-        $IN_USE = 6;                        // -:G:6 products:inUse
+        $IN_USE = 15;  // fake dont'use      // -:G:6 products:inUse
 // H - qtyfrc (1 for true, 0 or blank for false, new as per email this evening)
-        $QTYFRC = 7;                        // -:H:7 products:qttyEnforced
+        $QTYFRC = 15;   // fake dont'use     // -:H:7 products:qttyEnforced
 // I - like code (has to be manually created in IS4C) 
         $MIXMATCH = 8;                  // -:I:8 products:mixmatchcode
 // J - qcount (count of items of a quantity price, like "3" for "3 lemons for a dollar", blank means no q price)
-        $QUANTITY = 9;                  // -:J:9 products:quantity qcount
+        $QUANTITY = 15;   // fake don't use // -:J:9 products:quantity qcount
 // K - qprice (the quantity price, new this evening, blank for none)
-        $GROUP_PRICE = 10;          // -:K:10 products:groupprice qprice
+        $GROUP_PRICE = 15;  // fake don't use        // -:K:10 products:groupprice qprice
 // L - qstrict (whether or not the quantity price requires that many at least,
 //              or just over-rides the per-unit price, new this evening,
 //              1 for true -> 2, 0 or blank for false -> 1 )
 //              Error if 2 and normal_price = ""
-        $PRICE_METHOD = 11;         // -:L:11 products:pricemethod qstrict
+        $PRICE_METHOD = 15; // fake don't use        // -:L:11 products:pricemethod qstrict
 // 15Jan13 End New.
 //
 // 15Feb13 New.
-        $DISCOUNTABLE = 12;         // -:M:12 Item discountable 0=no 1=yes
-        $DISCOUNT_TYPE = 13;        // -:N:13 Whether to use "special" i.e. sale prices and for which kind of customer:
+        $DISCOUNTABLE = 15;  // fake don't use       // -:M:12 Item discountable 0=no 1=yes
+        $DISCOUNT_TYPE = 15; // fake don't use       // -:N:13 Whether to use "special" i.e. sale prices and for which kind of customer:
 /*
 discounttype indicates if an item is on sale
     0 => not on sale
@@ -331,29 +413,31 @@ discounttype indicates if an item is on sale
     2 => on sale for members
 Values greater than 2 may be used, but results will
 vary based on whose code you're running
+            A:0 B:1 C:2 D:3 E:4 F:5 G:6 H:7 I:8 J:9 K:10 L:11 M:12 N:13
+            O:14 P:15 Q:16 R:17 S:18 T:19 U:20 V:21 W:22 X:23 Y:24 Z:25
 */
-        $DESCRIPTION = 14;          // D:O:14 Item
-        $CASE_COST = 15;                // H:P:15 "Case Cost" 9999.99
-        $CASE_SIZE = 16;                // J:Q:16 "Case Size" 99, but 99.9999 pounds per container for bulk
-        $UNIT_SIZE = 17;                // K:R:17 "Unit Size" 99 
-        $UNIT_NAME = 18;                // L:S:18 "Units "g"/"ml"/"bags"
-        $UNIT_COST = 19;                // M:T:19 Cost per Unit 999.99 "Cost"
+        $DESCRIPTION = 17;          // D:O:14 Item
+        $CASE_COST = 10;                // H:P:15 "Case Cost" 9999.99
+        $CASE_SIZE = 11;                // J:Q:16 "Case Size" 99, but 99.9999 pounds per container for bulk
+        $UNIT_SIZE = 12;                // K:R:17 "Unit Size" 99 
+        $UNIT_NAME = 13;                // L:S:18 "Units "g"/"ml"/"bags"
+        $UNIT_COST = 14;                // M:T:19 Cost per Unit 999.99 "Cost"
 //
-        $CALC_PRICE = 20;               // N:U:20 "Set Price" but in fact CASE_COST/CASE_SIZE
-        $SET_PRICE = 21;                // O:V:21 "Price" Jiggered price
+        $CALC_PRICE = 15;  // fdu       // N:U:20 "Set Price" but in fact CASE_COST/CASE_SIZE
+        $SET_PRICE = 16;                // O:V:21 "Price" Jiggered price
 //
-        $TAX_TYPE = 22;                 // R:W:22 Tax 0/1/2 "Taxes"
-        $MARKUP = 23;                       // S:X:23 Markup "150%" -> 1.42 "Markup"
-        $SKU = 24;                          // D:Y:24 Vendor SKU
+        $TAX_TYPE = 15;     // fdu      // R:W:22 Tax 0/1/2 "Taxes"
+        $MARKUP = 15;       // fdu          // S:X:23 Markup "150%" -> 1.42 "Markup"
+        $SKU = 15;          // fdu          // D:Y:24 Vendor SKU
 //
-        $SALE_PRICE = 25;               // Z:25 "Sale Price"
-        $SALE_COST = 26;                // AA:26 "Sale Cost"
-        $TEMP_COST = 27;                // AB:27 "Temp Cost" ? Case sale price.
+        $SALE_PRICE = 15;   // fdu      // Z:25 "Sale Price"
+        $SALE_COST = 15;    // fdu      // AA:26 "Sale Cost"
+        $TEMP_COST = 15;    // fdu      // AB:27 "Temp Cost" ? Case sale price.
 //
-        $CATEGORY_SD = 28;          // W:AC:28 Category SuperDept.
+        $CATEGORY_SD = 15;  // fdu  // W:AC:28 Category SuperDept.
 //
-        $SCALE = 30;                        // Z:AE:30 BULK. "BULK" means scale=1
-        $VENDOR_ID = 34;                // AE:AI:34 Vendor ID.
+        $SCALE = 15;      // fdu            // Z:AE:30 BULK. "BULK" means scale=1
+        $VENDOR_ID = 15;   // fdu       // AE:AI:34 Vendor ID.
 //
 // 30Apr13 Columns AJ/35 - BN/64 are for Qualification flags.
 //         "" means not-assigned, probably implies No. 0=No 1=Yes
@@ -369,7 +453,7 @@ vary based on whose code you're running
         // $modified = "now()"; // Use literal $dbc->(now())
         $modifiedby = 1;
 
-        $inUse = 0;
+        $inUse = 1;
         $qttyEnforced = 0;
         // For group pricing.
         $quantity = 0;
@@ -405,12 +489,32 @@ vary based on whose code you're running
         $weightCount = 0;
         $eachCount = 0;
 
+        // How does $dbc get lost between beginning and here?
+$dbc = FannieDB::get($FANNIE_OP_DB);
+if (!$dbc) {
+    echo "2 DB::get failed.\n";
+    return;
+} else {
+    //$r = $dbc->query("SELECT dept_no from departments");
+    //$r = $dbc->query("SELECT NOW() as now FROM dual");
+    //$j = $dbc->fetch_array($r);
+    //echo "dept_no: " . $j['dept_n'] . "\n";
+    //echo "now: " . $j['now'] . "\n";
+    //$x = print_r($dbc,true);
+    //echo $x;
+    //return;
+    $noop = 1;
+}
         /* Cache departments and deptMargin data in an array on dept_name */
         $defaults_table = array();
-        $defQ = "SELECT dept_no, dept_name, dept_tax, dept_fs, dept_discount, margin
-        FROM departments, deptMargin
-        WHERE dept_no = dept_ID";
+        $defQ = "SELECT dept_no, dept_name, dept_tax, dept_fs, dept_discount, m.margin
+        FROM departments as d, deptMargin as m
+        WHERE d.dept_no = m.dept_ID";
         $defR = $dbc->query($defQ);
+        if (!$defR) {
+            echo "Failed: $defQ";
+            return;
+        }
         while($defW = $dbc->fetch_row($defR)){
             $departments[$defW['dept_name']] = array(
                 'id' => $defW['dept_no'],
@@ -447,7 +551,8 @@ vary based on whose code you're running
         $fp = fopen($tpath.$current,'r');
         while( !feof($fp) ) {
 
-            $data = fgetcsv($fp, 0, "\t", '"');
+            $data = fgetcsv($fp, 0, ",", '"');
+            //$data = fgetcsv($fp, 0, "\t", '"');
             if (count($data) == 0) {
                 continue;
             }
@@ -487,11 +592,11 @@ vary based on whose code you're running
                 continue;
             }
 
-            $upc = $data[$UPC];
+            $upc = '000000' . $data[$UPC];
             // Incoming data is expected to be %012d and UPC's have checkdigit at the end which must be removed.
             // Check for the expected base format.
-            if ( ! preg_match("/^\d{12}/", $upc) ) {
-                $messages[++$mct] = "<br />Skipping line $lineCount {$data[$DESCRIPTION]} because its UPC &gt;{$upc}&lt; is not 12 digits.";
+            if ( ! preg_match("/^\d{11}/", $upc) ) {
+                $messages[++$mct] = "<br />Skipping line $lineCount {$data[$DESCRIPTION]} because its UPC &gt;{$upc}&lt; is not 11 digits.";
                 continue;
             } else {
                 // If it's a PLU (up to 7 digits with left-0 padding), leave as-is.
@@ -501,18 +606,20 @@ vary based on whose code you're running
                 }
                 $upc = str_pad($upc,13,'0',STR_PAD_LEFT);
             }
+//$messages[++$mct] = "X " . $upc . ' d:' . $data[$DESCRIPTION];
 
             // Don't include duplicate UPC.
             if ( !isset($_REQUEST['overwrite_products']) ) {
                 $checkQ = "SELECT upc FROM products WHERE upc = " . $dbc->escape($upc);
-                $checkR = $dbc->query($checkQ);
+                $checkP = $dbc->prepare($checkQ);
+                $checkR = $dbc->execute($checkP,array());
                 if ($dbc->num_rows($checkR) > 0) {
                     $messages[++$mct] = "<br />Skipping line $lineCount upc duplicate: $upc for all tables.";
                     continue;
                 }
             }
 
-            if ( $data[$ORDER_CODE] == '' ) {
+            if ( true || $data[$ORDER_CODE] == '' ) {
                 $order_code = 'NULL';
             } elseif ( is_numeric($data[$ORDER_CODE]) ) {
                 if ( $data[$ORDER_CODE] <= 9999999 ) {
@@ -528,9 +635,11 @@ vary based on whose code you're running
 
             // PV description defaults to receipt description
             $data[$DESCRIPTION] = trim($data[$DESCRIPTION]);
-            if ( $data[$SEARCH] == "" ) {
+            /*
+            if ( true || $data[$SEARCH] == "" ) {
                 $data[$SEARCH] = $data[$DESCRIPTION];
             }
+            */
             $data[$SEARCH] = trim($data[$SEARCH]);
 
             // Compose description: "Juice - Orange 946ml"
@@ -555,6 +664,8 @@ vary based on whose code you're running
             } else {
                 $description = substr($description,0,($dlen - ($wlen - $MAX_DESC_LEN))) . $package;
             }
+            $formatted_name = $description; // invjig
+            $description = substr($data[$DESCRIPTION],0,30); // invjig
             //echo "<br />$lineCount ", strlen($description), " $description\n";
 
             if ( array_key_exists($data["$DEPT_NAME"], $departments) ) {
@@ -586,7 +697,7 @@ vary based on whose code you're running
                 $tax = $departmentTax;
             }
 
-            if ( $data[$MARKUP] == "#NAME?" ) {
+            if ( true || $data[$MARKUP] == "#NAME?" ) {
                 $data[$MARKUP] = "";
             }
             //if ( is_numeric($data[$MARKUP]) != "" ) {}
@@ -612,8 +723,9 @@ vary based on whose code you're running
             if ( strpos($data[$DEPT_NAME],"B") === 0 )
                  $data[$DISCOUNTABLE] = "1";
             */
-            if ( $data[$DISCOUNTABLE] == "" ) {
+            if ( true || $data[$DISCOUNTABLE] == "" ) {
                 $discount = $departmentDiscount;
+                $line_item_discountable = $departmentDiscount;
             }
             elseif ( $data[$DISCOUNTABLE] != "0" && $data[$DISCOUNTABLE] != "1" ) {
                 $messages[++$mct] = "Line $lineCount invalid discountable >{$data[$DISCOUNTABLE]}< : set to $departmentDiscount";
@@ -636,10 +748,11 @@ vary based on whose code you're running
             }
             */
 
-            // Margin sanity check.
+            /* Margin sanity check. - Defeated for invjig
             if ( !preg_match("/^\d\.\d+$/", $margin) || ($margin * 1.00) < 0.00 || ($margin * 1.00) > 0.50 ) {
                 $messages[++$mct] = "Line $lineCount $description has suspect margin >{$margin} : markup >{$data[$MARKUP]}<";
             }
+             */
             /* Markup sanity check.
             if ( !preg_match("/^\d\.\d+$/", $margin) || ($margin * 1.00) < 1.00 || ($margin * 1.00) > 3.00 ) {
                 $messages[++$mct] = "Line $lineCount $description has suspect markup >{$margin}<";
@@ -650,7 +763,7 @@ vary based on whose code you're running
              *            May also need to check CALC_PRICE
              * If the item already exists:
              *  - UPDATE except for prices
-             * If the item does no exist:
+             * If the item does not exist:
              *  - INSERT ?without prices
             */
             if ( $data[$SET_PRICE] == "" || $data[$SET_PRICE] == "-1" ) {
@@ -777,9 +890,11 @@ vary based on whose code you're running
             // May need some massaging/regularization: mL -> ml, gm -> g, ...
             $unitofmeasure = $data[$UNIT_NAME];
 
-            $inUse = ( $data[$IN_USE] != "" ) ? $data[$IN_USE] : 0;
+            $inUse = 1; // invjig
+            //$inUse = ( $data[$IN_USE] != "" ) ? $data[$IN_USE] : 0;
 
-            $qttyEnforced = ( $data[$QTYFRC] != "" ) ? $data[$QTYFRC] : 0;
+            $qttyEnforced = 0; // invjig
+            //$qttyEnforced = ( $data[$QTYFRC] != "" ) ? $data[$QTYFRC] : 0;
             /*
             $qttyEnforced = 0;
             if ( $data[$QUANTITY] != "" ) {
@@ -787,17 +902,20 @@ vary based on whose code you're running
             }
             */
 
-            $quantity = ( $data[$QUANTITY] != "" ) ? $data[$QUANTITY] : 0;
+            $quantity = 0; //invjig
+            //$quantity = ( $data[$QUANTITY] != "" ) ? $data[$QUANTITY] : 0;
 
-            $mixmatchcode = ( $data[$MIXMATCH] != "" ) ? $data[$MIXMATCH] : "";
+            $mixmatchcode = ""; //invjig
+            //$mixmatchcode = ( $data[$MIXMATCH] != "" ) ? $data[$MIXMATCH] : "";
 
             $groupprice = "";
-            if ( $data[$GROUP_PRICE] != "" ) {
+            if ( false && $data[$GROUP_PRICE] != "" ) {
                 $groupprice = sprintf("%.2f", $data[$GROUP_PRICE]);
             }
 
             // 0 or 1 or 2.  Must default to 0.
-            $pricemethod = ( $data[$PRICE_METHOD] != "" ) ? $data[$PRICE_METHOD] : 0;
+            $pricemethod = 0; // invjig
+            //$pricemethod = ( $data[$PRICE_METHOD] != "" ) ? $data[$PRICE_METHOD] : 0;
             if ( $pricemethod == 2 && $normal_price == "" ) {
                 $messages[++$mct] = "<br />Line $lineCount missing normal_price when pricemethod = 2";
             }
@@ -822,7 +940,8 @@ vary based on whose code you're running
              * Report-only on live-side.
              * On dev-side, Report if dry-run, add if live.
             */
-            $vendorID = $data[$VENDOR_ID];
+            $vendorID = 10; //invjig $data[$VENDOR_ID];
+            $default_vendor_id = $vendorID;
             $vendorName = $data[$VENDOR_NAME];
             if ( is_numeric($vendorID) && $vendorID < 1000 && $vendorName != "" ) {
                 $venQ = "SELECT * from vendors WHERE vendorID = $vendorID";
@@ -849,6 +968,7 @@ vary based on whose code you're running
             $first_flag = 35;
             $numflag = 0;
             //echo "Start: $numflag\n";
+            /* skip invjig
             for ($i=0 ; $i<30 ; $i++) {
                 if (
                     array_key_exists(($first_flag+$i), $data) &&
@@ -856,9 +976,19 @@ vary based on whose code you're running
                 )
                     $numflag = $numflag | (1 << $i);
             }
+             */
 
             /* All problems should be in $messages[] at this point.
             */
+//$cost = sprintf("%.2f", ($normal_price * 0.6666));
+$cost = $normal_price;
+if ($vendorID == 10) {
+    $sku = substr($upc,-5,5);
+} else {
+    $sku = $data[$SKU];
+}
+$messages[++$mct] = "mode: $dbMode  upc: $upc  price: $normal_price  cost: $cost  size: $size  sku: $sku
+";
             if ( isset($_REQUEST['dry_run']) ) {
                 continue;
             }
@@ -868,6 +998,7 @@ vary based on whose code you're running
 
             $table = "products";
 
+            $brand = $data[$BRAND_NAME];
             if ( $dbMode == "add/replace" ) {
 
                 // Should this depend on inProducts?
@@ -893,7 +1024,8 @@ vary based on whose code you're running
         3           $department,
         4           $dbc->escape($unitsize), $tax, $fs, $scale, $dbc->escape($mixmatchcode), $dbc->now(),
         5           $discount, $unitofmeasure, $qttyEnforced,
-        6           $cost, $inUse
+        6           $cost, $inUse,
+        7           $default_vendor_id, $formatted_name, $line_item_discountable
 
     1           upc, description, normal_price, 
     2               pricemethod, groupprice, quantity, $special_price=0; $specialpricemethod=0; 
@@ -926,24 +1058,37 @@ vary based on whose code you're running
     $deposit=0; // %.2f
     */
 
+                /* Instead of $dbc->now();
+                        $dbc->escape($modified),
+                 */
+                $modified = '2099-01-01 00:00:00';
                 $insQ = sprintf("INSERT INTO products (upc, description, normal_price, 
                     pricemethod, groupprice, quantity, special_price, specialpricemethod, 
                     specialgroupprice, specialquantity, start_date, end_date, department, 
-                    size, tax, foodstamp, scale, scaleprice, mixmatchcode, modified, 
+                    size, tax, foodstamp, scale, scaleprice, mixmatchcode,
+                    modified, 
                     tareweight, discount, discounttype, unitofmeasure, wicable, qttyEnforced, 
-                    idEnforced, cost, inUse, numflag, subdept, deposit)
+                    idEnforced, cost, inUse, numflag, subdept, deposit,
+                    default_vendor_id, formatted_name, line_item_discountable, brand
+                )
                     VALUES (%s, %s, %.2f,
                     %d, %.2f, %d, %.2f, %d,
                     %.2f, %d, %s, %s, %d,
-                    %s, %d, %d, %d, %.2f, %s, %s, 
+                    %s, %d, %d, %d, %.2f, %s,
+                    %s, 
                     %.2f, %d, %d, %s, %d, %d,
-                    %d, %.2f, %d, %d, %d, %.2f)",
+                    %d, %.2f, %d, %d, %d, %.2f,
+                    %d, %s, %d, %s
+                )",
                     $dbc->escape($upc), $dbc->escape($description), $normal_price,
                     $pricemethod, $groupprice, $quantity, $special_price, $specialpricemethod,
                     $specialgroupprice, $specialquantity, $start_date, $end_date, $department,
-                    $dbc->escape($unitsize), $tax, $fs, $scale, $scaleprice, $dbc->escape($mixmatchcode), $dbc->now(), 
+                    $dbc->escape($unitsize), $tax, $fs, $scale, $scaleprice, $dbc->escape($mixmatchcode),
+                        $dbc->now(),
                     $tareweight, $discount, $discounttype, $dbc->escape($unitofmeasure), $wicable, $qttyEnforced,
-                    $idEnforced, $cost, $inUse, $numflag, $subdept, $deposit);
+                    $idEnforced, $cost, $inUse, $numflag, $subdept, $deposit,
+                    $default_vendor_id, $dbc->escape($formatted_name), $line_item_discountable, $dbc->escape($brand)
+                );
 
     /* Woodshed
                 $insQ = sprintf("INSERT INTO products (upc, description, normal_price, 
@@ -1021,6 +1166,9 @@ vary based on whose code you're running
                 }
             }
 
+//echo "<br />$upc : $search_description : skipping other tables.\n";
+//continue;
+
             /* #'U --productUser - - - - */
 
             $table = "productUser";
@@ -1029,7 +1177,7 @@ vary based on whose code you're running
 
             $sep = " | ";
 
-            // Description for use by PV Product Verification at lane.
+            /* Description for use by PV Product Verification at lane.
             if ( $brand ) {
                 $search_description = trim(strtoupper($brand));
             } else {
@@ -1038,6 +1186,15 @@ vary based on whose code you're running
             $search_description .= ($sep . $data[$SEARCH]);
             if ( trim($package) != "" ) {
                 $search_description .= ($sep . trim($package));
+            }
+             */
+
+            $search_description = $data[5];
+            if ($data[4] != "") {
+                $search_description .= ", " . $data[4];
+            }
+            if ($data[6] != "") {
+                $search_description .= ", " . $data[6];
             }
 
             if ( $dbMode == "add/replace" ) {
@@ -1117,13 +1274,18 @@ vary based on whose code you're running
             //Done earlier
             //$brand = $data[$BRAND_NAME];
             $sku = $data[$SKU];
+            if ($vendorID == 10) {
+                $sku = substr($upc,-5,5);
+            } else {
+                $sku = $data[$SKU];
+            }
             // Revert to using unit_cost, i.e. cost.
             //$case_cost =  $data[$CASE_COST];
             // Can be longer than the earlier one.
             $description = substr($data[$DESCRIPTION], 0, 50);
             // Use productUser.sizing for size: "300 ml"
             // Use unitsize for units: 500, e.g. grams. Not the case size.
-            $vendorID = $data[$VENDOR_ID];
+            //$vendorID = $data[$VENDOR_ID]; //invjig 5Apr2016 $vendorID has already been assigned.
             $vendorDept = 'NULL';
             // If $size is not an integer, e.g. for BULK, vendorItems.units winds up NULL.
             //  This may need to be addressed one day.
@@ -1136,12 +1298,16 @@ vary based on whose code you're running
                 }
 
                 $insQ = sprintf("INSERT INTO vendorItems (upc, sku, brand,
-                    description, size, units, cost, vendorDept, vendorID)
+                    description, size, units, cost, vendorDept, vendorID,
+                modified)
                     VALUES (%s, %s, %s,
-                    %s, %s, %s, %.2f, %s, %d)",
+                        %s, %s, %s, %.2f, %s, %d,
+                    %s)",
                     $dbc->escape($upc), $dbc->escape($sku), $dbc->escape($brand),
 //old           $dbc->escape($description), $dbc->escape($unitofmeasure), $unitsize, $cost, $vendorDept, $vendorID);
-                    $dbc->escape($description), $dbc->escape($sizing), $vi_size, $cost, $vendorDept, $vendorID);
+                    $dbc->escape($description), $dbc->escape($sizing), $vi_size, $cost, $vendorDept, $vendorID,
+                        $dbc->now()
+                );
 
                 $dbc->query($insQ);
 
@@ -1151,10 +1317,12 @@ vary based on whose code you're running
                 // All but cost and vendorDept
                 $updQ = sprintf("UPDATE vendorItems SET
                     sku = %s, brand = %s,
-                    description = %s, size = %s, units = %s, vendorID = %d
+                    description = %s, size = %s, units = %s, vendorID = %d,
+                    modified = %s
                 WHERE upc = %s",
                     $dbc->escape($sku), $dbc->escape($brand),
                     $dbc->escape($description), $dbc->escape($sizing), $vi_size, $vendorID,
+                        $dbc->now(),
                 $dbc->escape($upc));
 
                 if ( $updQ == "" ) {
@@ -1413,7 +1581,7 @@ else {
 </tr>
 
 <tr style="text-align:top;" vAlign="top">
-    <td><input type="checkbox" name="overwrite_products" CHECKED /></td><td style="padding-top:5px;">Overwrite existing 'products' and related records on UPC/PLU match.
+    <td><input type="checkbox" name="overwrite_products" /></td><td style="padding-top:5px;">Overwrite existing 'products' and related records on UPC/PLU match.
     <br />Items with price empty or -1 will:
     <br />- if there is an existing record, update it rather than overwriting it, but change no prices
     <br />- if there is no existing record, be added</td>
@@ -1445,3 +1613,4 @@ else {
 }
 
 ?>
+
