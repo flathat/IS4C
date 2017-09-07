@@ -38,9 +38,6 @@ class FormattedNameWefcToronto extends ProductNameFormatter {
         $i = isset($params['index']) ? $params['index'] : 0;
         $desc = FormLib::get('descript');
         $c_desc = "";
-        if (isset($desc[$i])) {
-            $desc[$i] = str_replace("'", '', $desc[$i]);
-        }
         $size = FormLib::get('size');
         $unit = FormLib::get('unitm');
 
@@ -56,7 +53,6 @@ class FormattedNameWefcToronto extends ProductNameFormatter {
         } else {
             if (isset($FANNIE_PRODUCT_MODULES['ProdUserModule'])) {
                 $fmtName = FormLib::get('lf_desc');
-                $fmtName = str_replace("'", '', $fmtName);
                 $fmtName = str_replace("\r", '', $fmtName);
                 $fmtName = str_replace("\n", ' ', $fmtName);
                 $fmtName = preg_replace("/  +/", ' ', $fmtName);
