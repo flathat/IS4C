@@ -1111,6 +1111,42 @@ HTML;
         $tester->testDeleteItem($this, $phpunit);
         $tester->testEditCustomer($this, $phpunit);
     }
+
+    /**
+      User-facing help text explaining how to 
+      use a page.
+      @return [string] html content
+    */
+    public function helpContent()
+    {
+        return '
+            <h3>Re: View Order</h3>
+            <ul>
+            <li>The top part of the page is for information about the customer.
+                <ul>
+                    <li>If the customer is a Member/Owner enter their ID number and
+                    the contact details will be filled in. Otherwise type them in.
+                    <br /> You can use the "Search" in the lower part of the page to find members by name.
+                    </li>
+                    <li><b>For Department</b> If the thing being ordered is not carried by the store
+                    enter the appropriate Department, i.e. Super Department.
+                    </li>
+                </ul>
+            </li>
+            <li>The lower part of the page is for the items(s) being ordered.
+            Enter item data in the first line/row.
+            It will be added to the list below the line/row of headings: UPC, SKU, Description, ...
+                <ul>
+                    <li><b>UPC</b> If the store carries the item and you know the upc/plu enter it.
+                    </li>
+                    <li><b>Search</b> A popup window in which you can enter keywords for the item.
+                    </li>
+                    <li><b>Cases</b> Or pounds/kilograms if the item is bulk and sold by weight.
+                    </li>
+                </ul>
+            </li>
+            </ul>';
+    }
 }
 
 FannieDispatch::conditionalExec();
