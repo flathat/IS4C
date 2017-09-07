@@ -70,7 +70,8 @@ class DTrans
         'numflag'=>0,
         'charflag'=>'',
         'card_no'=>0,
-        'trans_id'=>0
+        'trans_id'=>0,
+        'store_id'=>0
     );
 
     /**
