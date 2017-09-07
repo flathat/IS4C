@@ -63,7 +63,9 @@ Replaces nightly.lanesync.php and/or lanesync.api.php';
             'employees',
             'departments',
             'houseCoupons',
-            'houseVirtualCoupons'
+            'houseCouponItems',
+            'houseVirtualCoupons',
+            'custPreferences',
         );
         foreach ($regularPushTables as $table) {
             $result = SyncLanes::pushTable("$table", 'op', SyncLanes::TRUNCATE_DESTINATION);
@@ -84,12 +86,21 @@ Replaces nightly.lanesync.php and/or lanesync.api.php';
         }
 
         if (isset($FANNIE_COOP_ID) && $FANNIE_COOP_ID == 'WEFC_Toronto') {
-            $result = SyncLanes::pushTable('tenders', 'op', SyncLanes::TRUNCATE_DESTINATION);
-            /**
-            @severity: error message may indicate lane down or connectivity problem
-            */
-            $severity = strstr($result['messages'], 'Error:') ? FannieTask::TASK_LARGE_ERROR : FannieTask::TASK_NO_ERROR;
-            $this->cronMsg($result['messages'], $severity);
+            $wefcPushTables = array(
+                'tenders',
+                'memtype',
+                'meminfo'
+            );
+            foreach ($wefcPushTables as $table) {
+                //$result = SyncLanes::push_table("$table", 'op', SyncLanes::TRUNCATE_DESTINATION, $one_lane);
+                //echo cron_msg($result['messages']);
+                $result = SyncLanes::pushTable('tenders', 'op', SyncLanes::TRUNCATE_DESTINATION);
+                /**
+                @severity: error message may indicate lane down or connectivity problem
+                */
+                $severity = strstr($result['messages'], 'Error:') ? FannieTask::TASK_LARGE_ERROR : FannieTask::TASK_NO_ERROR;
+                $this->cronMsg($result['messages'], $severity);
+            }
         }
     }
 }
