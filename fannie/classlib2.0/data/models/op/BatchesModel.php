@@ -87,7 +87,7 @@ those same items revert to normal pricing.
                     INNER JOIN batches AS b ON l.batchID=b.batchID
                 SET p.start_date = b.startDate, 
                     p.end_date=b.endDate,
-                    p.special_price=l.salePrice,
+                    p.special_price=CASE WHEN l.pricemethod=2 THEN p.normal_price ELSE l.salePrice END,
                     p.specialgroupprice=CASE WHEN l.salePrice < 0 THEN -1*l.salePrice ELSE l.salePrice END,
                     p.specialpricemethod=l.pricemethod,
                     p.specialquantity=l.quantity,
@@ -108,9 +108,9 @@ those same items revert to normal pricing.
                     INNER JOIN upcLike AS v ON v.upc=p.upc
                     INNER JOIN batchList as l ON l.upc=concat('LC',convert(v.likecode,char))
                     INNER JOIN batches AS b ON b.batchID=l.batchID
-                SET p.special_price = l.salePrice,
+                SET p.start_date=b.startDate,
                     p.end_date = b.endDate,
-                    p.start_date=b.startDate,
+                    p.special_price=CASE WHEN l.pricemethod=2 THEN p.normal_price ELSE l.salePrice END,
                     p.specialgroupprice=CASE WHEN l.salePrice < 0 THEN -1*l.salePrice ELSE l.salePrice END,
                     p.specialpricemethod=l.pricemethod,
                     p.specialquantity=l.quantity,
