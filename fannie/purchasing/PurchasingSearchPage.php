@@ -26,16 +26,20 @@ if (!class_exists('FannieAPI')) {
     include_once($FANNIE_ROOT.'classlib2.0/FannieAPI.php');
 }
 
-class PurchasingSearchPage extends FannieRESTfulPage {
-    
+class PurchasingSearchPage extends FannieRESTfulPage 
+{
     protected $header = 'Purchase Orders';
     protected $title = 'Purchase Orders';
 
     public $description = '[Search Purchase Orders] finds orders/invoices containing a given item.';
-    public $themed = true;
 
     protected $must_authenticate = true;
 
+    /*
+     * EL: Created-date
+     * EL: PO# column
+     * EL: Home button at end
+     */
     public function get_id_view()
     {
         global $FANNIE_OP_DB;
@@ -44,7 +48,12 @@ class PurchasingSearchPage extends FannieRESTfulPage {
         $start = FormLib::get('date1');
         $end = FormLib::get('date2');
 
-        $query = 'SELECT o.placedDate, o.orderID, o.vendorInvoiceID,
+        $query = 'SELECT
+            COALESCE(o.creationDate,\'\') AS creationDate,
+            COALESCE(o.placedDate,\'\') AS placedDate,
+            o.orderID,
+            o.vendorOrderID,
+            o.vendorInvoiceID,
                 v.vendorName, i.sku, i.internalUPC, i.description,
                 i.brand, i.quantity
                 FROM PurchaseOrderItems AS i
@@ -66,11 +75,18 @@ class PurchasingSearchPage extends FannieRESTfulPage {
         $res = $dbc->execute($prep, $args);
 
         $ret = '<table class="table">';
-        $ret .= '<tr><th>Date</th><th>Invoice</th><th>Vendor</th>
+        $ret .= '<tr>
+            <th>Created</th>
+            <th>Placed</th>
+            <th>PO #</th>
+            <th>Invoice #</th>
+            <th>Vendor</th>
                 <th>UPC</th><th>SKU</th><th>Brand</th><th>Desc</th>
                 <th>Qty</th></tr>';
         while($row = $dbc->fetch_row($res)) {
             $ret .= sprintf('<tr>
+                            <td><a href="ViewPurchaseOrders.php?id=%d">%s</a></td>
+                            <td><a href="ViewPurchaseOrders.php?id=%d">%s</a></td>
                             <td><a href="ViewPurchaseOrders.php?id=%d">%s</a></td>
                             <td><a href="ViewPurchaseOrders.php?id=%d">%s</a></td>
                             <td>%s</td>
@@ -80,7 +96,9 @@ class PurchasingSearchPage extends FannieRESTfulPage {
                             <td>%s</td>
                             <td>%d</td>
                             </tr>',
+                            $row['orderID'], date('Y-m-d', strtotime($row['creationDate'])),
                             $row['orderID'], date('Y-m-d', strtotime($row['placedDate'])),
+                            $row['orderID'], $row['vendorOrderID'],
                             $row['orderID'], $row['vendorInvoiceID'],
                             $row['vendorName'],
                             $row['internalUPC'], $row['internalUPC'],
@@ -91,6 +109,8 @@ class PurchasingSearchPage extends FannieRESTfulPage {
             );
         }
         $ret .= '</table>';
+        $ret .= '<button class="btn btn-default" onclick="location=\'PurchasingIndexPage.php\'; return false;">Home</button>';
+        $ret .= '<p> &nbsp; </p>';
 
         return $ret;
     }
@@ -134,10 +154,32 @@ class PurchasingSearchPage extends FannieRESTfulPage {
         return $ret;
     }
 
+    /*
+     */
     public function helpContent()
     {
-        return '<p>Enter a UPC or SKU to find orders containing that
-            item. Omit the dates to search all known orders.</p>';
+        $ret = '';
+        if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+            $ret .= '<p>Enter a UPC or SKU to find orders containing that item.
+                The search is by wildcard, that is,
+                for both UPCs and SKUs containing what you enter,
+                    or an exact match if there is one.
+            <br />The date searched is the Order-Placed date, not the Order-Created date.
+            <br />Both Placed and Pending Orders are searched if no dates are supplied.
+            </p>';
+        } else {
+            $ret .= '<p>Enter a UPC or SKU to find orders containing that
+            item.  Omit the dates to search all known orders.</p>';
+        }
+
+        return $ret;
+    }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->get_view()));
+        $this->id = '4011';
+        $phpunit->assertNotEquals(0, strlen($this->get_id_view()));
     }
 }
 

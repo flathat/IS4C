@@ -167,7 +167,7 @@ class FormLib extends \COREPOS\common\FormLib
         $dbc = FannieDB::getReadOnly($op_db);
 
         $stores = new StoresModel($dbc);
-        $current = FormLib::get($field_name, 0);
+        $current = FannieConfig::config('STORE_ID',0);
         $labels = array(0 => _('All Stores'));
         $ret = '<select name="' . $field_name . '" class="form-control">';
         $ret .= '<option value="0">' . $labels[0] . '</option>';
@@ -644,7 +644,7 @@ HTML;
                     FROM products AS p
                         LEFT JOIN prodExtra AS x ON p.upc=x.upc
                         LEFT JOIN vendors AS v ON x.distributor=v.vendorName
-                    WHERE (p.default_vendor_id=? OR v.vendorID=?
+                    WHERE (p.default_vendor_id=? OR v.vendorID=?)
                     GROUP BY p.department');
                 $optimizeR = $dbc->execute($optimizeP, array($vID, $vID));
                 $dept_in = '';

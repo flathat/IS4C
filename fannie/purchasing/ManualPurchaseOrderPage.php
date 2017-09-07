@@ -28,10 +28,8 @@ if (!class_exists('FannieAPI')) {
 
 class ManualPurchaseOrderPage extends FannieRESTfulPage 
 {
-
     protected $header = 'Purchase Orders';
     protected $title = 'Purchase Orders';
-    public $themed = true;
 
     public $description = '[Manual Purchase Order] is a tool for entering purchase order info
         in a grid from existing paperwork.';
@@ -45,6 +43,10 @@ class ManualPurchaseOrderPage extends FannieRESTfulPage
         return $ret;
     }
 
+    /*
+     * EL: Assign storeID to new order
+     * EL: Assign po# to new order
+     */
     public function post_id_handler()
     {
         $dbc = FannieDB::get($this->config->get('OP_DB'));
@@ -61,6 +63,7 @@ class ManualPurchaseOrderPage extends FannieRESTfulPage
         $total = FormLib::get('total', array());
         $brand = FormLib::get('brand', array());
         $description = FormLib::get('description', array());
+        $store_id = $this->config->get('STORE_ID');
 
         if (count($sku) == 0) {
             $ret['error'] = true;
@@ -86,7 +89,8 @@ class ManualPurchaseOrderPage extends FannieRESTfulPage
         $vitem = new VendorItemsModel($dbc);
 
         /**
-          Create parent record for the order
+            Create parent record for the order
+            EL: storeID and PO# for new order.
         */
         $po = new PurchaseOrderModel($dbc);
         $po->vendorID($this->id);
@@ -102,15 +106,25 @@ class ManualPurchaseOrderPage extends FannieRESTfulPage
             $po->orderID($orderID);
             $po->save();
         } else {
+            $po->storeID($store_id);
             $orderID = $po->save();
-        }
 
-        if (!$orderID) {
-            $ret['error'] = true;
-            $ret['message'] = 'Could not create new order';
-            echo json_encode($ret);
+            if (!$orderID) {
+                $ret['error'] = true;
+                $ret['message'] = 'Could not create new order';
+                echo json_encode($ret);
 
-            return false;
+                return false;
+            } else {
+                $po_prefix = $this->config->get('PO_PREFIX','');
+                if (!empty($po_prefix)) {
+                    $po_num = "{$po_prefix}{$orderID}";
+                    $po = new PurchaseOrderModel($dbc);
+                    $po->orderID($orderID);
+                    $po->vendorOrderID($po_num);
+                    $po->save();
+                }
+            }
         }
 
         /**
@@ -125,15 +139,6 @@ class ManualPurchaseOrderPage extends FannieRESTfulPage
             $units = $caseSize[$i];
             $qty = $cases[$i];
             $unitCost = $total[$i] / $qty / $units;
-            /**
-              Multiple same-SKU records
-              Sum the quantities and costs to merge
-              into a single record
-            */
-            if ($pitem->load()) {
-                $qty += $pitem->receivedQty();
-                $total[$i] += $pitem->receivedTotalCost();
-            }
 
             $pitem->quantity($qty);
             $pitem->caseSize($units);
@@ -223,6 +228,9 @@ class ManualPurchaseOrderPage extends FannieRESTfulPage
         return $this->get_id_view();
     }
 
+    /*
+     * EL: Home button
+     */
     public function get_id_view()
     {
         $dbc = FannieDB::get($this->config->get('OP_DB'));
@@ -243,11 +251,14 @@ class ManualPurchaseOrderPage extends FannieRESTfulPage
                 <label>Inv. #</label>
                 <input type="text" name="inv-number" class="form-control" />
             </div>';
-        $ret .= '<div class="collapse" id="delete-html">' . FannieUI::deleteIcon() . '</div>';
+        $ret .= '<div class="collapse" id="delete-html">' . COREPOS\Fannie\API\lib\FannieUI::deleteIcon() . '</div>';
         $ret .= '<div class="form-group">
             <button type="button" class="btn btn-default" onclick="addInvoiceLine();">Add Line</button>
             &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
             <button type="submit" class="btn btn-default" id="save-btn">Save As Order</button>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+            <button class="btn btn-default" onclick="location=\'PurchasingIndexPage.php\';
+                return false;">Home Without Further Save</button>
             </div>';
 
         $ret .= '<table class="table table-bordered" id="invoice-table">
@@ -273,6 +284,9 @@ class ManualPurchaseOrderPage extends FannieRESTfulPage
         return $ret;
     }
 
+    /*
+     * EL: Add Home button
+     */
     public function get_view()
     {
         $dbc = FannieDB::get($this->config->get('OP_DB'));
@@ -289,6 +303,8 @@ class ManualPurchaseOrderPage extends FannieRESTfulPage
             </div>
             <div class="form-group">
                 <button type="submit" class="btn btn-default">Continue</button>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                <button class="btn btn-default" onclick="location=\'PurchasingIndexPage.php\'; return false;">Home</button>
             </div>';
 
         return $ret;
@@ -296,11 +312,54 @@ class ManualPurchaseOrderPage extends FannieRESTfulPage
 
     public function helpContent()
     {
-        return '<p>
+        $ret = '';
+        if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+        $ret .= '<ul>
+            <li>Build a purchase order or transcribe an invoice one line at a time.
+            <br />This is for:
+            <ul>
+                <!-- li>Create an Order to send to a Vendor.
+                </li -->
+                <li>Entering an Order you have already received
+                in order to get the items into Inventory.
+                </li>
+                <li>Editing the the quantities and cost an Order you have received
+                the usual way.
+                </li>
+            </ul>
+            </li>
+            <li>The first step is to choose the Vendor.
+            </li>
+            <li>Auto completion is available via both product UPC and vendor item SKU.
+            </li>
+            <li>The order is assumed to have already been received.
+            </li>
+            <li>Enter costs from the Vendor\'s invoice, i.e. actual cost,
+            not cost from the local Vendor Catalog.
+            </li>
+            <li>The Order Date is the Date Received.
+            </li>
+            <li>Before clicking "Save As Order" click the "Trash" icon for
+            the empty/incomplete first item.
+            </li>
+            </ul>';
+        } else {
+        $ret .= '<p>
             Build a purchase order or transcribe an invoice
             one line at a time. Auto completion is available
             via both product UPC and vendor item SKU.
             </p>';
+        }
+        return $ret;
+    }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->get_view()));
+        $this->id = 1;
+        $phpunit->assertNotEquals(0, strlen($this->get_id_view()));
+        $this->adjust = 1;
+        $phpunit->assertNotEquals(0, strlen($this->get_id_adjust_view()));
     }
 }
 
