@@ -158,16 +158,20 @@ class SaReportPage extends FanniePage {
             WHERE clear!=1
             ORDER BY '.$order);
         $r=$dbc->exec_statement($q);
+        $upcs = array();
         if ($r) {
             $this->status = 'Good - Connected';
-            $num_rows=$dbc->num_rows($r);
+            $num_rows=$dbc->numRows($r);
             if ($num_rows>0) {
                 $this->scans=array();
-                while($row = $dbc->fetch_row($r)){
-                    $this->scans[] = $row;
+                while($row = $dbc->fetchRow($r)){
+                    if (!isset($upcs[$row['upc']])) {
+                        $this->scans[] = $row;
+                        $upcs[$row['upc']] = true;
+                    }
                 }
             } else {
-                $this->status = 'Good - No scans';
+                $this->status = 'Good - No scans to report';
             }
         } else {
             $this->status = 'Bad - IT problem';
@@ -303,17 +307,22 @@ table.shelf-audit tr:hover {
         ob_start();
         ?>
         <div id="bdiv">
-            <p><a href="#" onclick="window.open('SaScanningPage.php','scan','width=320, height=200, location=no, menubar=no, status=no, toolbar=no, scrollbars=no, resizable=no');">Enter a new scan</a></p>
-            <p><a href="SaHandheldPage.php">Alternate Scan Page</a></p>
-            <p><?php echo($this->sql_actions); ?></p>
-            <p><?php echo($this->status); ?></p>
-            <p><a href="?view=dept">view by pos department</a> <a href="SaReportPage.php">view by scanned section</a></p>
-            <p><a href="?excel=yes">download as csv</a></p>
+            <!-- SaScanningPage link was here -->
+            <p style="text-align:left;">Status: <?php echo($this->status); ?></p>
+            <p style="text-align:left; font-weight:bold;">Menu:</p>
+            <p style="text-align:left;">- <a href="#" onclick="window.open('SaScanningPage.php','scan','width=320, height=200, location=no, menubar=no, status=no, toolbar=no, scrollbars=no, resizable=no');">Scan style 1, in new window</a></p>
+            <!-- p style="text-align:left;">- <a href="SaHandheldPage.php" target="_scan">Scan style 2, in new tab</a></p -->
+            <p style="text-align:left;"><?php echo($this->sql_actions); ?></p>
+            <p style="text-align:left;">- <a href="?view=dept">View this report by POS department</a></p>
+            <p style="text-align:left;">- <a href="SaReportPage.php">View this report by scanned section</a></p>
+            <p style="text-align:left;">- <a href="?excel=yes">Download this data as CSV</a></p>
         <?php
         if ($this->scans) {
-            $clear = '<div><a href="SaReportPage.php?clear=yes">Clear Old</a></div>';
+            $clear = '<div><p style="text-align:left;">- <a href="SaReportPage.php?clear=yes">Clear old scans</a></p></div>';
             print_r($clear);
         }
+?>
+        <?php
         
         $table = '';
         $view = FormLib::get_form_value('view','dept');

@@ -22,7 +22,8 @@
 
 *********************************************************************************/
 
-/* This, SaScanningPage.php was used in the 31Mar2016 Inventory Count
+/* 28Mar2017 EL Changed to SaScanningPage_WEFC_Toronto.php
+ * This, SaScanningPage.php was used in the 31Mar2016 Inventory Count
  * It has several fixes and enhancements from the original which is probably
  *  like ~_1.8
  * I think "old" is relative to SaHandheldPage.php which I think is for a phone
@@ -39,18 +40,18 @@
  *       Entry is terminated by 'z'
  *       Valid entries:
  *       - integer
- *       - ?decimal number, for weight
- *       - number'S'number, where the number after 'S' is a Section to change to.
- *         ?The Section must already exist.
- *       - number's'number, where the number after 's' is the Section to use
+ *       - decimal number, for weight
+ *       - number'C'number, where the number after 'C' is a Section to change to.
+ *         The current scan goes to the new Section.
+ *       - number'S'number, where the number after 'S' is the Section to use
  *         instead of the current section.
  *         I.e. a one-off section override.
- *         ?Assumes the section already exists.
  *    3. A Submit labelled "enter"
  *       ?Uses the default quantity of 1.
  * 2. sForm Has one control:
  *    1. A Submit labelled "New Section"
- *       Increments the section counter
+ *       Increments the section counter, i.e. uses MAX(section) + 1.
+ *       Does NOT simply go to the current section + 1.
  *       Changes current section to the new value.
 */
 
@@ -60,9 +61,9 @@ if (!class_exists('FannieAPI')) {
 }
 
 /**
-  @class SaScanningPage
+  @class SaScanningPage_WEFC_Toronto
 */
-class SaScanningPage extends FanniePage {
+class SaScanningPage_WEFC_Toronto extends FanniePage {
 
     protected $window_dressing = False;
 
@@ -145,33 +146,43 @@ class SaScanningPage extends FanniePage {
             $qty = FormLib::get_form_value('qinput');
             $qty = rtrim($qty,'z');
             $args = array($upc);
+            $query = 'INSERT INTO sa_inventory 
+                    (id,datetime,upc,clear,quantity,section)
+                    VALUES (NULL,'.$dbc->now().',?,0,?,?)';
+            $stmt = $dbc->prepare_statement($query);
+            /*
             $stmt = $dbc->prepare_statement('INSERT INTO sa_inventory 
                     (id,datetime,upc,clear,quantity,section)
                     VALUES (NULL,'.$dbc->now().',?,0,?,?)');
+             */
                     
             $sectionChange = '';
             //if ($qty != '' && ctype_digit($qty)){}
+            $qty = strtoupper($qty);
             if ($qty != '' && is_numeric($qty)){
                 $args[] = $qty;
                 $quantity = $qty;
                 $args[] = $this->section;
-            } else if ($qty != '' && strpos($qty,'S') > 0) {
-                $split=strpos($qty,'S');
+            } else if ($qty != '' && strpos($qty,'C') > 0) {
+                $split=strpos($qty,'C');
                 $quantity=substr($qty,0,$split);
                 $section=substr($qty,$split+1);
                 $args[] = $quantity;
                 $args[] = $section;
                 $_SESSION['SaPluginSection'] = $section;
                 $this->section = $section;
-                $sectionChange = " and section changed to $section";
+                $sectionChange = "<br />to Section $section and Section changed to $section";
+                //$sectionChange = " and section changed to $section";
             } else if ($qty != '') {
-                $split=strpos($qty,'s');
+                $split=strpos($qty,'S');
                 $quantity=substr($qty,0,$split);
                 $section=substr($qty,$split+1);
                 $args[] = $quantity;
                 $args[] = $section;
+                $sectionChange = "<br />and put in Section $section";
             } else {
-                $args[] = 1;
+                $quantity = 1;
+                $args[] = $quantity;
                 $args[] = $this->section;
             }
             $result = $dbc->exec_statement($stmt, $args);
@@ -179,28 +190,41 @@ class SaScanningPage extends FanniePage {
             $qtyMsg = " x $quantity";
 
             $OP = $FANNIE_OP_DB;
-            $prodQ = "SELECT upc FROM {$OP}.products WHERE upc = ?";
+            $prodQ = "SELECT upc, brand, description, size, unitofmeasure FROM {$OP}.products WHERE upc = ?";
             $prodP = $dbc->prepare($prodQ);
-            $args = array($upc);
-            $prodR = $dbc->execute($prodP,$args);
+            $argsP = array($upc);
+            $prodR = $dbc->execute($prodP,$argsP);
             $pMsg = '';
+            $dMsg = '';
             if ($dbc->num_rows($prodR) == 0) {
                 $pMsg = " NOT in POS!";
+            } else {
+                $row = $dbc->fetch_row($prodR);
+                $dMsg = sprintf("<br />%s %s %s%s",
+                    $row['brand'],
+                    $row['description'],
+                    $row['size'],
+                    $row['unitofmeasure']
+                );
             }
 
             
             if ($result) {
-                $this->status = 'good - scan entered:'.$upc.''.
+                $this->status = 'good - scan entered: '.$upc.''.
                     $qtyMsg .
                     $pMsg .
+                    $dMsg .
                     $sectionChange;
             }   else {
-                $this->status = 'bad - strange scan:'.$query;
+                $argsMsg = print_r($args,True);
+                $this->status = 'bad - strange scan:'.$query .
+                    '<br />' . $argsMsg;
             }
         }
 
         return True;
     }
+
 
     function body_content(){
         ob_start();
@@ -208,19 +232,32 @@ class SaScanningPage extends FanniePage {
 <html>
     <body onload="readinput();">
         <center>
-            <form name="mForm" id="mid" action="SaScanningPage.php" method="get">
+        <form name="mForm" id="mid" action="<?php echo $_SERVER['PHP_SELF']; ?>" method="get">
+                <table border=0>
+                  <tr style="vertical-align:top">
+                    <td>
                 <input name="minput" id ="minput" type="text" value=""/>
-                <input name="isbnflag" type="hidden" value=""/>
+            <div>scan or type upc</div>
+                    </td>
+                    <td>
                 <input name="qinput" type="text" value="1"/>
                 <input type="submit" value="enter"/>
+                <br />Count or weight. Terminate with 'z'.
+                <br />-<i>number</i> to reduce.
+                <br />qty<b>C</b><i>number</i> - Change to Section <i>number</i>
+                <br />qty<b>S</b><i>number</i> - This item to Section <i>number</i>
+                    </td>
+                  </tr>
+                </table>
+                <input name="isbnflag" type="hidden" value=""/>
             </form>
-            <form name="sForm" id="sid" action="SaScanningPage.php" method="get">
+            <form name="sForm" id="mid" action="<?php echo $_SERVER['PHP_SELF']; ?>" method="get">
                 <input name="sflag" type="hidden" value="1"/>
-                <input type="submit" value="new section"/>
+                <i>on Section (<?php echo $this->section; ?>)</i>
                 <br />
-                <i>on section (<?php echo $this->section; ?>)</i>
+                <input type="submit" value="new section"/>
             </form>
-            <div>scan or type upc</div>
+            <!-- div>scan or type upc</div -->
             <div>status: <?php echo($this->status); ?></div>
             <!-- other group not in example. ignoring for now. (Andy 29Mar2013)
             <div><strong>Using Group 1</strong></div>

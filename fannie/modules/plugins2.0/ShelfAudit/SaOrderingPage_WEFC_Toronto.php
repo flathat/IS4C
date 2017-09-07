@@ -23,14 +23,13 @@
 
 include(dirname(__FILE__).'/../../../config.php');
 if (!class_exists('FannieAPI')) {
-    //include_once(dirname(__FILE__) . '/classlib2.0/FannieAPI.php');
     include_once(dirname(__FILE__) . '/../../../classlib2.0/FannieAPI.php');
 }
 
 /**
-  @class SaHandheldPage
+  @class SaOrderingPage_WEFC_Toronto
 */
-class SaOrderingPage extends FanniePage 
+class SaOrderingPage_WEFC_Toronto extends FanniePage 
 {
     private $section=0;
     private $current_item_data=array();
@@ -247,9 +246,9 @@ ScannerDevice.registerListener(Device);
         $this->add_onload_command('$(\'#upc_in\').focus();');
         ?>
 <body onload="$('<?php echo $elem; ?>').focus();">
-<form action="SaOrderingPage.php" method="get" id="upcScanForm">
+<form action="<?php echo $_SERVER['PHP_SELF'] ?>" method="get" id="upcScanForm">
 <div style="float: left;">
-<a href="SaMenuPage.php">Menu</a><br />
+<a href="SaMenuPage_WEFC_Toronto.php">Menu</a><br />
 <b>UPC</b>: <input type="number" size="10" name="upc_in" id="upc_in" 
 onfocus="paint_focus('upc_in');"
 <?php echo ($elem=='#upc_in')?'class="nfocused"':''; ?> 
@@ -355,6 +354,20 @@ onfocus="paint_focus('upc_in');"
 
         return ob_get_clean();
     }
+
+    /**
+      User-facing help text explaining how to 
+      use a page.
+      @return [string] html content
+    */
+    public function helpContent()
+    {
+        $ret = '';
+        $ret .= '<p>Scan or type a UPC or PLU into the Input Box. Click "Go".
+            </p>';
+        return $ret;
+    }
+
 }
 
 FannieDispatch::conditionalExec(false);

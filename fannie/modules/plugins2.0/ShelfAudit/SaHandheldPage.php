@@ -115,6 +115,9 @@ class SaHandheldPage extends FanniePage {
                 }
                 if (!isset($this->current_item_data['qty'])){
                     $this->current_item_data['qty'] = is_numeric($w['quantity']) ? $w['quantity'] : 0;
+                // EL Added accumulation. Not what it is designed for
+                } elseif (false && isset($this->current_item_data['qty'])){
+                    $this->current_item_data['qty'] += is_numeric($w['quantity']) ? $w['quantity'] : 0;
                 }
                 if (!isset($this->current_item_data['case_sizes'])){
                     $this->current_item_data['case_sizes'] = array();
