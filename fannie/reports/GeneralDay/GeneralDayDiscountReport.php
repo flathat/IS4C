@@ -26,17 +26,20 @@ if (!class_exists('FannieAPI')) {
     include($FANNIE_ROOT.'classlib2.0/FannieAPI.php');
 }
 
-class GeneralDayReport extends FannieReportPage 
+class GeneralDayDiscountReport extends FannieReportPage 
 {
-    public $description = '[General Day Report] lists tenders, sales, discounts, and taxes for a given day
-        (should net to zero). Also listed are transaction count &amp; size information by member type and
+    public $description = '[General Day Discount Report] lists tenders, sales,
+        discounts, and taxes for a given day
+        with Sales reflecting transaction-level Discounts
+        (should net to zero).
+        Also listed are transaction count &amp; size information by member type and
         equity sales for the day.'; 
     public $report_set = 'Sales Reports';
     public $themed = true;
     protected $new_tablesorter = true;
 
-    protected $title = "Fannie : General Day Report";
-    protected $header = "General Day Report";
+    protected $title = "Fannie : General Day Discount Report";
+    protected $header = "General Day Discount Report";
     protected $report_cache = 'none';
     protected $grandTTL = 1;
     protected $multi_report_mode = true;
@@ -46,6 +49,89 @@ class GeneralDayReport extends FannieReportPage
 
     protected $report_headers = array('Desc','Qty','Amount');
     protected $required_fields = array('date');
+    protected $sales_reflect_discounts = false;
+
+    /* #'p
+        if (FormLib::get_form_value('sales_reflect_discounts',false)) {
+            $this->sales_reflect_discounts = true;
+        }
+     * */
+    function preprocess()
+    {
+        parent::preprocess();
+        $this->sales_reflect_discounts =
+            FormLib::get_form_value('sales_reflect_discounts',false);
+        if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+            $this->shrinkageUsers = " AND (d.card_no not between 99900 and 99998)";
+        }
+        return true;
+    }
+
+	/**
+	  Define any CSS needed
+	  @return A CSS string
+	*/
+	function css_content(){
+        $css = "p.explain {
+            font-family: Arial;
+            font-size: 1.0em;
+            color: black;
+            margin: 0 0 0 0;
+        }
+        ";
+        return $css;
+    }
+
+    /* Lines of descriptive text that appear before the tabular part of the
+     * report.
+     */
+	function report_description_content(){
+		$ret = array();
+        $ret[] = "<p class='explain'><a href='" . $_SERVER['PHP_SELF'] . "'>Start over</a>" .
+                "" .
+                "</p>";
+        if ($this->sales_reflect_discounts) {
+            $ret[] ="<p class='explain'>Sales figures are reduced by " .
+                "percentages of Whole-transaction Discounts " .
+                "as well as per-item discounts and sale prices." .
+                "<br />The Discounts section shows the totals of Whole-transaction Discounts." .
+                "<br />The Reconciliation section shows zero for Discounts because they are " .
+                "already reflected in Sales." .
+                "" .
+                "</p>";
+        } else {
+            $ret[] ="<p class='explain'>Sales figures are not reduced by " .
+                "percentages of Whole-transaction Discounts " .
+                "but do reflect per-item discounts and sale prices." .
+                "" .
+                "</p>";
+        }
+        if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+            if ($this->shrinkageUsers !== "") {
+            $ret[] ="<p class='explain'>This report excludes West End Food Co-op In-house users." .
+                "" .
+                "</p>";
+            }
+        }
+        $ret[] ="";
+		return $ret;
+    // /report_description_content()
+	}
+
+	/**
+	  Extra, non-tabular information appended to reports
+	  @return array of strings
+	*/
+    function report_end_content(){
+		$ret = array();
+        $ret[] = "<p class='explain'><a href='" . $_SERVER['PHP_SELF'] . "'>Start over</a>" .
+                "" .
+                "</p>";
+        //$ret[] ="";
+
+		return $ret;
+    // /report_description_content()
+	}
 
     function fetch_report_data()
     {
@@ -56,10 +142,6 @@ class GeneralDayReport extends FannieReportPage
         $d1 = $this->form->date;
         $dates = array($d1.' 00:00:00',$d1.' 23:59:59');
         $data = array();
-
-        if ( isset($FANNIE_COOP_ID) && $FANNIE_COOP_ID == 'WEFC_Toronto' ) {
-            $this->shrinkageUsers = " AND (d.card_no not between 99900 and 99998)";
-        }
 
         $reconciliation = array(
             'Tenders' => 0.0,
@@ -92,12 +174,48 @@ class GeneralDayReport extends FannieReportPage
          * .department <> 0 keeps DISCOUNT and TAX out
          * */
         $salesQ = '';
+        /* */
+        if ($this->sales_reflect_discounts) {
+            /* First
+            $totalStatement = '
+                CASE WHEN discountable = 1 AND percentDiscount > 0 THEN
+                    SUM(ROUND(d.total * (1 - (percentDiscount / 100)),2))
+                    ELSE SUM(d.total) END
+                    AS total ';
+              */
+            /* Not quite as better: ROUND() makes it worse.
+            $totalStatement = '
+                SUM(
+                CASE WHEN discountable = 1 AND percentDiscount > 0 THEN
+                    ROUND(d.total * (1 - (percentDiscount / 100)),2)
+                    ELSE d.total END)
+                    AS total ';
+             * */
+            /* Best so far:
+             * Perfect April 18, 19 $4-5K gross.
+             * Off + $0.21 on $16K gross
+             * */
+            $totalStatement = '
+                SUM(
+                CASE WHEN discountable = 1 AND percentDiscount > 0 THEN
+                    d.total * (1 - (percentDiscount / 100))
+                    ELSE d.total END)
+                    AS total ';
+        } else {
+            $totalStatement = '
+                    SUM(d.total) AS total ';
+        }
+        /*
+                    SELECT t.dept_name AS category,
+                    SELECT m.super_name AS category,
+         */
         switch (FormLib::get('sales-by')) {
             case 'Department':
                 $salesQ = '
-                    SELECT t.dept_name AS category,
-                        SUM(d.quantity) AS qty,
-                        SUM(d.total) AS total
+                    SELECT CASE WHEN COALESCE(t.dept_name,\'\') = \'\' THEN d.department
+                    ELSE t.dept_name END AS category,
+                        SUM(d.quantity) AS qty, ' .
+                        $totalStatement . '
                     FROM ' . $dlog . ' AS d
                         LEFT JOIN departments AS t ON d.department=t.dept_no
                     WHERE d.department <> 0
@@ -109,8 +227,8 @@ class GeneralDayReport extends FannieReportPage
             case 'Sales Code':
                 $salesQ = '
                     SELECT t.salesCode AS category,
-                        SUM(d.quantity) AS qty,
-                        SUM(d.total) AS total
+                        SUM(d.quantity) AS qty, ' .
+                        $totalStatement . '
                     FROM ' . $dlog . ' AS d
                         LEFT JOIN departments AS t ON d.department=t.dept_no
                     WHERE d.department <> 0
@@ -122,9 +240,10 @@ class GeneralDayReport extends FannieReportPage
             case 'Super Department':
             default:
                 $salesQ = '
-                    SELECT m.super_name AS category,
-                        SUM(d.quantity) AS qty,
-                        SUM(d.total) AS total
+                    SELECT CASE WHEN COALESCE(m.super_name,\'\') = \'\' THEN d.department
+                    ELSE m.super_name END AS category,
+                        SUM(d.quantity) AS qty, ' .
+                        $totalStatement . '
                     FROM ' . $dlog . ' AS d
                         LEFT JOIN MasterSuperDepts AS m ON d.department=m.dept_ID
                     WHERE d.department <> 0
@@ -201,6 +320,9 @@ class GeneralDayReport extends FannieReportPage
 
         /* Reconciliation */
         $report = array();
+        if ($this->sales_reflect_discounts) {
+            $reconciliation['Discounts'] = 0;
+        }
         foreach ($reconciliation as $type => $amt) {
             $report[] = array(
                 $type,
@@ -209,12 +331,22 @@ class GeneralDayReport extends FannieReportPage
         }
         $data[] = $report;
 
-        /* Baskets: #transactions and #items */
-        $transQ = $dbc->prepare_statement("SELECT q.trans_num,sum(q.quantity) as items,
+        /* #'B Baskets: #transactions and #items */
+        if ($this->sales_reflect_discounts) {
+            $totalColumn = '
+                CASE WHEN discountable = 1 AND percentDiscount > 0 THEN
+                    (total * (1 - (percentDiscount / 100)))
+                    ELSE total END
+                    AS total';
+        } else {
+            $totalColumn = ' total';
+        }
+        $transQ = $dbc->prepare_statement("SELECT q.trans_num,
+            sum(q.quantity) as items,
             transaction_type, sum(q.total)
             FROM
             (
-            SELECT trans_num,card_no,quantity,total,
+            SELECT trans_num,card_no,quantity,{$totalColumn},
             m.memDesc as transaction_type
             FROM $dlog as d
             LEFT JOIN memtype as m on d.memType = m.memtype
@@ -222,7 +354,7 @@ class GeneralDayReport extends FannieReportPage
                 AND trans_type in ('I','D')
                 AND upc <> 'RRR'{$this->shrinkageUsers}
             ) as q 
-            group by q.trans_num,q.transaction_type");
+            GROUP BY q.trans_num,q.transaction_type");
         $transR = $dbc->exec_statement($transQ,$dates);
         $transinfo = array();
         while($row = $dbc->fetch_array($transR)){
@@ -236,8 +368,10 @@ class GeneralDayReport extends FannieReportPage
         $tItems = 0;
         $tDollars = 0;
         foreach (array_keys($transinfo) as $k) {
+            // Better number_format(x,2)
             $transinfo[$k][2] = round($transinfo[$k][1]/$transinfo[$k][0],2);
             $transinfo[$k][4] = round($transinfo[$k][3]/$transinfo[$k][0],2);
+            $transinfo[$k][3] = round($transinfo[$k][3],2);
             $tSum += $transinfo[$k][0];
             $tItems += $transinfo[$k][1];
             $tDollars += $transinfo[$k][3];
@@ -285,12 +419,44 @@ class GeneralDayReport extends FannieReportPage
         switch($this->multi_counter){
         case 1:
             $this->report_headers[0] = 'Tenders';
+            /*
+             */
+            $sumQty = 0;
+            $sumAmount = 0.0;
+            for ($i=0; $i<count($data); $i++) {
+                $sumQty += $data[$i][1];
+                $sumAmount += $data[$i][2];
+            }
+            return array('Total Tenders',
+                number_format($sumQty,0),
+                '$'.number_format($sumAmount,2)
+            );
             break;
         case 2:
             $this->report_headers[0] = 'Sales';
+            $sumQty = 0;
+            $sumAmount = 0.0;
+            for ($i=0; $i<count($data); $i++) {
+                $sumQty += $data[$i][1];
+                $sumAmount += $data[$i][2];
+            }
+            return array('Total Sales',
+                number_format($sumQty,0),
+                '$'.number_format($sumAmount,2)
+            );
             break;
         case 3:
             $this->report_headers[0] = 'Discounts';
+            $sumQty = 0;
+            $sumAmount = 0.0;
+            for ($i=0; $i<count($data); $i++) {
+                $sumQty += $data[$i][1];
+                $sumAmount += $data[$i][2];
+            }
+            return array('Total Discounts',
+                number_format($sumQty,0),
+                '$'.number_format($sumAmount,2)
+            );
             break;
         case 4:
             $this->report_headers = array('Tax', 'Amount');
@@ -298,7 +464,7 @@ class GeneralDayReport extends FannieReportPage
             for ($i=0; $i<count($data)-1; $i++) {
                 $sumTax += $data[$i][1];
             }
-            return array('Total Sales Tax', sprintf('%.2f', $sumTax));
+            return array('Total Sales Tax', '$'.number_format($sumTax,2));
             break;
         case 5:
             $this->report_headers = array('Reconcile Totals', 'Amount');
@@ -306,7 +472,7 @@ class GeneralDayReport extends FannieReportPage
             foreach ($data as $row) {
                 $ttl += $row[1];
             }
-            return array('Net', sprintf('%.2f', $ttl));
+            return array('Net', '$'.number_format($ttl,2));
         case 6:
             $this->report_headers = array('Type','Trans','Items','Avg. Items','Amount','Avg. Amount');
             $trans = 0.0;
@@ -317,7 +483,13 @@ class GeneralDayReport extends FannieReportPage
                 $items += $data[$i][2];
                 $amount += $data[$i][4];
             }
-            return array('Totals', $trans, sprintf('%.2f', $items), sprintf('%.2f', $items/$trans), sprintf('%.2f', $amount), sprintf('%.2f', $amount/$trans));
+            return array('Totals',
+                number_format($trans,0),
+                number_format($items,2),
+                number_format(($items/$trans),2),
+                '$'.number_format($amount,2),
+                '$'.number_format(($amount/$trans),2)
+            );
             break;
         case 7:
             $this->report_headers = array('Mem#','Equity Type', 'Amount');
@@ -337,11 +509,12 @@ class GeneralDayReport extends FannieReportPage
         return array(null,$sumQty,$sumSales);
     }
 
+    /* #'C */
     function form_content()
     {
         ob_start();
         ?>
-        <form action=GeneralDayReport.php method=get>
+            <form action="<?php echo $_SERVER['PHP_SELF']; ?>" method=get>
         <div class="form-group">
             <label>
                 Date
@@ -361,6 +534,13 @@ class GeneralDayReport extends FannieReportPage
         <div class="form-group">
             <label>Excel <input type=checkbox name=excel /></label>
         </div>
+        <div class="form-group">
+            <label>Sales Reflect Discounts <input type=checkbox name=sales_reflect_discounts 
+        <?php if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+            echo "checked";
+        } ?>
+        /></label>
+        </div>
         <p>
         <button type=submit name=submit value="Submit"
             class="btn btn-default">Submit</button>
@@ -372,7 +552,6 @@ class GeneralDayReport extends FannieReportPage
 
     public function helpContent()
     {
-        global $FANNIE_COOP_ID;
         $ret = '';
         $ret .='<p>
             This report lists the four major categories of transaction
@@ -380,23 +559,46 @@ class GeneralDayReport extends FannieReportPage
             taxes.
             </p>
             <p>
-            Tenders are payments given by customers such as cash or
-            credit cards. Sales are items sold to customers. Discounts
-            are percentage discounts associated with an entire
-            transaction instead of individual items. Taxes are sales
-            tax collected.
+            There is a checkbox option <b>Sales Reflect Discounts</b>
+            which, when ticked, excludes whole-transaction
+            discounts from sales and other pertinent totals.
+            </p>
+            <p>Terminology:
+            <ul>
+            <li>
+            <b>Tenders</b> are payments given by customers such as cash or credit cards.
+            </li>
+            <li>
+            <b>Sales</b> are items sold to customers.
+            </li>
+            <li>
+            <b>Discounts</b> are percentage discounts associated with an entire
+            transaction instead of individual items.
+            <br />Item-level discounts are reflected in Sales
+            regardless of the Sales Reflect Discount option.
+            </li>
+            <li>
+            <b>Taxes</b> are sales tax collected.
+            </li>
+            <li>
+            <b>Reconciliation note:</b>
+            If the Sales Reflect Discount option is in effect
+            the amount of Discounts is reported but not included in
+            the Reconciliation because it has already been removed from Sales.
+            </li>
+            </ul>
             </p>
             <p>
-            Tenders should equal sales minus discounts plus taxes.
+            Tenders should equal Sales minus Discounts plus Taxes.
             </p>
             <p>
-            Equity and transaction statistics are provided as generally
+            Equity and Transaction statistics are provided as generally
             useful information.
             </p>';
-        if ( isset($FANNIE_COOP_ID) && $FANNIE_COOP_ID == 'WEFC_Toronto' ) {
+        if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
             $this->shrinkageUsers = " AND (d.card_no not between 99900 and 99998)";
             $ret .= "<p>This report excludes the In-house accounts using this statement:
-                <br />{$this->shrinkageUsers}
+                <br /><span style='font-family: courier;'>{$this->shrinkageUsers}</span>
                 </p>";
         }
         return $ret;

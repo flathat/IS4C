@@ -20,6 +20,9 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 *********************************************************************************/
+/*
+ * 25Jul2017 EL Added Brand to Department results
+ */
 
 include(dirname(__FILE__) . '/../../config.php');
 if (!class_exists('FannieAPI')) {
@@ -106,6 +109,7 @@ class SmartMovementReport extends FannieReportPage
             case 'PLU':
                 $query = "
                     SELECT t.upc,
+                        COALESCE(p.brand,'') as brand,
                         CASE WHEN p.description IS NULL THEN t.description ELSE p.description END as description, 
                         SUM(CASE WHEN trans_status IN('','0') THEN 1 WHEN trans_status='V' THEN -1 ELSE 0 END) as rings,"
                         . DTrans::sumQuantity('t')." as qty,
@@ -178,6 +182,7 @@ class SmartMovementReport extends FannieReportPage
                 case 'PLU':
                     $data[] = array(
                         $row['upc'],
+                        $row['brand'],
                         $row['description'],
                         $row['rings'],
                         sprintf('%.2f', $row['qty']),
@@ -223,19 +228,19 @@ class SmartMovementReport extends FannieReportPage
     {
         switch ($this->mode) {
             case 'PLU':
-                $this->report_headers = array('UPC','Description','Rings','Qty','$',
+                $this->report_headers = array('UPC','Brand','Description','Rings','Qty','$',
                     'Dept#','Department','Super','Vendor');
-                $this->sort_column = 4;
+                $this->sort_column = 5;
                 $this->sort_direction = 1;
                 $sumQty = 0.0;
                 $sumSales = 0.0;
                 $sumRings = 0.0;
                 foreach($data as $row) {
-                    $sumRings += $row[2];
-                    $sumQty += $row[3];
-                    $sumSales += $row[4];
+                    $sumRings += $row[3];
+                    $sumQty += $row[4];
+                    $sumSales += $row[5];
                 }
-                return array('Total',null,$sumRings,$sumQty,$sumSales,'',null,null,null);
+                return array('Total',null,null,$sumRings,$sumQty,$sumSales,'',null,null,null);
                 break;
             case 'Weekday':
             case 'Date':

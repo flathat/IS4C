@@ -158,7 +158,7 @@ class VendorMovementReport extends FannieReportPage
                     $sumSales += $row[4];
                 }
 
-                return array('Total',null,null,$sumQty,$sumSales,null,null,null);
+                return array('Total',null,null,$sumQty,$sumSales,'',null,null);
 
             case 5:
                 $this->report_headers = array('Dept#','Department','Qty','$','Super');

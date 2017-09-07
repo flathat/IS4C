@@ -39,6 +39,42 @@ class ChartOfAccountsReport extends FannieReportPage
 
     protected $report_headers = array('Report Date', 'Account #', 'Credits', 'Debits', 'Memo');
     protected $required_fields = array('date1', 'date2');
+    protected $shrinkageUsers = "";
+
+	/**
+	  Define any CSS needed
+	  @return A CSS string
+	*/
+	function css_content(){
+        $css = "p.explain {
+            font-family: Arial;
+            font-size: 1.0em;
+            color: black;
+            margin: 0 0 0 0;
+        }
+        ";
+        return $css;
+    }
+
+    /* Lines of descriptive text that appear before the tabular part of the
+     * report.
+     */
+	function report_description_content(){
+		$ret = array();
+        $ret[] = "<p class='explain'><a href='" . $_SERVER['PHP_SELF'] . "'>Start over</a>" .
+                "" .
+                "</p>";
+        if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+            if ($this->shrinkageUsers !== "") {
+            $ret[] ="<p class='explain'>This report excludes West End Food Co-op In-house users." .
+                "" .
+                "</p>";
+            }
+        }
+        $ret[] ="";
+		return $ret;
+    // /report_description_content()
+	}
 
     function fetch_report_data()
     {
@@ -49,6 +85,11 @@ class ChartOfAccountsReport extends FannieReportPage
         $dates = array($d1.' 00:00:00', $d2.' 23:59:59');
         $today = date('Ymd');
         $data = array();
+        $dbc->selectDB($this->config->get('OP_DB'));
+
+        if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+            $this->shrinkageUsers = " AND (d.card_no not between 99900 and 99998)";
+        }
 
         $dlog = DTransactionsModel::selectDlog($d1);
         $tenderQ = $dbc->prepare("
@@ -60,7 +101,7 @@ class ChartOfAccountsReport extends FannieReportPage
                 LEFT JOIN tenders as t ON d.trans_subtype=t.TenderCode
             WHERE d.tdate BETWEEN ? AND ?
                 AND d.trans_type = 'T'
-                AND d.total <> 0
+                AND d.total <> 0{$this->shrinkageUsers}
             GROUP BY t.TenderName,
                 t.SalesCode 
             ORDER BY TenderName");
@@ -85,7 +126,7 @@ class ChartOfAccountsReport extends FannieReportPage
                 LEFT JOIN departments AS t ON d.department=t.dept_no
             WHERE d.department <> 0
                 AND d.trans_type <> \'T\'
-                AND d.tdate BETWEEN ? AND ?
+                AND d.tdate BETWEEN ? AND ?' . $this->shrinkageUsers . '
             GROUP BY t.salesCode
             ORDER BY t.salesCode'; 
         $salesP = $dbc->prepare($salesQ);
@@ -112,7 +153,7 @@ class ChartOfAccountsReport extends FannieReportPage
                     LEFT JOIN memtype m ON d.memType = m.memtype
                 WHERE d.tdate BETWEEN ? AND ?
                    AND d.upc = 'DISCOUNT'
-                    AND total <> 0
+                    AND total <> 0{$this->shrinkageUsers}
                 GROUP BY m.memDesc,
                     m.salesCode 
                 ORDER BY m.memDesc");
@@ -139,7 +180,7 @@ class ChartOfAccountsReport extends FannieReportPage
                 LEFT JOIN taxrates AS t ON d.numflag=t.id
             WHERE datetime BETWEEN ? AND ?
                 AND d.upc='TAXLINEITEM'
-                AND " . DTrans::isNotTesting('d') . "
+                AND " . DTrans::isNotTesting('d') . "{$this->shrinkageUsers}
             GROUP BY d.description
         ");
         $lineItemR = $dbc->execute($lineItemQ, $dates);

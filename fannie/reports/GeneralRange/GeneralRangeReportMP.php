@@ -26,17 +26,17 @@ if (!class_exists('FannieAPI')) {
     include($FANNIE_ROOT.'classlib2.0/FannieAPI.php');
 }
 
-class GeneralDayReport extends FannieReportPage 
+class GeneralRangeReportMP extends FannieReportPage 
 {
-    public $description = '[General Day Report] lists tenders, sales, discounts, and taxes for a given day
-        (should net to zero). Also listed are transaction count &amp; size information by member type and
-        equity sales for the day.'; 
+    public $description = '[General Range Report MP] lists tenders, sales,
+        discounts, and taxes for a given 
+        range of dates.
+        Shows Sales per Membership Type';
     public $report_set = 'Sales Reports';
     public $themed = true;
-    protected $new_tablesorter = true;
 
-    protected $title = "Fannie : General Day Report";
-    protected $header = "General Day Report";
+    protected $title = "Fannie : General Range Report MP";
+    protected $header = "General Range Report - Membership Percentage";
     protected $report_cache = 'none';
     protected $grandTTL = 1;
     protected $multi_report_mode = true;
@@ -45,16 +45,17 @@ class GeneralDayReport extends FannieReportPage
     protected $shrinkageUsers = "";
 
     protected $report_headers = array('Desc','Qty','Amount');
-    protected $required_fields = array('date');
+    protected $required_fields = array('date1', 'date2');
+    protected $tProportion = 0.0;
 
     function fetch_report_data()
     {
-        global $FANNIE_OP_DB, $FANNIE_ARCHIVE_DB, $FANNIE_EQUITY_DEPARTMENTS,
-            $FANNIE_COOP_ID;
+        global $FANNIE_COOP_ID;
         $dbc = $this->connection;
-        $dbc->selectDB($this->config->get('OP_DB'));
-        $d1 = $this->form->date;
-        $dates = array($d1.' 00:00:00',$d1.' 23:59:59');
+        $dbc->setDefaultDB($this->config->get('OP_DB'));
+        $d1 = $this->form->date1;
+        $d2 = $this->form->date2;
+        $dates = array($d1.' 00:00:00', $d2.' 23:59:59');
         $data = array();
 
         if ( isset($FANNIE_COOP_ID) && $FANNIE_COOP_ID == 'WEFC_Toronto' ) {
@@ -68,19 +69,20 @@ class GeneralDayReport extends FannieReportPage
             'Tax' => 0.0,
         );
 
-        /* Tenders */
-        $dlog = DTransactionsModel::selectDlog($d1);
-        $tenderQ = $dbc->prepare_statement("SELECT 
-            TenderName,count(d.total),sum(d.total) as total
-            FROM $dlog as d,
-                {$FANNIE_OP_DB}.tenders as t 
+        $dlog = DTransactionsModel::selectDlog($d1,$d2);
+        $tenderQ = $dbc->prepare("
+            SELECT TenderName,
+                COUNT(d.total) AS num,
+                SUM(d.total) as total
+            FROM $dlog AS d
+                INNER JOIN tenders as t ON d.trans_subtype=t.TenderCode
             WHERE d.tdate BETWEEN ? AND ?
-                AND d.trans_subtype = t.TenderCode
+                AND d.trans_type = 'T'
                 AND d.total <> 0{$this->shrinkageUsers}
             GROUP BY t.TenderName ORDER BY TenderName");
-        $tenderR = $dbc->exec_statement($tenderQ,$dates);
+        $tenderR = $dbc->execute($tenderQ,$dates);
         $report = array();
-        while($tenderW = $dbc->fetch_row($tenderR)){
+        while ($tenderW = $dbc->fetch_row($tenderR)) {
             $record = array($tenderW['TenderName'],$tenderW[1],
                     sprintf('%.2f',$tenderW['total']));
             $report[] = $record;
@@ -88,9 +90,6 @@ class GeneralDayReport extends FannieReportPage
         }
         $data[] = $report;
 
-        /* Sales
-         * .department <> 0 keeps DISCOUNT and TAX out
-         * */
         $salesQ = '';
         switch (FormLib::get('sales-by')) {
             case 'Department':
@@ -135,9 +134,9 @@ class GeneralDayReport extends FannieReportPage
                 break;
         }
         $salesP = $dbc->prepare($salesQ);
-        $salesR = $dbc->exec_statement($salesP,$dates);
+        $salesR = $dbc->execute($salesP,$dates);
         $report = array();
-        while($salesW = $dbc->fetch_row($salesR)){
+        while ($salesW = $dbc->fetch_row($salesR)) {
             $record = array($salesW['category'],
                     sprintf('%.2f',$salesW['qty']),
                     sprintf('%.2f',$salesW['total']));
@@ -146,24 +145,26 @@ class GeneralDayReport extends FannieReportPage
         }
         $data[] = $report;
 
-        /* Discounts */
-        $discQ = $dbc->prepare_statement("SELECT m.memDesc, SUM(d.total) AS Discount,count(*)
+        $discQ = $dbc->prepare("
+                SELECT m.memDesc, 
+                    SUM(d.total) AS Discount,
+                    count(*) AS num
                 FROM $dlog d 
                     INNER JOIN memtype m ON d.memType = m.memtype
                 WHERE d.tdate BETWEEN ? AND ?
                    AND d.upc = 'DISCOUNT'{$this->shrinkageUsers}
-                AND total <> 0
-                GROUP BY m.memDesc ORDER BY m.memDesc");
-        $discR = $dbc->exec_statement($discQ,$dates);
+                    AND total <> 0
+                GROUP BY m.memDesc 
+                ORDER BY m.memDesc");
+        $discR = $dbc->execute($discQ,$dates);
         $report = array();
-        while($discW = $dbc->fetch_row($discR)){
+        while ($discW = $dbc->fetch_row($discR)) {
             $record = array($discW['memDesc'],$discW[2],$discW[1]);
             $report[] = $record;
             $reconciliation['Discounts'] += $discW['Discount'];
         }
         $data[] = $report;
 
-        /* Tax: each type */
         $report = array();
         $trans = DTransactionsModel::selectDTrans($d1);
         $lineItemQ = $dbc->prepare("
@@ -174,8 +175,7 @@ class GeneralDayReport extends FannieReportPage
                 AND d.upc='TAXLINEITEM'
                 AND " . DTrans::isNotTesting('d') . $this->shrinkageUsers .
                 " GROUP BY d.description"
-            );
-//$dbc->logger("e: $lineItemQ" . print_r($dates,true));
+        );
         $lineItemR = $dbc->execute($lineItemQ, $dates);
         while ($lineItemW = $dbc->fetch_row($lineItemR)) {
             $record = array($lineItemW['description'] . ' (est. owed)',
@@ -183,15 +183,14 @@ class GeneralDayReport extends FannieReportPage
             $report[] = $record;
         }
 
-        /* Tax: total */
-        $taxSumQ = $dbc->prepare_statement("SELECT  sum(total) as tax_collected
+        $taxSumQ = $dbc->prepare("
+            SELECT SUM(total) AS tax_collected
             FROM $dlog as d 
             WHERE d.tdate BETWEEN ? AND ?
                 AND (d.upc = 'tax'){$this->shrinkageUsers}
             GROUP BY d.upc");
-//$dbc->logger("t: $taxSumQ" . print_r($dates,true));
-        $taxR = $dbc->exec_statement($taxSumQ,$dates);
-        while($taxW = $dbc->fetch_row($taxR)){
+        $taxR = $dbc->execute($taxSumQ,$dates);
+        while ($taxW = $dbc->fetch_row($taxR)) {
             $record = array('Total Tax Collected',
                 sprintf("%.2f",$taxW['tax_collected']));
             $report[] = $record;
@@ -199,7 +198,6 @@ class GeneralDayReport extends FannieReportPage
         }
         $data[] = $report;
 
-        /* Reconciliation */
         $report = array();
         foreach ($reconciliation as $type => $amt) {
             $report[] = array(
@@ -209,10 +207,9 @@ class GeneralDayReport extends FannieReportPage
         }
         $data[] = $report;
 
-        /* Baskets: #transactions and #items */
+        /* #'B Baskets: #transactions and #items */
         $transQ = $dbc->prepare_statement("SELECT q.trans_num,sum(q.quantity) as items,
-            transaction_type, sum(q.total)
-            FROM
+            transaction_type, sum(q.total) FROM
             (
             SELECT trans_num,card_no,quantity,total,
             m.memDesc as transaction_type
@@ -222,12 +219,14 @@ class GeneralDayReport extends FannieReportPage
                 AND trans_type in ('I','D')
                 AND upc <> 'RRR'{$this->shrinkageUsers}
             ) as q 
-            group by q.trans_num,q.transaction_type");
+            GROUP by q.trans_num,q.transaction_type");
         $transR = $dbc->exec_statement($transQ,$dates);
         $transinfo = array();
+        // #'b body
         while($row = $dbc->fetch_array($transR)){
-            if (!isset($transinfo[$row[2]]))
-                $transinfo[$row[2]] = array(0,0.0,0.0,0.0,0.0);
+            if (!isset($transinfo[$row[2]])) {
+                $transinfo[$row[2]] = array(0,0.0,0.0,0.0,0.0,0.0);
+            }
             $transinfo[$row[2]][0] += 1;
             $transinfo[$row[2]][1] += $row[1];
             $transinfo[$row[2]][3] += $row[3];
@@ -235,12 +234,16 @@ class GeneralDayReport extends FannieReportPage
         $tSum = 0;
         $tItems = 0;
         $tDollars = 0;
+        $this->tProportion = 0.0;
+        $totalSales = $reconciliation['Sales'];
         foreach (array_keys($transinfo) as $k) {
             $transinfo[$k][2] = round($transinfo[$k][1]/$transinfo[$k][0],2);
             $transinfo[$k][4] = round($transinfo[$k][3]/$transinfo[$k][0],2);
+            $transinfo[$k][5] = round(($transinfo[$k][3]/$totalSales)*100,2);
             $tSum += $transinfo[$k][0];
             $tItems += $transinfo[$k][1];
             $tDollars += $transinfo[$k][3];
+            $this->tProportion += $transinfo[$k][5];
         }
         $report = array();
         foreach($transinfo as $title => $info){
@@ -249,27 +252,29 @@ class GeneralDayReport extends FannieReportPage
         }
         $data[] = $report;
 
-        /* Equity */
-        $ret = preg_match_all("/[0-9]+/",$FANNIE_EQUITY_DEPARTMENTS,$depts);
-        if ($ret != 0){
+        $ret = preg_match_all("/[0-9]+/",$this->config->get('EQUITY_DEPARTMENTS'),$depts);
+        if ($ret != 0) {
             /* equity departments exist */
             $depts = array_pop($depts);
             $dlist = "(";
-            foreach($depts as $d){
+            foreach ($depts as $d) {
                 $dates[] = $d; // add query param
                 $dlist .= '?,';
             }
             $dlist = substr($dlist,0,strlen($dlist)-1).")";
 
-            $equityQ = $dbc->prepare_statement("SELECT d.card_no,t.dept_name, sum(total) as total 
+            $equityQ = $dbc->prepare("
+                SELECT d.card_no,
+                    t.dept_name, 
+                    SUM(total) AS total 
                 FROM $dlog as d
-                LEFT JOIN {$FANNIE_OP_DB}.departments as t ON d.department = t.dept_no
+                    LEFT JOIN departments as t ON d.department = t.dept_no
                 WHERE d.tdate BETWEEN ? AND ?
                     AND d.department IN $dlist{$this->shrinkageUsers}
                 GROUP BY d.card_no, t.dept_name ORDER BY d.card_no, t.dept_name");
-            $equityR = $dbc->exec_statement($equityQ,$dates);
+            $equityR = $dbc->execute($equityQ,$dates);
             $report = array();
-            while($equityW = $dbc->fetch_row($equityR)){
+            while ($equityW = $dbc->fetch_row($equityR)) {
                 $record = array($equityW['card_no'],$equityW['dept_name'],
                         sprintf('%.2f',$equityW['total']));
                 $report[] = $record;
@@ -307,17 +312,31 @@ class GeneralDayReport extends FannieReportPage
                 $ttl += $row[1];
             }
             return array('Net', sprintf('%.2f', $ttl));
+            break;
         case 6:
-            $this->report_headers = array('Type','Trans','Items','Avg. Items','Amount','Avg. Amount');
+            // #'f Baskets
+            $this->report_headers = array('Type','Trans','Items','Avg. Items',
+                '$ Amount','Avg. $ Amount','% of $ Amount');
             $trans = 0.0;
             $items = 0.0;
             $amount = 0.0;
+            $proportion = 0.0;
             for ($i=0; $i<count($data); $i++) {
                 $trans += $data[$i][1];
                 $items += $data[$i][2];
                 $amount += $data[$i][4];
+                // The values in $data[$i][5] make no sense.
+                $proportion += $data[$i][5];
             }
-            return array('Totals', $trans, sprintf('%.2f', $items), sprintf('%.2f', $items/$trans), sprintf('%.2f', $amount), sprintf('%.2f', $amount/$trans));
+            //return array('Totals', $trans, sprintf('%.2f', $items), sprintf('%.2f', $items/$trans), sprintf('%.2f', $amount), sprintf('%.2f', $amount/$trans));
+            return array('Totals',
+                number_format($trans,0),
+                number_format($items,2),
+                number_format(($items/$trans),2),
+                '$'.number_format($amount,2),
+                '$'.number_format(($amount/$trans),2),
+                number_format($this->tProportion,2).'%',
+            );
             break;
         case 7:
             $this->report_headers = array('Mem#','Equity Type', 'Amount');
@@ -339,34 +358,31 @@ class GeneralDayReport extends FannieReportPage
 
     function form_content()
     {
+        $start = date('Y-m-d',strtotime('yesterday'));
         ob_start();
         ?>
-        <form action=GeneralDayReport.php method=get>
-        <div class="form-group">
-            <label>
-                Date
-                (<a href="../GeneralRange/">Range of Dates</a>)
-            </label>
-            <input type=text id=date name=date 
-                class="form-control date-field" required />
+        <form method=get>
+        <div class="col-sm-5">
+            <div class="form-group">
+                <label>List Sales By</label>
+                <select name="sales-by" class="form-control">
+                    <option>Super Department</option>
+                    <option>Department</option>
+                    <option>Sales Code</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Excel <input type=checkbox name=excel /></label>
+            </div>
+            <p>
+            <button type=submit name=submit value="Submit"
+                class="btn btn-default">Submit</button>
+            </p>
         </div>
-        <div class="form-group">
-            <label>List Sales By</label>
-            <select name="sales-by" class="form-control">
-                <option>Super Department</option>
-                <option>Department</option>
-                <option>Sales Code</option>
-            </select>
-        </div>
-        <div class="form-group">
-            <label>Excel <input type=checkbox name=excel /></label>
-        </div>
-        <p>
-        <button type=submit name=submit value="Submit"
-            class="btn btn-default">Submit</button>
-        </p>
+        <?php echo FormLib::standardDateFields(); ?>
         </form>
         <?php
+
         return ob_get_clean();
     }
 
@@ -404,6 +420,5 @@ class GeneralDayReport extends FannieReportPage
 
 }
 
-FannieDispatch::conditionalExec(false);
+FannieDispatch::conditionalExec();
 
-?>

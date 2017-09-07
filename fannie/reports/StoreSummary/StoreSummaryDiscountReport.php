@@ -2,7 +2,7 @@
 /*******************************************************************************
 
     Copyright 2013 Whole Foods Co-op
-    Copyright 2015 West End Food Co-op, Toronto
+    Copyright 2016 West End Food Co-op, Toronto
 
     This file is part of CORE-POS.
 
@@ -24,6 +24,9 @@
 
 /*
  * 11Nov2016 Handle the incorrect .cost for Voids and Refunds prior to Nov 2016.
+ *  5Aug2016 Option for reducing Sales at the department level
+ *            by transaction-level discounts.
+ *  5Aug2016 Option for suppressing department-level detail.
  * 27Dec2015 Includes the current day, if requested, by merging results from dlog
  *            rather than by UNION. Techniques are different for
  *            the main body of the report, discounts and whole-store taxes.
@@ -39,16 +42,19 @@ if (!class_exists('FannieAPI')) {
     include_once($FANNIE_ROOT.'classlib2.0/FannieAPI.php');
 }
 
-class StoreSummaryReport extends FannieReportPage {
+class StoreSummaryDiscountReport extends FannieReportPage {
 
     protected $required_fields = array('date1', 'date2');
 
-    public $description = "[Store Summary Report] shows total sales, costs and taxes
-       per department for a given date range in dollars as well as a percentage of 
-       store-wide sales and costs. It uses actual item cost if known and estimates 
+    public $description = "[Store Summary Discount Report] shows total sales, costs and taxes
+        by Super Department and per Department for a given date range
+        in dollars as well as as a percentage of store-wide sales and costs.
+       Transaction-level discounts can be reflected in Department-level Sales totals.
+       It uses actual item cost if known and estimates 
        cost from price and department margin if not; 
-    relies on department margins being accurate.
-        Assumes a two-tax regime.";
+       relies on department margins being accurate.
+           Assumes a two-tax regime.
+           Can suppress Department level detail.";
 
     public $report_set = 'Sales Reports';
     public $themed = true;
@@ -57,14 +63,17 @@ class StoreSummaryReport extends FannieReportPage {
     protected $show_zero;
     protected $zero_cost_dept;
     protected $zero_margin_cost;
+    protected $shrinkageUsers = "";
+    protected $sales_reflect_discounts = false;
+    protected $super_depts_only = false;
 
     function preprocess()
     {
 
         parent::preprocess();
 
-        $this->title = "Fannie : Store Summary Report";
-        $this->header = "Store Summary Report";
+        $this->title = "Fannie : Store Summary Discount Report";
+        $this->header = "Store Summary Discount Report";
         if (FormLib::get_form_value('date1') !== ''){
             $this->report_cache = 'none';
             if (FormLib::get_form_value('sortable') !== '') {
@@ -76,6 +85,13 @@ class StoreSummaryReport extends FannieReportPage {
                 (FormLib::get_form_value('zero_cost_dept') == '') ? False : True;
             $this->zero_margin_cost =
                 (FormLib::get_form_value('zero_margin_cost') == '') ? False : True;
+            $this->sales_reflect_discounts =
+                FormLib::get_form_value('sales_reflect_discounts',false);
+            $this->super_depts_only =
+                FormLib::get_form_value('super_depts_only',false);
+            if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+                $this->shrinkageUsers = " AND (t.card_no not between 99900 and 99998)";
+            }
 
             $this->content_function = "report_content";
 
@@ -116,15 +132,20 @@ class StoreSummaryReport extends FannieReportPage {
 
     function report_description_content(){
         $ret = array();
+        // Navigation. Made to look like part of the header.
+        $ret[] = "<p class='explain'><a href='" . $_SERVER['PHP_SELF'] . "'>Start over</a>" .
+                "" .
+                "</p>";
+        // Explanaion. A little space around it.
+        $note = "<p class='explain' style='margin:0.5em 0em 1.0em 0em;'>";
         if (FormLib::get_form_value('dept',0) == 0){
-            $ret[] = "<p class='explain'>Using the department# the upc was
-                assigned to at time of sale</p>";
+            $note .= "Using the department# the upc was
+                assigned to at time of sale";
         }
         else{
-            $ret[] = "<p class='explain'>Using the department# the upc is
-                assigned to now</p>";
+            $note .= "Using the department# the upc is assigned to now";
         }
-        $note = "<p class='explain' style='margin:0.5em 0em 1.0em 0em;'>";
+        $note .= "<br />";
         $note .= "Note for <b>open ring items:</b> The margin in the departments
             table is relied on to calculate cost. 
             If that department margin is zero cost is ";
@@ -135,7 +156,8 @@ class StoreSummaryReport extends FannieReportPage {
         $note .= $this->zero_margin_cost
             ? " If that department margin is zero, cost is same as price."
             : "";
-        $note .= "<br />See the <a href='#footer'>footer</a> for notes on column contents.";
+        $note .= "<br />See the <a href='#footer'>footer</a> for notes on section " .
+            "and column contents.";
         $note .= "</p>";
         $ret[] = $note;
         return $ret;
@@ -149,8 +171,9 @@ class StoreSummaryReport extends FannieReportPage {
     {
         $ret = array();
         $ret[] = "<a name='footer'> </a>";
-        $ret[] = "<ul style='margin:0 0 0 -2.5em; list-style-type:none;'>" .
-            "<li><b>Costs</b> is the cost to the co-op of the items sold in the Department or Superdepartment." .
+        $note = "<ul style='margin:0 0 0 -2.5em; list-style-type:none;'>" .
+            "<li><b>Costs</b> is the cost to the co-op of the items sold in the " .
+                "Department or Superdepartment." .
             "</li>" .
             "<ul style='margin:0 0 0 -1.0em; list-style-type:none;'>" .
             "<li><b>% Costs</b> is the proportion of the whole store's costs that represents." .
@@ -158,9 +181,11 @@ class StoreSummaryReport extends FannieReportPage {
             "<li><b>DeptC%</b> is the proportion of the Superdepartment's costs that represents." .
             "</li>" .
             "</ul>" .
-            "<li><b>Sales</b> is the price of the items sold in the Department or Superdepartment, " .
-                "not including discounts." .
-            "<ul style='margin:0 0 0 -1.0em; list-style-type:none;'>" .
+            "<li><b>Sales</b> is the price of the items sold in the Department or Superdepartment, ";
+        $note .= ($this->sales_reflect_discounts)
+            ? "reflecting discounts."
+            : "not reflecting discounts.";
+        $note .= "<ul style='margin:0 0 0 -1.0em; list-style-type:none;'>" .
             "<li><b>% Sales</b> is the proportion of the whole store's sales that represents." .
             "</li>" .
             "<li><b>DeptS%</b> is the proportion of the Superdepartment's sales that represents." .
@@ -168,6 +193,29 @@ class StoreSummaryReport extends FannieReportPage {
             "</ul>" .
             "</li>" .
             "</ul>";
+        $ret[] = $note;
+        if ($this->sales_reflect_discounts) {
+            $ret[] ="<p class='explain'>Sales figures are reduced by " .
+                "percentages of Whole-transaction Discounts " .
+                "as well as per-item discounts and sale prices." .
+                "<br />The Member Type/Discounts section shows the totals of " .
+                "Whole-transaction Discounts." .
+                "" .
+                "</p>";
+        } else {
+            $ret[] ="<p class='explain'>Sales figures are not reduced by " .
+                "percentages of Whole-transaction Discounts " .
+                "but do reflect per-item discounts and sale prices." .
+                "" .
+                "</p>";
+        }
+        if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+            if ($this->shrinkageUsers !== "") {
+            $ret[] ="<p class='explain'>This report excludes West End Food Co-op In-house users." .
+                "" .
+                "</p>";
+            }
+        }
         return $ret;
     }
 
@@ -184,12 +232,17 @@ class StoreSummaryReport extends FannieReportPage {
         $dlog = DTransactionsModel::selectDlog($d1,$d2);
         $datestamp = $dbc->identifier_escape('tdate');
 
-        if (isset($FANNIE_COOP_ID) && $FANNIE_COOP_ID == 'WEFC_Toronto') {
-            $shrinkageUsers = " AND (t.card_no not between 99900 and 99998)";
+        if ($this->sales_reflect_discounts) {
+            $salesStatement = '
+                SUM(
+                CASE WHEN discountable = 1 AND percentDiscount > 0 THEN
+                    t.total * (1 - (percentDiscount / 100))
+                    ELSE t.total END)
+                    AS sales ';
         } else {
-            $shrinkageUsers = "";
+            $salesStatement = '
+                    SUM(t.total) AS sales ';
         }
-
 
         $taxNames = array(0 => '');
         $tQ = "SELECT id, rate, description FROM taxrates WHERE id > 0 ORDER BY id";
@@ -213,7 +266,7 @@ class StoreSummaryReport extends FannieReportPage {
             $includeToday = true;
             $timeStamp = date('Y_m_d_H_i_s');
             $TRANS = $FANNIE_TRANS_DB . $dbc->sep();
-            $tempTable = $TRANS . 'temp_StoreSummary_' . $timeStamp;
+            $tempTable = $TRANS . 'temp_StoreSummaryDiscount_' . $timeStamp;
             //$tquery = "CREATE TEMPORARY table $tempTable ENGINE=MEMORY" .
             $tbQ = "CREATE TEMPORARY TABLE $tempTable " .
                 "(dname VARCHAR(50),
@@ -275,7 +328,7 @@ class StoreSummaryReport extends FannieReportPage {
         */
 
         /* Does not accept p.cost = 0
-         * t.cost is < 0.00 for Voids, so don't ignore it.
+         * t.cost is < 0.00 for Voids and Refunds, so don't ignore it.
          * Is t.cost or p.cost = 0 ever correct?
          * Ultimate default is cost = total.
          *   cost = total is less dangerous (over-optomistic) than cost = 0.
@@ -285,7 +338,6 @@ class StoreSummaryReport extends FannieReportPage {
         */
         $itemZeroArg = ($this->zero_cost_dept) ? 'AND t.cost != 0.00' : '';
         $marginZeroArg = ($this->zero_margin_cost) ? 't.total' : '0.00';
-
         $costsCol="sum(CASE
                     WHEN t.trans_type IN ('I','D'){$itemZeroArg} THEN
                         CASE WHEN
@@ -305,7 +357,7 @@ class StoreSummaryReport extends FannieReportPage {
                     {$costsCol}
                     sum(CASE WHEN t.tax = 1 THEN t.total * x.rate ELSE 0 END) AS taxes1,
                     sum(CASE WHEN t.tax = 2 THEN t.total * x.rate ELSE 0 END) AS taxes2,
-                    sum(t.total) AS sales,
+                    {$salesStatement},
                     sum(t.quantity) AS qty,
                     s.superID AS sid,
                     s.super_name AS sname,
@@ -322,7 +374,7 @@ class StoreSummaryReport extends FannieReportPage {
                     AND (s.superID > 0 OR s.superID IS NULL) 
                     AND t.trans_type IN ('I','D')
                     AND t.upc != 'DISCOUNT'
-                    AND t.trans_subtype not in ('CP','IC'){$shrinkageUsers}
+                    AND t.trans_subtype not in ('CP','IC'){$this->shrinkageUsers}
                 GROUP BY
                     s.superID, s.super_name, d.dept_name, t.department
                 ORDER BY
@@ -342,7 +394,7 @@ class StoreSummaryReport extends FannieReportPage {
                 {$costsCol}
                 sum(CASE WHEN t.tax = 1 THEN t.total * x.rate ELSE 0 END) AS taxes1,
                 sum(CASE WHEN t.tax = 2 THEN t.total * x.rate ELSE 0 END) AS taxes2,
-                sum(t.total) AS sales,
+                {$salesStatement},
                 sum(t.quantity) AS qty,
                 CASE WHEN s.superID IS NULL THEN r.superID ELSE s.superID END AS sid,
                 CASE WHEN s.super_name IS NULL THEN r.super_name ELSE s.super_name END AS sname,
@@ -362,7 +414,7 @@ class StoreSummaryReport extends FannieReportPage {
                 ($datestamp BETWEEN ? AND ?)
                 AND (s.superID > 0 OR (s.superID IS NULL AND r.superID > 0)
                     OR (s.superID IS NULL AND r.superID IS NULL))
-                AND t.trans_type in ('I','D'){$shrinkageUsers}
+                AND t.trans_type in ('I','D'){$this->shrinkageUsers}
                 AND t.upc != 'DISCOUNT'
                 AND t.trans_subtype not in ('CP','IC')
             GROUP BY
@@ -390,7 +442,7 @@ class StoreSummaryReport extends FannieReportPage {
             $ttR = $dbc->exec_statement($ttS,$totalArgs);
             if ($ttR !== false) {
                 $noop = 1;
-                //$dbc->logger("OK Populating: $ttQ");
+                //$dbc->logger("OK Before Today Populating: $ttQ");
             } else {
                 $dbc->logger("Failed Populating: $ttQ");
             }
@@ -429,6 +481,7 @@ class StoreSummaryReport extends FannieReportPage {
         $grandTotal = 0;
         $this->grandCostsTotal = 0;
         $this->grandSalesTotal = 0;
+        // As array grandTax[taxID]
         $this->grandTax1Total = 0;
         $this->grandTax2Total = 0;
 
@@ -440,6 +493,7 @@ class StoreSummaryReport extends FannieReportPage {
                 $supers[$curSuper] = array(
                 'name'=>$row['sname'],
                 'qty'=>0.0,'costs'=>0.0,'sales'=>0.0,
+                'sid'=>$curSuper,
                 'taxes1'=>0.0,'taxes2'=>0.0,
                 'depts'=>array());
             }
@@ -475,6 +529,15 @@ class StoreSummaryReport extends FannieReportPage {
             $superCostsSum = $s['costs'];
             $superSalesSum = $s['sales'];
             foreach($s['depts'] as $d){
+                if ($this->super_depts_only) {
+                    if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+                        if ($s['sid'] != 4) {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+                }
                 $record = array(
                     $d['name'],
                     sprintf('%.2f',$d['qty']),
@@ -585,7 +648,7 @@ class StoreSummaryReport extends FannieReportPage {
                     INNER JOIN {$FANNIE_OP_DB}.memtype m ON t.memType = m.memtype
                 WHERE ($datestamp BETWEEN ? AND ?)
                     AND t.upc = 'DISCOUNT'
-                    AND t.total <> 0{$shrinkageUsers}
+                    AND t.total <> 0{$this->shrinkageUsers}
                     AND t.trans_subtype not in ('CP','IC')
                 GROUP BY m.memDesc
                 ORDER BY m.memDesc";
@@ -654,14 +717,15 @@ class StoreSummaryReport extends FannieReportPage {
         $data[] = array('meta'=>FannieReportPage::META_BLANK);
 
         // The discount total is negative.
-        $this->grandSalesTotal += $dDiscountTotal;
+        if (!$this->sales_reflect_discounts) {
+            $this->grandSalesTotal += $dDiscountTotal;
+        }
 
         $this->summary_data[] = $report;
 
         // End of Discounts
 
         /** Recalculate Grand Taxes reflecting Discounts
-         * Why backticks on trans_subtype ?
          */
         $this->grandTax1Total = 0;
         $this->grandTax2Total = 0;
@@ -673,7 +737,7 @@ class StoreSummaryReport extends FannieReportPage {
             JOIN {$FANNIE_OP_DB}.taxrates r ON r.id = t.tax
             WHERE ( t.{$datestamp} BETWEEN ? AND ? )
                 AND t.trans_subtype not in ('CP','IC')
-                AND (t.tax > 0){$shrinkageUsers}
+                AND (t.tax > 0){$this->shrinkageUsers}
             GROUP BY t.tax
             ORDER BY t.tax DESC";
         $statement = $dbc->prepare_statement($query);
@@ -741,7 +805,8 @@ class StoreSummaryReport extends FannieReportPage {
         );
         $margin = 'n/a';
         if ($this->grandSalesTotal > 0)
-            $margin = number_format(((($this->grandSalesTotal - $this->grandCostsTotal) / $this->grandSalesTotal) * 100),2).' %';
+            $margin = number_format(((($this->grandSalesTotal - $this->grandCostsTotal) /
+                $this->grandSalesTotal) * 100),2).' %';
         $record[] = $margin;
         $record[] = '$ '.number_format($this->grandTax2Total,2);
         $record[] = '$ '.number_format($this->grandTax1Total,2);
@@ -811,6 +876,22 @@ class StoreSummaryReport extends FannieReportPage {
                     Show SuperDepts with net $0 sales
                 </label>
             </div>
+            <div class="form-group">
+                <label>
+                    <input type=checkbox name=sales_reflect_discounts 
+            <?php if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+                echo "checked";
+            } ?>
+            />
+                    Sales Reflect Discounts
+                </label>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" name="super_depts_only" />
+                    Show only SuperDepts
+                </label>
+            </div>
             <p>
                 <button type="submit" class="btn btn-default">Submit</button>
             </p>
@@ -845,17 +926,36 @@ class StoreSummaryReport extends FannieReportPage {
 
     public function helpContent()
     {
-       return '<p>
-           This shows total sales, costs and taxes
-           per department for a given date range in dollars as well as a percentage of 
-           store-wide sales and costs. It uses actual item cost if known and estimates 
-           cost from price and department margin if not; 
-           relies on department margins being accurate.
+       $ret = '';
+       $ret .= '<p>Features:
+           <ul>
+           <li> Shows total sales, costs and taxes by Super Department and
+           per Department for a given date range in dollars as well as as a
+           percentage of store-wide sales and costs.
+          </li>
+          <li>Option to reflect transaction-level discounts in Department-level Sales totals.
+          Examples of this type of discount are Senior Discounts and Member Appreciation Discounts.
+          </li>
+          <li>It uses actual item cost if known and estimates cost from price
+          and department margin if not; relies on department margins being accurate.
+          </li>
+          <li>Option to suppress Department level detail, that is, display only Super Department-level totals.
+          </li>
+          <li>Assumes a two-tax regime.
+          </li>
+          </ul>
            </p>';
+        if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+            $this->shrinkageUsers = " AND (d.card_no not between 99900 and 99998)";
+            $ret .= "<p>This report excludes the In-house accounts using this statement:
+                <br /><span style='font-family: courier;'>{$this->shrinkageUsers}</span>
+                </p>";
+        }
+       return $ret;
     }
 
 
-// StoreSummaryReport
+// StoreSummaryDiscountReport
 }
 
 FannieDispatch::conditionalExec();

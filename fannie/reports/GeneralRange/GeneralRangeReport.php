@@ -40,18 +40,24 @@ class GeneralRangeReport extends FannieReportPage
     protected $multi_report_mode = true;
     protected $sortable = false;
     protected $no_sort_but_style = true;
+    protected $shrinkageUsers = "";
 
     protected $report_headers = array('Desc','Qty','Amount');
     protected $required_fields = array('date1', 'date2');
 
     function fetch_report_data()
     {
+        global $FANNIE_COOP_ID;
         $dbc = $this->connection;
         $dbc->setDefaultDB($this->config->get('OP_DB'));
         $d1 = $this->form->date1;
         $d2 = $this->form->date2;
         $dates = array($d1.' 00:00:00', $d2.' 23:59:59');
         $data = array();
+
+        if ( isset($FANNIE_COOP_ID) && $FANNIE_COOP_ID == 'WEFC_Toronto' ) {
+            $this->shrinkageUsers = " AND (d.card_no not between 99900 and 99998)";
+        }
 
         $reconciliation = array(
             'Tenders' => 0.0,
@@ -69,7 +75,7 @@ class GeneralRangeReport extends FannieReportPage
                 INNER JOIN tenders as t ON d.trans_subtype=t.TenderCode
             WHERE d.tdate BETWEEN ? AND ?
                 AND d.trans_type = 'T'
-                AND d.total <> 0
+                AND d.total <> 0{$this->shrinkageUsers}
             GROUP BY t.TenderName ORDER BY TenderName");
         $tenderR = $dbc->execute($tenderQ,$dates);
         $report = array();
@@ -91,7 +97,7 @@ class GeneralRangeReport extends FannieReportPage
                     FROM ' . $dlog . ' AS d
                         LEFT JOIN departments AS t ON d.department=t.dept_no
                     WHERE d.department <> 0
-                        AND d.trans_type <> \'T\'
+                        AND d.trans_type <> \'T\' ' . $this->shrinkageUsers . '
                         AND d.tdate BETWEEN ? AND ?
                     GROUP BY t.dept_name
                     ORDER BY t.dept_name'; 
@@ -104,7 +110,7 @@ class GeneralRangeReport extends FannieReportPage
                     FROM ' . $dlog . ' AS d
                         LEFT JOIN departments AS t ON d.department=t.dept_no
                     WHERE d.department <> 0
-                        AND d.trans_type <> \'T\'
+                        AND d.trans_type <> \'T\' ' . $this->shrinkageUsers . '
                         AND d.tdate BETWEEN ? AND ?
                     GROUP BY t.salesCode
                     ORDER BY t.salesCode'; 
@@ -118,7 +124,7 @@ class GeneralRangeReport extends FannieReportPage
                     FROM ' . $dlog . ' AS d
                         LEFT JOIN MasterSuperDepts AS m ON d.department=m.dept_ID
                     WHERE d.department <> 0
-                        AND d.trans_type <> \'T\'
+                        AND d.trans_type <> \'T\' ' . $this->shrinkageUsers . '
                         AND d.tdate BETWEEN ? AND ?
                     GROUP BY m.super_name
                     ORDER BY m.super_name';
@@ -143,7 +149,7 @@ class GeneralRangeReport extends FannieReportPage
                 FROM $dlog d 
                     INNER JOIN memtype m ON d.memType = m.memtype
                 WHERE d.tdate BETWEEN ? AND ?
-                   AND d.upc = 'DISCOUNT'
+                   AND d.upc = 'DISCOUNT'{$this->shrinkageUsers}
                     AND total <> 0
                 GROUP BY m.memDesc 
                 ORDER BY m.memDesc");
@@ -164,12 +170,13 @@ class GeneralRangeReport extends FannieReportPage
             FROM $trans AS d
             WHERE datetime BETWEEN ? AND ?
                 AND d.upc='TAXLINEITEM'
-                AND " . DTrans::isNotTesting('d') . "
-            GROUP BY d.description
-        ");
+                AND " . DTrans::isNotTesting('d') . $this->shrinkageUsers .
+                " GROUP BY d.description"
+        );
         $lineItemR = $dbc->execute($lineItemQ, $dates);
         while ($lineItemW = $dbc->fetch_row($lineItemR)) {
-            $record = array($lineItemW['description'] . ' (est. owed)', sprintf('%.2f', $lineItemW['ttl']));
+            $record = array($lineItemW['description'] . ' (est. owed)',
+                sprintf('%.2f', $lineItemW['ttl']));
             $report[] = $record;
         }
 
@@ -177,11 +184,12 @@ class GeneralRangeReport extends FannieReportPage
             SELECT SUM(total) AS tax_collected
             FROM $dlog as d 
             WHERE d.tdate BETWEEN ? AND ?
-                AND (d.upc = 'tax')
+                AND (d.upc = 'tax'){$this->shrinkageUsers}
             GROUP BY d.upc");
         $taxR = $dbc->execute($taxSumQ,$dates);
         while ($taxW = $dbc->fetch_row($taxR)) {
-            $record = array('Total Tax Collected',round($taxW['tax_collected'],2));
+            $record = array('Total Tax Collected',
+                sprintf("%.2f",$taxW['tax_collected']));
             $report[] = $record;
             $reconciliation['Tax'] = $taxW['tax_collected'];
         }
@@ -193,6 +201,44 @@ class GeneralRangeReport extends FannieReportPage
                 $type,
                 sprintf('%.2f', $amt),
             );
+        }
+        $data[] = $report;
+
+        $transQ = $dbc->prepare_statement("SELECT q.trans_num,sum(q.quantity) as items,
+            transaction_type, sum(q.total) FROM
+            (
+            SELECT trans_num,card_no,quantity,total,
+            m.memDesc as transaction_type
+            FROM $dlog as d
+            LEFT JOIN memtype as m on d.memType = m.memtype
+            WHERE d.tdate BETWEEN ? AND ?
+                AND trans_type in ('I','D')
+                AND upc <> 'RRR'{$this->shrinkageUsers}
+            ) as q 
+            GROUP by q.trans_num,q.transaction_type");
+        $transR = $dbc->exec_statement($transQ,$dates);
+        $transinfo = array();
+        while($row = $dbc->fetch_array($transR)){
+            if (!isset($transinfo[$row[2]]))
+                $transinfo[$row[2]] = array(0,0.0,0.0,0.0,0.0);
+            $transinfo[$row[2]][0] += 1;
+            $transinfo[$row[2]][1] += $row[1];
+            $transinfo[$row[2]][3] += $row[3];
+        }
+        $tSum = 0;
+        $tItems = 0;
+        $tDollars = 0;
+        foreach (array_keys($transinfo) as $k) {
+            $transinfo[$k][2] = round($transinfo[$k][1]/$transinfo[$k][0],2);
+            $transinfo[$k][4] = round($transinfo[$k][3]/$transinfo[$k][0],2);
+            $tSum += $transinfo[$k][0];
+            $tItems += $transinfo[$k][1];
+            $tDollars += $transinfo[$k][3];
+        }
+        $report = array();
+        foreach($transinfo as $title => $info){
+            array_unshift($info,$title);
+            $report[] = $info;
         }
         $data[] = $report;
 
@@ -214,7 +260,7 @@ class GeneralRangeReport extends FannieReportPage
                 FROM $dlog as d
                     LEFT JOIN departments as t ON d.department = t.dept_no
                 WHERE d.tdate BETWEEN ? AND ?
-                    AND d.department IN $dlist
+                    AND d.department IN $dlist{$this->shrinkageUsers}
                 GROUP BY d.card_no, t.dept_name ORDER BY d.card_no, t.dept_name");
             $equityR = $dbc->execute($equityQ,$dates);
             $report = array();
@@ -258,6 +304,18 @@ class GeneralRangeReport extends FannieReportPage
             return array('Net', sprintf('%.2f', $ttl));
             break;
         case 6:
+            $this->report_headers = array('Type','Trans','Items','Avg. Items','Amount','Avg. Amount');
+            $trans = 0.0;
+            $items = 0.0;
+            $amount = 0.0;
+            for ($i=0; $i<count($data); $i++) {
+                $trans += $data[$i][1];
+                $items += $data[$i][2];
+                $amount += $data[$i][4];
+            }
+            return array('Totals', $trans, sprintf('%.2f', $items), sprintf('%.2f', $items/$trans), sprintf('%.2f', $amount), sprintf('%.2f', $amount/$trans));
+            break;
+        case 7:
             $this->report_headers = array('Mem#','Equity Type', 'Amount');
             $sumSales = 0.0;
             foreach ($data as $row) {
@@ -307,7 +365,9 @@ class GeneralRangeReport extends FannieReportPage
 
     public function helpContent()
     {
-        return '<p>
+        global $FANNIE_COOP_ID;
+        $ret = '';
+        $ret .='<p>
             This report lists the four major categories of transaction
             information for a given day: tenders, sales, discounts, and
             taxes.
@@ -321,8 +381,20 @@ class GeneralRangeReport extends FannieReportPage
             </p>
             <p>
             Tenders should equal sales minus discounts plus taxes.
+            </p>
+            <p>
+            Equity and transaction statistics are provided as generally
+            useful information.
             </p>';
+        if ( isset($FANNIE_COOP_ID) && $FANNIE_COOP_ID == 'WEFC_Toronto' ) {
+            $this->shrinkageUsers = " AND (d.card_no not between 99900 and 99998)";
+            $ret .= "<p>This report excludes the In-house accounts using this statement:
+                <br />{$this->shrinkageUsers}
+                </p>";
+        }
+        return $ret;
     }
+
 }
 
 FannieDispatch::conditionalExec();

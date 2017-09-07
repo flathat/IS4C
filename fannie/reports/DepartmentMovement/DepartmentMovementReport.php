@@ -56,6 +56,14 @@ class DepartmentMovementReport extends FannieReportPage
         $store = FormLib::get('store', 0);
         $superP = $dbc->prepare('SELECT dept_ID FROM superdepts WHERE superID=?');
 
+        if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+            // Actual shrinkage only.
+            $shrinkageUsers = " AND (t.card_no != 99997)";
+            //$shrinkageUsers = " AND (t.card_no not between 99900 and 99998)";
+        } else {
+            $shrinkageUsers = "";
+        }
+
         /**
           Build a WHERE condition for later.
           Superdepartment (buyer) takes precedence over
@@ -115,7 +123,9 @@ class DepartmentMovementReport extends FannieReportPage
         $filter_transactions = "t.trans_status NOT IN ('D','X','Z')
             AND t.emp_no <> 9999
             AND t.register_no <> 99";
-        $filter_transactions = DTrans::isValid() . ' AND ' . DTrans::isNotTesting();
+        // Seems odd that it is just re-assigned.
+        $filter_transactions = DTrans::isValid() . ' AND ' . DTrans::isNotTesting() .
+            $shrinkageUsers;
         
         /**
           Select a summary table. For UPC results, per-unique-ring
@@ -314,6 +324,15 @@ class DepartmentMovementReport extends FannieReportPage
         $buyer = FormLib::get_form_value('buyer','');
         if ($buyer === '0') {
             $ret[] = "Department ".FormLib::get_form_value('deptStart','').' to '.FormLib::get_form_value('deptEnd','');
+        }
+        if (False && $this->config->get('COOP_ID') == 'WEFC_Toronto') {
+            // Where is the data coming from?
+            $date1 = $this->form->date1;
+            $date2 = $this->form->date2;
+            $dlog = DTransactionsModel::selectDlog($date1,$date2);
+            $ret[] = "<p>";
+            $ret[] = "dlog for $date1 to $date2 : $dlog";
+            $ret[] = "</p>";
         }
 
         return $ret;
