@@ -34,7 +34,8 @@ class BarcodeLib
     */
     static public function padUPC($upc)
     {
-        return str_pad(trim($upc), 13, '0', STR_PAD_LEFT);
+        $padded = str_pad(trim($upc), 13, '0', STR_PAD_LEFT);
+        return substr($padded, -13);
     }
 
     static public function trimCheckDigit($upc)
