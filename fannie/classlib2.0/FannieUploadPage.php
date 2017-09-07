@@ -60,6 +60,7 @@ class FannieUploadPage extends \FanniePage
       columns that contain data
     */
     protected $preview = true;
+    protected $rows_to_preview = 5;
     /**
       Define user-selectable options
     */
@@ -563,7 +564,8 @@ class FannieUploadPage extends \FanniePage
         $fp = fopen($this->upload_file_name,'r');
         $width = 0;
         $table = "";
-        $linedata = $this->fileToArray(5);
+        $linedata = $this->fileToArray($this->rows_to_preview);
+        //$linedata = $this->fileToArray(5);
         foreach ($linedata as $data) {
             $j=0;
             foreach($data as $d) {
