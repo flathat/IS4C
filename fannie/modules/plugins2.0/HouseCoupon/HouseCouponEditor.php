@@ -221,9 +221,14 @@ class HouseCouponEditor extends FanniePage
         $ret .= '</p>';
         $ret .= '</form>';
         $ret .= '<table class="table">';
-        $ret .= '<tr><th>ID</th><th>Name</th><th>Value</th><th>Expires</th></tr>';
+        $ret .= '<tr><th>ID</th><th>Name</th><th>Value</th>';
+        $ret .= '<th>Begins</th><th>Expires</th></tr>';
         $model = new HouseCouponsModel($dbc);
         foreach($model->find('coupID') as $obj) {
+            if (strstr($obj->startDate(), ' ')) {
+                $tmp = explode(' ', $obj->startDate());
+                $obj->startDate($tmp[0]);
+            }
             if (strstr($obj->endDate(), ' ')) {
                 $tmp = explode(' ', $obj->endDate());
                 $obj->endDate($tmp[0]);
@@ -240,7 +245,7 @@ class HouseCouponEditor extends FanniePage
                 $report_dates = array(date('Y-m-01'), date('Y-m-t'));
             }
             $ret .= sprintf('<tr><td>#%d <a href="HouseCouponEditor.php?edit_id=%d">Edit</a></td>
-                    <td>%s</td><td>%.2f%s</td><td>%s</td>
+                    <td>%s</td><td>%.2f%s</td><td>%s</td><td>%s</td>
                     <td>
                         <a href="%sws/barcode-pdf/?upc=%s&name=%s"
                         class="btn btn-default">Print Barcode</a>
@@ -250,7 +255,8 @@ class HouseCouponEditor extends FanniePage
                         class="btn btn-default %s">Member Baskets</a>
                     </tr>',
                     $obj->coupID(),$obj->coupID(),$obj->description(),
-                    $obj->discountValue(), $obj->discountType(), $obj->endDate(),
+                    $obj->discountValue(), $obj->discountType(),
+                    $obj->startDate(), $obj->endDate(),
                     $FANNIE_URL,
                     ('499999' . str_pad($obj->coupID(), 5, '0', STR_PAD_LEFT)),
                     urlencode($obj->description()),
@@ -314,7 +320,7 @@ class HouseCouponEditor extends FanniePage
                 <div class="col-sm-1 text-right">Coupon ID#</div>
                 <div class="col-sm-3 text-left">%s</div>
                 <div class="col-sm-1 text-right">UPC</div>
-                <div class="col-sm-3 text-left">
+                <div class="col-sm-3 text-left" title="Click to create barcodes">
                     <a href="%sws/barcode-pdf/?upc=%s&name=%s">%s</a>
                 </div>
             </div>
@@ -378,7 +384,7 @@ class HouseCouponEditor extends FanniePage
             ''=>'No minimum'
         );
         $ret .= '<div class="row">
-            <label class="col-sm-1 control-label">Minimum Type</label>
+            <label class="col-sm-1 control-label">Type of Minimum</label>
             <div class="col-sm-3">
             <select class="form-control" name=mtype>';
         foreach ($mts as $k=>$v) {
@@ -387,7 +393,7 @@ class HouseCouponEditor extends FanniePage
             $ret .= ">$v</option>";
         }
         $ret .= "</select></div>
-            <label class=\"col-sm-1 control-label\">Minimum value</label>
+            <label class=\"col-sm-1 control-label\">Value for Minimum</label>
             <div class=\"col-sm-3\"><input class=\"form-control\" type=text name=mval value=\"$mVal\"
              /></div>
              </div>";
@@ -407,7 +413,7 @@ class HouseCouponEditor extends FanniePage
             'AD'=>'All Discount (Department)',
         );
         $ret .= '<div class="row">
-            <label class="col-sm-1 control-label">Discount Type</label>
+            <label class="col-sm-1 control-label">Type of Discount</label>
             <div class="col-sm-3">
             <select class="form-control" name=dtype>';
         foreach ($dts as $k=>$v) {
@@ -416,7 +422,7 @@ class HouseCouponEditor extends FanniePage
             $ret .= ">$v</option>";
         }
         $ret .= "</select></div>
-            <label class=\"col-sm-1 control-label\">Discount value</label>
+            <label class=\"col-sm-1 control-label\">Value for Discount</label>
             <div class=\"col-sm-3\"><input type=text name=dval value=\"$dVal\"
             class=\"form-control\" /></div>
             </div>";
@@ -462,6 +468,20 @@ class HouseCouponEditor extends FanniePage
         $ret .= "<p><button type=submit name=submit_delete_dept value=\"1\"
             class=\"btn btn-default\">Delete Selected Departments</button></p>";
 
+        return $ret;
+    }
+
+    /**
+      Define any CSS needed
+      @return A CSS string
+    */
+    protected function css_content()
+    {
+        $ret = '';
+        $ret .= '.row {
+            margin-bottom: 1.0em;
+        }
+        ';
         return $ret;
     }
 
