@@ -31,7 +31,7 @@ class InventoryCacheModel extends BasicModel
 
     protected $columns = array(
     'upc' => array('type'=>'VARCHAR(13)', 'primary_key'=>true),
-    'storeID' => array('type'=>'INT'),
+    'storeID' => array('type'=>'INT', 'primary_key'=>true),
     'cacheStart' => array('type'=>'DATETIME'),
     'cacheEnd' => array('type'=>'DATETIME'),
     'baseCount' => array('type'=>'DOUBLE', 'default'=>0),
@@ -56,21 +56,25 @@ class InventoryCacheModel extends BasicModel
         if (self::$orderStmt === null) {
             self::$orderStmt = $dbc->prepare('
                 SELECT 
-                    SUM(caseSize * (CASE WHEN receivedQty IS NULL THEN quantity ELSE receivedQty END)) AS qty
+                    SUM(CASE WHEN receivedQty IS NULL THEN caseSize*quantity ELSE receivedQty END) AS qty
                 FROM PurchaseOrderItems AS i
                     INNER JOIN PurchaseOrder AS o ON i.orderID=o.orderID
                 WHERE internalUPC=?
                     AND placedDate IS NOT NULL
-                    AND placedDate >= ?');
+                    AND storeID=?
+                    AND i.isSpecialOrder = 0
+                    AND i.quantity > 0
+                    AND (i.receivedQty > 0 OR i.receivedQty IS NULL)
+                    AND (placedDate >= ? OR receivedDate >= ?)');
         }
 
         return self::$orderStmt;
     }
 
-    public static function calculateOrdered($dbc, $upc, $date)
+    public static function calculateOrdered($dbc, $upc, $storeID, $date)
     {
         $orderP = self::orderStatement($dbc);
-        $ordered = $dbc->getValue($orderP, array($upc, $date));
+        $ordered = $dbc->getValue($orderP, array($upc, $storeID, $date, $date));
 
         return $ordered ? $ordered : 0;
     }
@@ -79,9 +83,9 @@ class InventoryCacheModel extends BasicModel
     {
         $obj = new InventoryCacheModel($this->connection);
         $obj->upc($upc);
-        $obj->storeID(1);
+        $obj->storeID($storeID);
         if ($obj->load()) {
-            $orders = InventoryCacheModel::calculateOrdered($this->connection, $upc, $obj->cacheStart());
+            $orders = InventoryCacheModel::calculateOrdered($this->connection, $upc, $storeID, $obj->cacheStart());
             $obj->ordered($orders);
             $obj->onHand($obj->baseCount() + $obj->ordered() - $obj->sold() - $obj->shrunk());
             $obj->save();

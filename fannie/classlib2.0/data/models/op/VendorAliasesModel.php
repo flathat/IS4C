@@ -1,7 +1,8 @@
 <?php
+
 /*******************************************************************************
 
-    Copyright 2015 Whole Foods Co-op
+    Copyright 2017 Whole Foods Co-op
 
     This file is part of CORE-POS.
 
@@ -20,25 +21,32 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 *********************************************************************************/
+        
 
 /**
-  @class InventoryCountsModel
+  @class VendorAliasesModel
 */
-class InventoryCountsModel extends BasicModel
+class VendorAliasesModel extends BasicModel
 {
-    protected $name = "InventoryCounts";
+    protected $name = "VendorAliases";
     protected $preferred_db = 'op';
 
     protected $columns = array(
-    'inventoryCountID' => array('type'=>'INT', 'increment'=>true, 'primary_key'=>true),
-    'upc' => array('type'=>'VARCHAR(13)', 'index'=>true),
-    'storeID' => array('type'=>'INT'),
-    'count' => array('type'=>'DECIMAL(10,2)'),
-    'countDate' => array('type'=>'DATETIME'),
-    'mostRecent' => array('type'=>'TINYINT', 'default'=>1),
-    'uid' => array('type'=>'VARCHAR(4)'),
-    'par' => array('type'=>'DECIMAL(10,2)'),
+    'vendorAliasID' => array('type'=>'INT', 'increment'=>true, 'index'=>true),
+    'upc' => array('type'=>'VARCHAR(13)', 'primary_key'=>true),
+    'vendorID' => array('type'=>'INT', 'primary_key'=>true),
+    'sku' => array('type'=>'VARCHAR(13)'),
+    'multiplier' => array('type'=>'DOUBLE'),
+    'isPrimary' => array('type'=>'TINYINT', 'default'=>0),
     );
 
+    public function help()
+    {
+        return '
+VendorAliases maps one or more items in products to a single
+vendor catalog entry.';
+    }
+
 }
+
 

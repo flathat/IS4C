@@ -40,8 +40,15 @@ class VendorsModel extends BasicModel
     'fax' => array('type'=>'VARCHAR(15)'),
     'email' => array('type'=>'VARCHAR(50)'),
     'website' => array('type'=>'VARCHAR(100)'),
+    'address' => array('type'=>'VARCHAR(200)'),
+    'city' => array('type'=>'VARCHAR(20)'),
+    'state' => array('type'=>'VARCHAR(2)'),
+    'zip' => array('type'=>'VARCHAR(10)'),
     'notes' => array('type'=>'TEXT'),
     'localOriginID' => array('type'=>'INT', 'default'=>0),
+    'inactive' => array('type'=>'TINYINT', 'default'=>0),
+    'orderMinimum' => array('type'=>'MONEY', 'default'=>0),
+    'halfCases' => array('type'=>'TINYINT', 'default'=>0),
     );
 
     public function hookAddColumnvendorAbbreviation()
@@ -50,6 +57,12 @@ class VendorsModel extends BasicModel
             UPDATE vendors
             SET vendorAbbreviation=LEFT(vendorName, 10)';
         $this->connection->query($query);
+    }
+
+    public function toOptions($selected=0, $id_as_label=false)
+    {
+        $this->inactive(0);
+        return parent::toOptions($selected, $id_as_label);
     }
 
     public function doc()

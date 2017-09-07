@@ -32,17 +32,19 @@ class PurchaseOrderItemsModel extends BasicModel
     protected $columns = array(
     'orderID' => array('type'=>'INT','primary_key'=>True),
     'sku' => array('type'=>'VARCHAR(13)','primary_key'=>True),
-    'quantity' => array('type'=>'INT'),
+    'quantity' => array('type'=>'DECIMAL(10,2)'),
     'unitCost' => array('type'=>'MONEY'),
-    'caseSize' => array('type'=>'INT'),
+    'caseSize' => array('type'=>'DOUBLE'),
     'receivedDate' => array('type'=>'DATETIME'),
-    'receivedQty' => array('type'=>'INT'),
+    'receivedQty' => array('type'=>'DOUBLE'),
     'receivedTotalCost' => array('type'=>'MONEY'),
     'unitSize' => array('type'=>'VARCHAR(25)'),
     'brand' => array('type'=>'VARCHAR(50)'),
     'description' => array('type'=>'VARCHAR(50)'),
     'internalUPC' => array('type'=>'VARCHAR(13)'),
     'salesCode' => array('type'=>'INT'),
+    'isSpecialOrder' => array('type'=>'TINYINT', 'default'=>0),
+    'receivedBy' => array('type'=>'INT', 'default'=>0),
     );
 
     protected $preferred_db = 'op';
@@ -86,29 +88,27 @@ different product, this record will still
             FROM products AS p
                 INNER JOIN departments AS d ON p.department=d.dept_no
             WHERE p.upc=?');
-        $deptR = $dbc->execute($deptP, array($this->internalUPC()));
-        if ($dbc->numRows($deptR)) {
-            $w = $dbc->fetchRow($deptR);
-            return $w['salesCode'];
+        $code = $dbc->getValue($deptP, array($this->internalUPC()));
+        if ($code) {
+            return $code;
         }
 
         $order = new PurchaseOrderModel($dbc);
         $order->orderID($this->orderID());
         $order->load();
 
-        // case 2: item is SKU-mapped but the order record
+        // case 2: item is aliased but the order record
         // does not reflect the internal PLU
         $deptP = $dbc->prepare('
             SELECT d.salesCode
-            FROM vendorSKUtoPLU AS v
+            FROM VendorAliases AS v
                 ' . DTrans::joinProducts('v', 'p', 'INNER') . '
                 INNER JOIN departments AS d ON p.department=d.dept_no
             WHERE v.sku=?
                 AND v.vendorID=?');
-        $deptR = $dbc->execute($deptP, array($this->sku(), $order->vendorID()));
-        if ($dbc->numRows($deptR)) {
-            $w = $dbc->fetchRow($deptR);
-            return $w['salesCode'];
+        $code = $dbc->getValue($deptP, array($this->sku(), $order->vendorID()));
+        if ($code) {
+            return $code;
         }
 
         // case 3: item is not normally carried but is in a vendor catalog
@@ -120,10 +120,9 @@ different product, this record will still
                 INNER JOIN departments AS d ON z.posDeptID=d.dept_no
             WHERE v.sku=?
                 AND v.vendorID=?');
-        $deptR = $dbc->execute($deptP, array($this->sku(), $order->vendorID()));
-        if ($dbc->numRows($deptR)) {
-            $w = $dbc->fetchRow($deptR);
-            return $w['salesCode'];
+        $code = $dbc->getValue($deptP, array($this->sku(), $order->vendorID()));
+        if ($code) {
+            return $code;
         }
 
         return false;
@@ -137,14 +136,14 @@ different product, this record will still
     {
         $dbc = FannieDB::get($db_name);
         $this->connection = $dbc;
-        if (!$dbc->table_exists($this->name)) {
+        if (!$dbc->tableExists($this->name)) {
             return parent::normalize($db_name, $mode, $doCreate);
         }
-        $def = $dbc->table_definition($this->name);
+        $def = $dbc->tableDefinition($this->name);
         if (count($def)==4 && isset($def['upc']) && isset($def['vendor_id']) && isset($def['order_id']) && isset($def['quantity'])) {
             echo "==========================================\n";
             if ($mode == BasicModel::NORMALIZE_MODE_APPLY){
-                $dbc->query('DROP TABLE '.$dbc->identifier_escape($this->name));
+                $dbc->query('DROP TABLE '.$dbc->identifierEscape($this->name));
                 $success = $this->create();    
                 echo "Recreating table ".$this->name.": ";
                 echo ($success) ? 'Succeeded' : 'Failed';
@@ -162,4 +161,5 @@ different product, this record will still
         }
     }
 }
+
 

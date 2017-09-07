@@ -1,7 +1,8 @@
 <?php
+
 /*******************************************************************************
 
-    Copyright 2015 Whole Foods Co-op
+    Copyright 2016 Whole Foods Co-op
 
     This file is part of CORE-POS.
 
@@ -20,24 +21,19 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 *********************************************************************************/
+        
 
 /**
-  @class InventoryCountsModel
+  @class PurchaseOrderNotesModel
 */
-class InventoryCountsModel extends BasicModel
+class PurchaseOrderNotesModel extends BasicModel
 {
-    protected $name = "InventoryCounts";
+    protected $name = "PurchaseOrderNotes";
     protected $preferred_db = 'op';
 
     protected $columns = array(
-    'inventoryCountID' => array('type'=>'INT', 'increment'=>true, 'primary_key'=>true),
-    'upc' => array('type'=>'VARCHAR(13)', 'index'=>true),
-    'storeID' => array('type'=>'INT'),
-    'count' => array('type'=>'DECIMAL(10,2)'),
-    'countDate' => array('type'=>'DATETIME'),
-    'mostRecent' => array('type'=>'TINYINT', 'default'=>1),
-    'uid' => array('type'=>'VARCHAR(4)'),
-    'par' => array('type'=>'DECIMAL(10,2)'),
+    'orderID' => array('type'=>'INT', 'primary_key'=>true),
+    'notes' => array('type'=>'TEXT'),
     );
 
 }
