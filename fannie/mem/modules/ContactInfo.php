@@ -53,10 +53,10 @@ class ContactInfo extends \COREPOS\Fannie\API\member\MemberModule {
         $ret .= '<div class="form-group form-inline">';
         $ret .= '<input type="hidden" name="ContactInfo_customerID" value="' . $primary['customerID'] . '" />';
         $ret .= '<span class="label primaryBackground">First Name</span>';
-        $ret .= sprintf('<input name="ContactInfo_fn" maxlength="30"
+        $ret .= sprintf(' <input name="ContactInfo_fn" maxlength="30"
                 value="%s" class="form-control" />',$primary['firstName']);
         $ret .= ' <span class="label primaryBackground">Last Name</span>';
-        $ret .= sprintf('<input name="ContactInfo_ln" maxlength="30"
+        $ret .= sprintf(' <input name="ContactInfo_ln" maxlength="30"
                 value="%s" class="form-control" />',$primary['lastName']);
         $ret .= sprintf(' <a href="MemPurchasesPage.php?id=%d">Receipts</a>',
                     $memNum);
@@ -65,41 +65,40 @@ class ContactInfo extends \COREPOS\Fannie\API\member\MemberModule {
         $ret .= sprintf(' |  <a href="../ordering/NewSpecialOrdersPage.php?card_no=%d">Special Orders</a>',
                     $memNum);
         $ret .= '</div>';
-        $ret .= '</div>';
 
         $ret .= '<div class="form-group form-inline">';
         $ret .= '<span class="label primaryBackground">Address</span>';
-        $ret .= sprintf('<input name="ContactInfo_addr1" maxlength="125"
+        $ret .= sprintf(' <input name="ContactInfo_addr1" maxlength="125" size="25"
                 value="%s" class="form-control" />',$account['addressFirstLine']);
         $ret .= ' <span class="label primaryBackground">Address (2)</span>';
-        $ret .= sprintf('<input name="ContactInfo_addr2" maxlength="125"
+        $ret .= sprintf(' <input name="ContactInfo_addr2" maxlength="125"
                 value="%s" class="form-control" />',$account['addressSecondLine']);
         $ret .= ' <label><span class="label primaryBackground">Gets Mail</span>';
-        $ret .= sprintf('<input type="checkbox" name="ContactInfo_mail"
+        $ret .= sprintf(' <input type="checkbox" name="ContactInfo_mail"
                 %s class="checkbox-inline" /></label>',($account['contactAllowed']==1?'checked':''));
         $ret .= '</div>';
         
         $ret .= '<div class="form-group form-inline">';
         $ret .= '<span class="label primaryBackground">City</span>';
-        $ret .= sprintf('<input name="ContactInfo_city" maxlength="20"
+        $ret .= sprintf(' <input name="ContactInfo_city" maxlength="20"
                 value="%s" class="form-control" />',$account['city']);
         $ret .= ' <span class="label primaryBackground">' . $labels['state'] . '</span>';
-        $ret .= sprintf('<input name="ContactInfo_state" maxlength="2"
+        $ret .= sprintf(' <input name="ContactInfo_state" maxlength="2" size="6"
                 value="%s" class="form-control" />',$account['state']);
         $ret .= ' <span class="label primaryBackground">' . $labels['zip'] . '</span>';
-        $ret .= sprintf('<input name="ContactInfo_zip" maxlength="10"
+        $ret .= sprintf(' <input name="ContactInfo_zip" maxlength="10" size="12"
                 value="%s" class="form-control" />',$account['zip']);
         $ret .= '</div>';
 
         $ret .= '<div class="form-group form-inline">';
         $ret .= '<span class="label primaryBackground">Phone</span>';
-        $ret .= sprintf('<input name="ContactInfo_ph1" maxlength="30"
+        $ret .= sprintf(' <input name="ContactInfo_ph1" maxlength="30" size="12"
                 value="%s" class="form-control" />',$primary['phone']);
         $ret .= ' <span class="label primaryBackground">Alt. Phone</span>';
-        $ret .= sprintf('<input name="ContactInfo_ph2" maxlength="30"
+        $ret .= sprintf(' <input name="ContactInfo_ph2" maxlength="30" size="10"
                 value="%s" class="form-control" />',$primary['altPhone']);
         $ret .= ' <span class="label primaryBackground">E-mail</span>';
-        $ret .= sprintf('<input type="email" name="ContactInfo_email" maxlength="75"
+        $ret .= sprintf(' <input type="email" name="ContactInfo_email" maxlength="75" size="40"
                 value="%s" class="form-control" />',$primary['email']);
         $ret .= "</div>";
 

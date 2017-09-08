@@ -58,7 +58,8 @@ class MemberEditor extends FanniePage {
 
     function preprocess()
     {
-        global $FANNIE_COUNTRY, $FANNIE_MEMBER_MODULES, $FANNIE_OP_DB;
+        global $FANNIE_COUNTRY, $FANNIE_MEMBER_MODULES, $FANNIE_OP_DB,
+            $FANNIE_UPDATE_LANES;
 
         $this->country = (isset($FANNIE_COUNTRY)&&!empty($FANNIE_COUNTRY))?$FANNIE_COUNTRY:"US";
         $this->memNum = FormLib::get_form_value('memNum',False);
@@ -98,7 +99,10 @@ class MemberEditor extends FanniePage {
                 $members = $custdata->find();
                 if (is_array($members)) {
                     foreach($members as $m) {
-                        $m->pushToLanes();
+                        if (!isset($FANNIE_UPDATE_LANES) ||
+                            $FANNIE_UPDATE_LANES == True) {
+                            $m->pushToLanes();
+                        }
                     }
                 }
 
