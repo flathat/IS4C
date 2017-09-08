@@ -44,6 +44,19 @@ class PriceRounder
     */
     public function round($price, $extra_parameters=array())
     {
+        if (array_key_exists('style',$extra_parameters) &&
+            $extra_parameters['style'] == 'simple_5_0') {
+            $price = floor($price * 100);
+            // If not ending in 5 or 0 increase until it does.
+            while ($price % 10 != 5 && $price % 10 != 0) {
+                $price++;
+            }
+            // If ending in x05 increase to x15
+            if ($price % 100 == 5) {
+                $price += 10;
+            }
+            return round($price/100.00, 2);
+        } else {
         // operate in cents
         $price = floor($price * 100);        
         
@@ -101,6 +114,7 @@ class PriceRounder
         }
         
         return round($price/100.00, 2);
+        }
     }
 
     /**

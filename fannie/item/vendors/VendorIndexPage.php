@@ -21,15 +21,6 @@
 
 *********************************************************************************/
 
-
-/* --COMMENTS - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    
-    12Mar2013 Andy Theuninck Use API classes
-     7Sep2012 Eric Lee Display vendorID in select.
-                       Display both "Select" and "New" options.
-
-*/
-
 include(dirname(__FILE__) . '/../../config.php');
 if (!class_exists('FannieAPI')) {
     include_once($FANNIE_ROOT.'classlib2.0/FannieAPI.php');
@@ -66,6 +57,19 @@ class VendorIndexPage extends FanniePage {
         }
 
         return True;
+    }
+
+    /**
+      Define any CSS needed
+      @return A CSS string
+    */
+    protected function css_content()
+    {
+        $ret = '';
+        $ret .= 'hr.menu {
+            margin: 0.5em;
+        }';
+        return $ret;
     }
 
     function ajax_callbacks($action)
@@ -255,9 +259,11 @@ class VendorIndexPage extends FanniePage {
 
         $ret .= '
             <div class="panel panel-default">
-                <div class="panel-heading">Catalog</div>
+                <div class="panel-heading">Catalog Maintenance</div>
                 <div class="panel-body">
-                This vendor contains ' . $num . ' items<br />';
+                This vendor\'s catalog contains ' . $num . ' items.';
+        $ret .= "<br />- Please see the Help about different approaches to building
+            a vendor catalog.<br />";
         if ($num > 0) {
             $ret .= "<a href=\"BrowseVendorItems.php?vid=$id\">Browse vendor catalog</a>";  
             if ($num <= 750) {
@@ -269,6 +275,8 @@ class VendorIndexPage extends FanniePage {
         $ret .= "<a href=\"DefaultUploadPage.php?vid=$id\">Upload new vendor catalog</a>";
         $ret .= "<br />";
         $ret .= "<a href=\"VendorIndexPage.php?vid=$id&autoAdd=1\">Add existing items to catalog</a>";
+        $ret .= " (I.e. add items from the current products list
+            to the vendor's catalog.)";
         $ret .= '</div></div>';
 
         $ret .= '</div><div class="container-fluid col-sm-3">';
@@ -297,24 +305,64 @@ class VendorIndexPage extends FanniePage {
         if ($itemR && $row = $dbc->fetch_row($itemR)) {
             $num = $row[0];
         }
-        $ret .= '<p>';
-        $ret .= "<a href=\"../../batches/UNFI/\">Vendor Price Batch Tools</a>";
-        $ret .= "</p><p>";
-        if ($num == 0) {
-            $ret .= "<a href=\"VendorDepartmentEditor.php?vid=$id\">This vendor's items are not yet arranged into subcategories</a>";
-            $ret .= '<p />';
-            $ret .= "<a href=\"VendorDepartmentUploadPage.php?vid=$id\">Upload Subcategory List</a>";
+        if ($this->config->COOP_ID != 'WEFC_Toronto') {
+            $ret .= '<p>';
+            $ret .= "<a href=\"../../batches/UNFI/\">Vendor Price Batch Tools</a>";
+            $ret .= "</p><p>";
+            if ($num == 0) {
+                $ret .= "<a href=\"VendorDepartmentEditor.php?vid=$id\">This vendor's items are not yet arranged into subcategories</a>";
+                $ret .= '<p />';
+                $ret .= "<a href=\"VendorDepartmentUploadPage.php?vid=$id\">Upload Subcategory List</a>";
+            } else {
+                $ret .= "This vendor's items are divided into ";
+                $ret .= $num." subcategories";
+                $ret .= "<br />";
+                $ret .= "<a href=\"VendorDepartmentEditor.php?vid=$id\">View or Edit vendor subcategory margin(s)</a>";
+                $ret .= "<br />";
+                $ret .= "<a href=\"VendorMarginsPage.php?id=$id\">View or Edit vendor-specific POS department margins</a>";
+                $ret .= '<p />';
+                $ret .= "<a href=\"VendorDepartmentUploadPage.php?vid=$id\">Upload Subcategory List</a>";
+            }
+            $ret .= '</p>';
         } else {
-            $ret .= "This vendor's items are divided into ";
-            $ret .= $num." subcategories";
-            $ret .= "<br />";
-            $ret .= "<a href=\"VendorDepartmentEditor.php?vid=$id\">View or Edit vendor-specific margin(s)</a>";
-            $ret .= "<br />";
-            $ret .= "<a href=\"VendorMarginsPage.php?id=$id\">And Even More Margins</a>";
-            $ret .= '<p />';
-            $ret .= "<a href=\"VendorDepartmentUploadPage.php?vid=$id\">Upload Subcategory List</a>";
+            $ret .= '<ul style="padding-left:1.0em;">';
+            $ret .= '<li>';
+            $ret .= "<a href=\"VendorMarginsPage.php?id=$id\">View or Edit " .
+                "Store Department Margins that are Specific to this Vendor</a>";
+            if ($num == 0) {
+                $ret .= "<hr class='menu' />";
+                $ret .= "This vendor's items are not yet divided into Subcategories.";
+                $ret .= "</li>";
+                $ret .= '<li>';
+                $ret .= "<a href=\"VendorDepartmentEditor.php?vid=$id\">Create or Edit Vendor " .
+                    "Subcategories</a>";
+                $ret .= "</li>";
+                $ret .= "<li><a href=\"VendorDepartmentUploadPage.php?vid=$id\">Upload Vendor Subcategory List</a>";
+                $ret .= "</li>";
+            } else {
+
+                $ret .= "<hr class='menu' />";
+                $ret .= sprintf("This vendor's items are divided into %d %s", $num,
+                    ($num > 1) ? " Subcategories" : " Subcategory");
+                $ret .= "</li>";
+                $ret .= '<li>';
+                $ret .= "<a href=\"VendorDepartmentEditor.php?vid=$id\">View or Edit Vendor " .
+                    "subcategory margin(s)</a>";
+                $ret .= '</li>';
+            }
+            $ret .= '<li>';
+            $ret .= "<hr class='menu' />";
+            $ret .= "<a href=\"../departments/DepartmentEditor.php\">View or Edit Basic " .
+                "Store Department Margins</a>";
+            $ret .= '</li>';
+            $ret .= '<li>';
+            $ret .= "<hr class='menu' />";
+            $ret .= "<a href=\"../../batches/UNFI/\">Vendor Price Batch Tools</a>";
+            $ret .= "<br />(For applying margin-based prices)";
+            $ret .= '</li>';
+            $ret .= '</ul>';
         }
-        $ret .= '</p>';
+
         $ret .= '
             <div class="form-group">
                 <div class="input-group">
@@ -479,44 +527,116 @@ class VendorIndexPage extends FanniePage {
     public function helpContent()
     {
         return '<p>Vendors are the entities the store purchases its 
-            products from. The most important data associated with
-            a vendor is their catalog of items. A product that the store
+            products from.
+            In the discussion below:
+            <ul>
+            <li>"products" refers to the list of
+            items the store sells. Each item (product) can (and should)
+            be linked to the vendor it is usually purchased from.
+            </li>
+            <li>"catalog" refers to the list of items sold by a particular
+            vendor. It might be complete, including items the store
+            does not carry (i.e. not in the "products" list) or may
+            include only the items the store already carries and possibly
+            some the buyer has entered by hand.
+            <br />(All vendor catalog data is kept in a single list;
+            items from a particular vendor are distinguished by the ID
+            of the vendor.)
+            </li>
+            </ul>
+            </p>
+            <h4>Catalog Maintenance</h4>
+            <p>
+            The most important data associated with
+            a vendor is the catalog of it\'s items. A product that the store
             sells may correspond to one or more items in one or more
             catalogs - i.e. the item may be available from more than
             one vendor and/or may be availalbe in more than one case
             size. Keeping vendor catalogs up to date with accurate 
-            costs helps manage retail pricing and margin.</p>
+            costs helps in the management of retail pricing and margin.
+            </p>
+
             <p>There are two fairly distinct paths to managing vendor
-            catalogs. The best approach will differ depending what kind
-            of information is available for a given vendor. The first
+            catalogs. The best approach depends on what kind
+            of information is available for a given vendor.
+            <ul>
+                <li>The first
             approach begins with building a full vendor catalog. This
-            is more practical if the catalog is available in a digital
-            format. <em>Upload vendor catalog</em> is used to import
+            is more practical, especially for large vendors,
+            if the catalog is available in a digital
+            format such a spreadsheet.
+            <em>Upload vendor catalog</em> is used to import
             all the catalog data. From there <em>Browse vendor catalog</em>
             can be used to add catalog items to the store\'s own products.
-            </p>
-            <p>The second approach begins with the store\'s own products
-            and builds a minimal vendor catalog to match. This is more
-            practical when a digital catalog is not available. <em>Add existing
+            Also, in the <em>Item Editor</em>, if you search for a UPC that is
+            not in the store catalog it will look for it in the vendor catalogs.
+            </li>
+            <li>The second approach begins with the store\'s own products
+            and builds a minimal vendor catalog from them, but obviously
+            limited to them. This is more
+            practical when a digital catalog is not available.
+            <em>Add existing
             items to catalog</em> will create vendor catalog entries from
             the store\'s existing products that are assigned to this vendor.
             <em>Edit vendor catalog</em> can then adjust these catalog 
             entries as needed. While <em>Edit vendor catalog</em> can technically
             be used with catalog imported from digital files, this is a
-            waste of time if catalogs are imported on a regular basis. Each
-            subsequent import will end up overwriting all manual edits.
+            waste of time if catalogs are imported on a regular basis since
+            the next import will overwrite all manual edits.
             Similarly, you can <em>Browse vendor catalog</em> with catalogs
             that were built from the store\'s existing products but there
-            won\'t be any items that can be added to products.
+            won\'t be any items that are not already in products.
+            </li>
+            </ul>
             </p>
+
+            <h4>Mappings</h4>
             <p>PLU/SKU mapping is for resolving situations where the
             store and the vendor use different UPCs. This is often
             the case with items sold in bulk using a PLU.</p>
-            <p>Vendor Subcategories are optional. If the vendor\'s
-            catalog is divided into vendor-specific subcategories,
+            <p>Breakdown mapping is for handling the division of a
+            large container or package of a product into smaller groups.</p>
+
+            <h4>Margins</h4>
+            <p>The assignment of Standard Retail Prices by the
+            <em>Recalculate Vendor SRPs</em> utility in the
+            <em>Vendor Price Batch Tools</em> menu
+            chooses the target margin from sources in this order
+            (i.e. it will use the first applicable margin it finds):
+            <ol>
+            <li>Vendor Subcategories. They are optional. If the vendor\'s
+            catalog is divided into subcategories,
             custom margin targets can be set for those sets of
-            items.</p>
-            <p>Contact Info and Delivery Schedule are wholly optional.
+            items.
+            The loader program must be able to handle the subcategory
+            information in the data the vendor sends
+            and assign the correct numeric subcategory code in CORE.
+            <br />If you assign a single subcategory with an ID of "1"
+            the margin associated with it will be used for all of the vendor\'s
+            items regardless of Vendor subcategory or CORE department
+            assignments.
+            </li>
+            <li>Vendor-Specific CORE Department Margins are also optional.
+            They override the CORE Department margin
+            for items from a specific vendor assigned to that Department.
+            <br />The editor creates a record for each department for the
+            vendor with a default margin of zero.
+            Only assign non-zero values for CORE Department margins you
+            want to override.
+            </li>
+            <li>CORE Department margins are the final option, the default.
+            The Department editor is available from the <em>Manage Departments</em>
+            menu, usually under <em>Item Maintenance</em> in the taskbar.
+            It is very important to assign a proper value for this final source
+            of margin and equally important to assign items to the correct department.
+            </li>
+            </ol>
+            <p>The ___ column of the ___ page shows the margin that was chosen to
+            calculate the standard price but does not say where it found that value.
+            </p>
+
+            <h4>Contact Info and Delivery Schedule</h4>
+            <p>All items in this section are wholly optional.
             Jot down whatever is useful.</p>';
     }
 }

@@ -125,7 +125,15 @@ class VendorPricingBatchPage extends FannieRESTfulPage
             $batchID = $bidW['batchID'];
         }
 
-        $ret = sprintf('<b>Batch</b>: 
+        $ret = '';
+        $vendorPattern = '<span style="font-size:1.4em;"><b>Vendor:</b> %s </span>' .
+            '<b>Discount:</b> %0.2f%% <b>Shipping:</b> %0.2f%%';
+        $ret .= sprintf($vendorPattern,
+            $vendor->vendorName(),
+            $vendor->discountRate(),
+            $vendor->shippingMarkup());
+        $ret .= '<br />';
+        $ret .= sprintf('<b>Batch:</b> 
                     <a href="%sbatches/newbatch/BatchManagementTool.php?startAt=%d">%s</a>',
                     $this->config->URL,
                     $batchID,
@@ -143,16 +151,72 @@ class VendorPricingBatchPage extends FannieRESTfulPage
             $batchUPCs[$obj->upc()] = true;
         }
 
+        /* From here to the end of displaying the table is different for WEFC_Toronto
+         */
         $costSQL = Margin::adjustedCostSQL('v.cost', 'b.discountRate', 'b.shippingMarkup');
         $marginSQL = Margin::toMarginSQL($costSQL, 'p.normal_price');
         $p_def = $dbc->tableDefinition('products');
+        /* 
+         * Store-department-for-vendor
+         * NO:vendor-subcat is highest priority
+         */
         $marginCase = '
             CASE 
                 WHEN g.margin IS NOT NULL AND g.margin <> 0 THEN g.margin
                 WHEN s.margin IS NOT NULL AND s.margin <> 0 THEN s.margin
                 ELSE d.margin
             END';
+        /* Also works. Maybe slower.
+        $marginCase = 'COALESCE(
+            CASE WHEN g.margin IS NOT NULL AND g.margin <> 0 THEN g.margin ELSE NULL END,
+            CASE WHEN s.margin IS NOT NULL AND s.margin <> 0 THEN s.margin ELSE NULL END,
+            d.margin)';
+         */
+        $marginSourceCase = '
+            CASE 
+                WHEN g.margin IS NOT NULL AND g.margin <> 0 THEN 1
+                WHEN s.margin IS NOT NULL AND s.margin <> 0 THEN 2
+                ELSE 3
+            END';
+
+        /* Delete this when priority is absolutely settled.
+        if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+            $marginCase = '
+                CASE 
+                    WHEN g.margin IS NOT NULL AND g.margin <> 0 THEN g.margin
+                    WHEN s.margin IS NOT NULL AND s.margin <> 0 THEN s.margin
+                    ELSE d.margin
+                END';
+            $marginSourceCase = '
+                CASE 
+                    WHEN g.margin IS NOT NULL AND g.margin <> 0 THEN 1
+                    WHEN s.margin IS NOT NULL AND s.margin <> 0 THEN 2
+                    ELSE 3
+                END';
+        } else {
+            // store-dept-for-vendor is highest priority
+            $marginCase = '
+                CASE 
+                    WHEN g.margin IS NOT NULL AND g.margin <> 0 THEN g.margin
+                    WHEN s.margin IS NOT NULL AND s.margin <> 0 THEN s.margin
+                    ELSE d.margin
+                END';
+            $marginSourceCase = '
+                CASE 
+                    WHEN g.margin IS NOT NULL AND g.margin <> 0 THEN 1
+                    WHEN s.margin IS NOT NULL AND s.margin <> 0 THEN 2
+                    ELSE 3
+                END';
+        }
+         */
+
         $srpSQL = Margin::toPriceSQL($costSQL, $marginCase);
+        $packageCase = "
+            CASE
+            WHEN COALESCE(p.unitofmeasure, '') != ''
+            THEN CONCAT(p.size,' ',p.unitofmeasure)
+            ELSE p.size
+            END";
 
         $query = "SELECT p.upc,
             p.description,
@@ -167,7 +231,11 @@ class VendorPricingBatchPage extends FannieRESTfulPage
             " . $srpSQL . " AS rawSRP,
             v.vendorDept,
             x.variable_pricing,
-            " . $marginCase . " AS margin
+            " . $marginCase . " AS margin,
+            p.brand,
+            " . $packageCase . " AS package,
+            p.department,
+            " . $marginSourceCase . " AS marginSource
             FROM products AS p 
                 INNER JOIN vendorItems AS v ON p.upc=v.upc AND p.default_vendor_id=v.vendorID
                 INNER JOIN vendors as b ON v.vendorID=b.vendorID
@@ -177,7 +245,7 @@ class VendorPricingBatchPage extends FannieRESTfulPage
                 LEFT JOIN prodExtra AS x on p.upc=x.upc ";
         $args = array($vendorID);
         if ($superID != 99){
-            $query .= " LEFT JOIN MasterSuperDepts AS m
+            $query .= " LEFT JOIN superdepts AS m
                 ON p.department=m.dept_ID ";
         }
         $query .= "WHERE v.cost > 0 
@@ -188,7 +256,7 @@ class VendorPricingBatchPage extends FannieRESTfulPage
             $args[] = $superID;
         }
         if ($filter === false) {
-            $query .= " AND p.normal_price <> v.srp ";
+            $query .= " AND p.normal_price <> COALESCE(v.srp,0.00) ";
         }
         if ($this->config->get('STORE_MODE') == 'HQ') {
             $query .= ' AND p.store_id=? ';
@@ -199,21 +267,39 @@ class VendorPricingBatchPage extends FannieRESTfulPage
         if (isset($p_def['price_rule_id'])) {
             $query = str_replace('x.variable_pricing', 'p.price_rule_id AS variable_pricing', $query);
         }
+/*
+$arg_list = print_r($args,true);
+$dbc->logger("q: $query \n $arg_list");
+*/
 
         $prep = $dbc->prepare_statement($query);
         $result = $dbc->exec_statement($prep,$args);
 
         $ret .= "<table class=\"table table-bordered small\">";
-        $ret .= "<tr><td colspan=6>&nbsp;</td><th colspan=2>Current</th>
-            <th colspan=3>Vendor</th></tr>";
-        $ret .= "<tr><th>UPC</th><th>Our Description</th>
+        $ret .= "<tr><td colspan=7>&nbsp;</td><th colspan=2>Current</th>
+            <th colspan=5>Vendor</th></tr>";
+        $ret .= "<tr>
+            <th>UPC</th>
+            <th>Brand</th>
+            <th>Our Description</th>
+            <th>Package</th>
+            <th>Dept</th>
             <th>Base Cost</th>
-            <th>Shipping</th>
-            <th>Discount%</th>
             <th>Adj. Cost</th>
-            <th>Price</th><th>Margin</th><th>Raw</th><th>SRP</th>
-            <th>Margin</th><th>Cat</th><th>Var</th>
-            <th>Batch</th></tr>";
+            <th>Price</th><th>Margin</th>
+            <th>SRP</th>
+            <th>SRP Margin</th>
+            <th>Raw Price</th>
+            <th>Raw Margin</th>
+            <th>Sub Cat.</th>
+            <th>Var.</th><th>Batch</th></tr>";
+        $backgroundCounts=array(
+            "white" => 0,
+            "red" => 0,
+            "green" => 0,
+            "yellow" => 0,
+            "selection" => 0
+            );
         while ($row = $dbc->fetch_row($result)) {
             $background = "white";
             if (isset($batchUPCs[$row['upc']])) {
@@ -233,18 +319,26 @@ class VendorPricingBatchPage extends FannieRESTfulPage
                     title="Add to batch">
                     </span>';
             }
+            /*
+                <td class=\"sub shipping\">%.2f%%</td>
+                <td class=\"sub discount\">%.2f%%</td>
+                $row['shippingMarkup']*100,
+                $row['discountRate']*100,
+             */
             $ret .= sprintf("<tr id=row%s class=%s>
                 <td class=\"sub\"><a href=\"%sitem/ItemEditorPage.php?searchupc=%s\">%s</a></td>
                 <td class=\"sub\">%s</td>
+                <td class=\"sub\">%s</td>
+                <td class=\"sub\">%s</td>
+                <td class=\"sub\">%d</td>
                 <td class=\"sub cost\">%.2f</td>
-                <td class=\"sub shipping\">%.2f%%</td>
-                <td class=\"sub discount\">%.2f%%</td>
                 <td class=\"sub adj-cost\">%.2f</td>
-                <td class=\"sub price\">%.2f</td>
+                <td class=\"sub price\"><b>%.2f</b></td>
                 <td class=\"sub cmargin\">%.2f%%</td>
-                <td class=\"sub raw-srp\">%.2f</td>
                 <td onclick=\"reprice('%s');\" class=\"sub srp\">%.2f</td>
                 <td class=\"sub dmargin\">%.2f%%</td>
+                <td class=\"sub raw-srp\">%.2f</td>
+                <td class=\"sub rmargin\">%d: %.2f%%</td>
                 <td class=\"sub\">%d</td>
                 <td><input class=varp type=checkbox onclick=\"toggleV('%s');\" %s /></td>
                 <td class=white>
@@ -263,25 +357,50 @@ class VendorPricingBatchPage extends FannieRESTfulPage
                 $row['upc'],
                 $background,
                 $this->config->URL, $row['upc'], $row['upc'],
+                $row['brand'],
                 $row['description'],
+                $row['package'],
+                $row['department'],
                 $row['cost'],
-                $row['shippingMarkup']*100,
-                $row['discountRate']*100,
                 $row['adjusted_cost'],
                 $row['normal_price'],
                 100*$row['current_margin'],
-                $row['rawSRP'],
                 $row['upc'],
                 $row['srp'],
                 100*$row['desired_margin'],
+                $row['rawSRP'],
+                $row['marginSource'],
+                100*$row['margin'],
                 $row['vendorDept'],
                 $row['upc'],
                 ($row['variable_pricing']>=1?'checked':''),
                 (isset($batchUPCs[$row['upc']])?'collapse':''), $row['upc'],
                 (!isset($batchUPCs[$row['upc']])?'collapse':''), $row['upc']
             );
+
+            $backgroundCounts[$background]++;
         }
         $ret .= "</table>";
+
+        $ret .= "<h4>Counts</h4>";
+        $ret .= "<table class=\"table table-bordered small\" style=\"width:20%;\">
+            <tr><th>Type</th><th class=\"text-right\">Number</th>
+            <th class=\"text-right\">PerCent</th></tr>";
+        $btotal = 0;
+        foreach ($backgroundCounts as $key => $count) {
+            $btotal += $count;
+        }
+        foreach ($backgroundCounts as $type => $count) {
+            $ret .= sprintf('<tr class="%s"><td class="sub">%s</td>
+                <td class="sub text-right">%d</td>
+                <td class="sub text-right">%0.2f%%</td></tr>',
+                $type, $type, $count, (($count/$btotal)*100));
+        }
+        $ret .= sprintf('<tr><td>%s</td><td class="text-right">%d</td>
+            <td class="text-right">%0.2f%%</td></tr>',
+                "Total", $btotal, (($btotal/$btotal)*100));
+        $ret .= "</table>";
+        $ret .= "</p>";
 
         return $ret;
     }
@@ -291,13 +410,10 @@ class VendorPricingBatchPage extends FannieRESTfulPage
         $dbc = $this->connection;
         $dbc->selectDB($this->config->OP_DB);
 
-        $prep = $dbc->prepare("
-            SELECT superID,
-                super_name 
-            FROM MasterSuperDepts
+        $prep = $dbc->prepare("SELECT superID,super_name
+            FROM superDeptNames
             WHERE superID > 0
-            GROUP BY superID,
-                super_name");
+            ORDER BY super_name");
         $res = $dbc->execute($prep);
         $opts = "<option value=99 selected>All</option>";
         while ($row = $dbc->fetch_row($res)) {
@@ -346,7 +462,8 @@ class VendorPricingBatchPage extends FannieRESTfulPage
 
     public function helpContent()
     {
-        return '<p>Review products from the vendor with current vendor cost,
+
+        $ret = '<p>Review products from the vendor with current vendor cost,
             retail price, and margin information. The tool creates a price
             change batch in the background. It will add items to this batch
             and automatically create shelf tags.</p>
@@ -354,6 +471,177 @@ class VendorPricingBatchPage extends FannieRESTfulPage
             whose current retail price is identical to the margin-based
             suggested retail price.</p>
             ';
+
+        if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+            $text_replace = True;
+            if ($text_replace) {
+                $ret = '';
+            }
+            $ret .= '<h4>Overview</h4>';
+            $ret .= '<p>This is usually used just after a new price list
+                from the vendor has been loaded into the vendor catalogue.
+                </p>
+                ';
+            $ret .= '<p>Use it to change store prices by means of a
+                Price Change Batch.
+                </p>
+                ';
+            /*
+            $ret .= '<p>Review products from the vendor with current vendor cost,
+                retail price, and margin information and optionally add them
+                to a batch.
+                </p>
+                ';
+             */
+            $ret .= '<p>Upon submitting the form the tool creates an empty Price Change Batch.
+                ';
+            $ret .= '<br />- You then add items to this batch by selecting them from the list.
+                <br />- When the Batch is completely populated go to Batch Management to
+                schedule it and make shelf tags.
+                </p>
+                ';
+            $ret .= '<h4>The Form</h4>';
+            $ret .= ' <p><em>Show all items</em> The default setting, "No", omits items
+                whose current retail price is identical to the margin-based
+                suggested retail price.
+                </p>
+                ';
+            $ret .= '<h4>The List</h4>';
+            $ret .= ' <p>This is a list of Products that have information in the Vendor Catalogue
+                that may have been updated recently.
+                </p>
+                ';
+            $ret .= '<p>The name of the (initially empty) batch is noted in the upper left.
+                Click it to go to Batch Management.
+                ';
+            $ret .= '<p>Columns
+                <ul>
+                    <li>UPC - linked to the Item Editor
+                    </li>
+                    <li>Our Description - from the Products List, not the Vendor Catalogue
+                    </li>
+                    <li>Dept - Store Department
+                    </li>
+                    <li>Base Cost - Case-cost divided by units-per-case
+                    </li>
+                    <li>Adj. Cost - Base Cost less Discount plus Shipping
+                    <br />Discount and Shipping are the same percentage of cost
+                    for all items from the Vendor.
+                    </li>
+                    <li>Current Group
+                        <ul>
+                        <li>Price - Currently charged to customers.
+                        </li>
+                        <li>Margin - Based on Adj. Cost and Current Price
+                        </li>
+                        </ul>
+                    </li>
+                    <li>Vendor Group
+                    <ul>
+                    <li>Vendor:Raw Price - Raw Price.
+                    It is calculated freshly for display here (unlike SRP, below)
+                    from Adj. Cost and the margin in, in order of preference:
+                    <ol>
+                        <li>An override of the default Store Department Margin for this Vendor.</li>
+                        <li>The Vendor Subcategory Margin.
+                        (May apply to the all of the vendor\'s items)</li>
+                        <li>The Store Department Margin.</li>
+                    </ol>
+                    It is NOT (unlike SRP) rounded: hence Raw.
+                    </li>
+
+                    <li>Vendor:SRP - The new price that will be applied when the Batch is run.
+                    <br />It is usually assigned by running Recalculate Vendor SRPs
+                    right after loading new data to the Vendor Catalogue,
+                    however some loaders assign it as part of the loading.
+                    It is not (unlike Raw Price, above) calculated anew for use here.
+                    <br />It is calculated from Adj. Cost and the margin in, in order of
+                    preference:
+                    <ol>
+                        <li>An override of the default Store Department Margin for this Vendor.</li>
+                        <li>The Vendor Subcategory Margin.
+                        (May apply to the all of the vendor\'s items)</li>
+                        <li>The Store Department Margin.</li>
+                    </ol>
+                    and then rounded. For details of the rounding rules see the
+                    Help in Recalculate Vendor SRPs.
+                    <br />SRP can be edited inline (click).
+                    <br />The SRP in the Vendor Catalogue is changed immediately.
+                    <br />If the item has already been
+                    chosen for the Batch the price in the Batch Item will be changed immediately
+                    upon clicking "Save".
+                    </li>
+
+                    <li>Vendor:SRP Margin - The actual new margin for this item.
+                    <br />It is calculated from the Adj.Cost and Vendor:SRP, i.e. the rounded price.
+                    <br />If Vendor:SRP is edited Margin is updated upon "Save".
+                    <br />If it is 0.00 it means Vendor:SRP is the same as Adj.Cost or
+                    Vendor:SRP hasn\'t been assigned.
+                    Run Recalculate Vendor SRPs to update Vendor:SRP and then return to
+                    this utility.
+                    </li>
+
+                    <li>Vendor:Raw Margin - The margin used, based on the noted priorities,
+                    to calculate Raw Price.
+                    <ol>
+                        <li>An override of the default Store Department Margin for this Vendor.</li>
+                        <li>The Vendor Subcategory Margin.
+                        (May apply to the all of the vendor\'s items)</li>
+                        <li>The Store Department Margin.</li>
+                    </ol>
+                    The margin the system understands you meant to be used.
+                    <br />The initial number 1: 2: or 3: indicates the source of the margin
+                    from the prioritized list above, e.g. 3: for Store Department Margin.
+                    </li>
+
+                    <li>Vendor:Sub Cat - The Vendor Subcategory, if assigned, if not, 0.
+                    </li>
+                    </ul>
+                    </li>
+
+                    <li>Var. - Variable. If ticked, the price in SRP is treated as an override of the
+                    usual method of calculation,
+                    i.e. it means "the margin-based price does not apply"
+                    <br />The store\'s products list is changed immediately to reflect this,
+                    i.e. it does not wait for the Batch to be submitted.
+                    <br />If you want to enter details for the override go to the Margin section
+                    of Item Maintenance for the item.
+                    </li>
+
+                    <li>Batch - Click the "+" icon to add the item to the Batch
+                    or the "-" icon to remove it.
+                    </li>
+                </ul>
+                </p>';
+            $ret .= '<p>Row Colours
+                <ul>
+                    <li>White - the usual cost-and-margin-based price calculation doesn\'t apply.
+                    <br />The price is said to be Variable.
+                    </li>
+                    <li>Blue - the item has been chosen for the Batch.
+                    </li>
+                    <li>Red - Current:Price is more than $.10 <em>less</em> than the
+                    Vendor:Raw price calculated from the current Adj. Cost.
+                    <br />The price is below margin.
+                    </li>
+                    <li>Yellow - Current:Price is more than $.10 <em>more</em> than the
+                    Vendor:Raw price calculated from the current Adj. Cost.
+                    <br />The price is above margin.
+                    </li>
+                    <li>Green - Current:Price is within $.10 plus or minus the
+                    Vendor:Raw price calculated from the current Adj. Cost.
+                    <br />The price is at margin.
+                    </li>
+                </ul>
+                </p>';
+            $ret .= '<p>Shelf tag items for the items chosen for the Batch are
+                automaically created;
+                the tags may be printed from the Batch Management page.
+                <br />Choose your preferred Shelf Tag Queue on the Form.
+                </p>';
+        }
+
+        return $ret;
     }
 
 

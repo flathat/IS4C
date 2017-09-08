@@ -174,6 +174,7 @@ class BrowseVendorItems extends FanniePage
 
         $query = "
             SELECT v.upc,
+                v.sku,
                 v.brand,
                 v.description,
                 v.size,
@@ -200,7 +201,7 @@ class BrowseVendorItems extends FanniePage
             WHERE upc=?');
         
         $ret = "<table class=\"table table-bordered\">";
-        $ret .= "<tr><th>UPC</th><th>Brand</th><th>Description</th>";
+        $ret .= "<tr><th>UPC</th><th>SKU</th><th>Brand</th><th>Description</th>";
         $ret .= "<th>Size</th><th>Cost</th><th>Price</th><th>Dept.</th><th>&nbsp;</th></tr>";
         $p = $dbc->prepare_statement($query);
         $result = $dbc->exec_statement($p,$args);
@@ -213,12 +214,14 @@ class BrowseVendorItems extends FanniePage
                     <td>%s</td>
                     <td>%s</td>
                     <td>%s</td>
+                    <td>%s</td>
                     <td>\$%.2f</td>
                     <td>\$%.2f</td>
                     <td>%d %s</td>
                     <td>&nbsp;</td>
                     </tr>",
                     $row['upc'], $row['upc'],
+                    $row['sku'],
                     $row['brand'],
                     $row['description'],
                     $row['size'],
@@ -231,6 +234,7 @@ class BrowseVendorItems extends FanniePage
                 $ret .= sprintf("<tr id=row%s>
                     <td><a href=\"../ItemEditorPage.php?searchupc=%s\">%s</a></td>
                     <td>%s</td><td>%s</td>
+                    <td>%s</td>
                     <td>%s</td><td>\$%.2f</td>
                     <td class=\"col-sm-1\">
                         <div class=\"input-group\">
@@ -245,6 +249,7 @@ class BrowseVendorItems extends FanniePage
                     </tr>",
                     $row['upc'],
                     $row['upc'], $row['upc'],
+                    $row['sku'],
                     $row['brand'],$row['description'],
                     $row['size'],$row['cost'],$srp,$row['upc'],
                     $row['upc'],$depts,$row['upc'],$row['upc']);
@@ -325,6 +330,13 @@ class BrowseVendorItems extends FanniePage
         }
 
         $dbc = FannieDB::get($FANNIE_OP_DB);
+
+        $vnp = $dbc->prepare_statement("SELECT vendorName FROM vendors
+            WHERE vendorID=?");
+        $vnr = $dbc->exec_statement($vnp, array($vid));
+        $vni = $dbc->fetch_row($vnr);
+        $vendorName = $vni['vendorName'];
+        /* */
         $cats = "";
         $p = $dbc->prepare_statement("SELECT i.vendorDept, d.name 
                                       FROM vendorItems AS i
@@ -350,6 +362,11 @@ class BrowseVendorItems extends FanniePage
 
         ob_start();
         ?>
+        <div id="namediv" class="form-inline">
+        <h3>
+        <?php echo $vendorName; ?>
+        </h3>
+        </div>
         <div id="categorydiv" class="form-inline">
         <select id=categoryselect onchange="catchange();" class="form-control">
         <?php echo $cats ?>

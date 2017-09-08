@@ -52,24 +52,48 @@ class RecalculateVendorSRPs extends FannieRESTfulPage
         $delQ = $dbc->prepare_statement("DELETE FROM vendorSRPs WHERE vendorID=?");
         $delR = $dbc->exec_statement($delQ,array($id));
 
-        $query = '
-            SELECT v.upc,
-                v.sku,
-                v.cost,
-                CASE
-                    WHEN a.margin IS NOT NULL THEN a.margin
-                    WHEN b.margin IS NOT NULL THEN b.margin
-                    ELSE 0 
-                END AS margin,
-                COALESCE(n.shippingMarkup, 0) as shipping,
-                COALESCE(n.discountRate, 0) as discount
-            FROM vendorItems as v 
-                LEFT JOIN vendorDepartments AS a ON v.vendorID=a.vendorID AND v.vendorDept=a.deptID
-                INNER JOIN vendors AS n ON v.vendorID=n.vendorID
-                LEFT JOIN products as p ON v.upc=p.upc AND v.vendorID=p.default_vendor_id
-                LEFT JOIN departments AS b ON p.department=b.dept_no
-            WHERE v.vendorID=?
-                AND (a.margin IS NOT NULL OR b.margin IS NOT NULL)';
+        if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+            $query = '
+                SELECT v.upc,
+                    v.sku,
+                    v.cost,
+                    CASE
+                        WHEN g.margin IS NOT NULL AND g.margin <> 0 THEN g.margin
+                        WHEN a.margin IS NOT NULL AND a.margin <> 0 THEN a.margin
+                        WHEN b.margin IS NOT NULL THEN b.margin
+                        ELSE 0 
+                    END AS margin,
+                    COALESCE(n.shippingMarkup, 0) as shipping,
+                    COALESCE(n.discountRate, 0) as discount
+                FROM vendorItems as v 
+                    LEFT JOIN vendorDepartments AS a ON v.vendorID=a.vendorID AND v.vendorDept=a.deptID
+                    INNER JOIN vendors AS n ON v.vendorID=n.vendorID
+                    LEFT JOIN products as p ON v.upc=p.upc AND v.vendorID=p.default_vendor_id
+                    LEFT JOIN departments AS b ON p.department=b.dept_no
+                    LEFT JOIN VendorSpecificMargins AS g
+                        ON p.department=g.deptID AND n.vendorID=g.vendorID
+                WHERE v.vendorID=?
+                    AND (a.margin IS NOT NULL OR b.margin IS NOT NULL OR g.margin IS NOT NULL)';
+        } else {
+            $query = '
+                SELECT v.upc,
+                    v.sku,
+                    v.cost,
+                    CASE
+                        WHEN a.margin IS NOT NULL THEN a.margin
+                        WHEN b.margin IS NOT NULL THEN b.margin
+                        ELSE 0 
+                    END AS margin,
+                    COALESCE(n.shippingMarkup, 0) as shipping,
+                    COALESCE(n.discountRate, 0) as discount
+                FROM vendorItems as v 
+                    LEFT JOIN vendorDepartments AS a ON v.vendorID=a.vendorID AND v.vendorDept=a.deptID
+                    INNER JOIN vendors AS n ON v.vendorID=n.vendorID
+                    LEFT JOIN products as p ON v.upc=p.upc AND v.vendorID=p.default_vendor_id
+                    LEFT JOIN departments AS b ON p.department=b.dept_no
+                WHERE v.vendorID=?
+                    AND (a.margin IS NOT NULL OR b.margin IS NOT NULL)';
+        }
         $fetchP = $dbc->prepare($query);
         $fetchR = $dbc->exec_statement($fetchP, array($id));
         $upP = $dbc->prepare('
@@ -88,7 +112,14 @@ class RecalculateVendorSRPs extends FannieRESTfulPage
             $adj = \COREPOS\Fannie\API\item\Margin::adjustedCost($fetchW['cost'], $fetchW['discount'], $fetchW['shipping']);
             $srp = \COREPOS\Fannie\API\item\Margin::toPrice($adj, $fetchW['margin']);
 
-            $srp = $rounder->round($srp);
+            if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+                //$srp = $this->normalizePrice_5_0($srp);
+                $extra_parameters=array();
+                $extra_parameters['style'] = 'simple_5_0';
+                $srp = $rounder->round($srp,$extra_parameters);
+            } else {
+                $srp = $rounder->round($srp);
+            }
 
             $upR = $dbc->execute($upP, array($srp, $id, $fetchW['sku']));
             if ($insP) {
@@ -98,7 +129,7 @@ class RecalculateVendorSRPs extends FannieRESTfulPage
 
         $ret = "<b>SRPs have been updated</b><br />";
         $ret .= sprintf('<p>
-            <a class="btn btn-default" href="index.php">Price Batch Tools</a>
+            <a class="btn btn-default" href="index.php">Vendor Price Batch Tools</a>
             <a class="btn btn-default" 
             href="%s/item/vendors/VendorIndexPage.php?vid=%d">Vendor Settings &amp; Catalog</a>
             </p>',
@@ -114,6 +145,21 @@ class RecalculateVendorSRPs extends FannieRESTfulPage
             $int_price++;
         }
         if ($int_price % 100 == 5 || $int_price % 100 == 9) {
+            $int_price += 10;
+        }
+
+        return round($int_price/100.00, 2);
+    }
+
+    private function normalizePrice_5_0($price)
+    {
+        $int_price = floor($price * 100);
+        // If not ending in 5 or 0 increase until it does.
+        while ($int_price % 10 != 5 && $int_price % 10 != 0) {
+            $int_price++;
+        }
+        // If ending in x05 increase to x15
+        if ($int_price % 100 == 5) {
             $int_price += 10;
         }
 
@@ -149,7 +195,8 @@ class RecalculateVendorSRPs extends FannieRESTfulPage
 
     public function helpContent()
     {
-        return '<p>Recalculate suggested retail prices for items from
+        $ret = '';
+        $ret .= '<p>Recalculate suggested retail prices for items from
             a given vendor. This takes place in three steps.
             <ul>
                 <li>First, the vendor catalog unit costs are adjusted
@@ -158,7 +205,27 @@ class RecalculateVendorSRPs extends FannieRESTfulPage
                     cost times (1 - volume discount) times (1 + shipping markup).
                     If the cost is 1.99, volume discount is 15%, and shipping
                     markup is 5%, the adjusted cost is 1.99 * (1 - 0.15) *
-                    (1 + 0.05) = 1.78.</li>
+                    (1 + 0.05) = 1.78.</li>';
+        if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+            $ret .= '
+                <li>Second, the margin target is applied to the adjusted cost
+                to calculate an approximate or "raw" SRP.
+                There are three tiers of margin targets, in order of preference:
+                    <ol>
+                        <li>An override of the default Store Department Margin for this Vendor.</li>
+                        <li>The Vendor Subcategory Margin.
+                        (May apply to the all of the vendor\'s items,
+                    effectively making a vendor-specific margin.)</li>
+                        <li>The Store Department Margin.</li>
+                    </ol>
+                    The adjusted cost is divided by (1 - margin).
+                    Thus, if the adjusted cost is 1.78
+                    and the margin target is 35%, the appoximate, or raw,
+                    SRP is 1.78 / (1 - 0.35) = 2.74.
+                </li>
+                ';
+        } else {
+            $ret .= '
                 <li>Second, the margin target is applied to the adjusted cost
                     to calculate an approximate SRP. In this case the adjusted 
                     cost is divided by (1 - margin). If the adjusted cost is 1.78
@@ -171,10 +238,26 @@ class RecalculateVendorSRPs extends FannieRESTfulPage
                         the POS department\'s margin target it used.
                         </li>
                     </ul>
-                </li>
-                <li>Finally, the price is rounded to conform with standards.
-                    <em>This is not currently configurable but probably should be</em>.
-                    In general prices round upward with exceptions around certain
+                </li>';
+        }
+        $ret .= '
+                <li>Finally, the raw price is rounded to conform with standards.
+                <!-- em>This is not currently configurable but probably should be.</em -->
+                <!-- /li -->';
+        // $ret .= '<li>';
+        if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+            $ret .= '<br />';
+            $ret .= '<br />';
+            $ret .= 'West End Food Co-op in Toronto uses:
+                <ul>
+                    <li>Increase to nearest .x5 or .x0</li>
+                    <li>If that results in x.05 increase it to x.15</li>
+                </ul>';
+        }
+        $ret .= '<br />';
+        $ret .= '
+                This is the CORE default scheme:
+                   <br />In general prices round upward with exceptions around certain
                     key price points. Higher prices will make larger rounding jumps.
                     <ul>
                         <li>Prices between $0.00 and $0.99
@@ -212,10 +295,21 @@ class RecalculateVendorSRPs extends FannieRESTfulPage
                                     31.01 rounds up to 31.99.</li>
                             </ul>
                         </li>
-                    </ul>
-                </li>
-                </ul>
-            </p>';
+                    </ul>';
+        /*
+        if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
+            $ret .= '<br />West End Food Co-op in Toronto uses:
+                <ul>
+                    <li>Increase to nearest .x5 or .x0</li>
+                    <li>If that results in x.05 increase it to x.15</li>
+                </ul>';
+        }
+        */
+                $ret .= '</li>
+            </ul>
+        </p>';
+
+        return $ret;
     }
 }
 

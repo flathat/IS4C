@@ -49,6 +49,17 @@ class VendorMarginsPage extends FannieRESTfulPage
 
     protected function get_id_view()
     {
+        $vendor = new VendorsModel($this->connection);
+        $vendor->vendorID($this->id);
+        $vendor->load();
+        $ret = '';
+        $ret .= '
+            <div class="panel panel-default">
+            <div class="panel-heading">' .
+            'ID: <strong>' .$vendor->vendorID() . '</strong>' .
+            ' Name: <strong>' .  $vendor->vendorName() . '</strong>' .
+            '</div>
+            </div>';
         $prep = $this->connection->prepare('
             SELECT d.dept_name,
                 v.margin,
@@ -58,10 +69,13 @@ class VendorMarginsPage extends FannieRESTfulPage
             ORDER BY d.dept_no
         ');
         $res = $this->connection->execute($prep, array($this->id));
-        $ret = '<form method="post" action="' . filter_input(INPUT_SERVER, 'PHP_SELF') . '">';
+        $ret .= '<form method="post" action="' . filter_input(INPUT_SERVER, 'PHP_SELF') . '">';
         $ret .= '<table class="table table-bordered table-striped">
                 <tr><th>Dept#</th><th>Name</th><th>Margin</th></tr>';
         while ($row = $this->connection->fetchRow($res)) {
+            if ($this->config->COOP_ID == 'WEFC_Toronto') {
+                if ($row['deptID'] < '3000') continue;
+            }
             $ret .= sprintf('<tr>
                 <td>%d<input type="hidden" name="id[]" value="%d" /></td>
                 <td>%s</td>
@@ -83,6 +97,25 @@ class VendorMarginsPage extends FannieRESTfulPage
             <p><button type="submit" class="btn btn-default btn-core">Save</button></p>
             </form>';
 
+        return $ret;
+    }
+
+    public function helpContent()
+    {
+        $ret = '';
+        $ret .= '<p>The form is a list of store Departments.
+            Margins greater than 0.00 entered here will override the margin
+            used for Standard Retail Price (SRP) calculation
+            for this vendor\'s items that have been assigned to the store
+            Department.';
+        $ret .= '<br />It is not necessary to set the margins here for
+            every Department the Vendor\'s items are in;
+            margins of 0.00 here will default to the store Department margin
+            for SRP calculations.';
+        $ret .= '</p>';
+        $ret .= '<p>Click the "Save" button at the bottom of the page
+            to save your changes.';
+        $ret .= '</p>';
         return $ret;
     }
 }
