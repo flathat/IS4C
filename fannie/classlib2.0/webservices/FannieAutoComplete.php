@@ -59,6 +59,24 @@ class FannieAutoComplete extends FannieWebService
             case 'item':
                 $res = false;
                 if (!is_numeric($args->search)) {
+                    if (\FannieConfig::factory()->get('COOP_ID') == "WEFC_Toronto") {
+                    $prep = $dbc->prepare("SELECT p.upc,
+                        CONCAT(p.brand,
+                        CASE WHEN COALESCE(p.brand, '') != ''
+                        THEN ' : ' ELSE '' END,
+                        CASE WHEN COALESCE(p.formatted_name, '') != ''
+                        THEN p.formatted_name ELSE p.description END)
+                        as description
+                                           FROM products AS p
+                                            LEFT JOIN productUser AS u ON u.upc=p.upc
+                                           WHERE p.description LIKE ?
+                                            OR p.brand LIKE ?
+                                            OR u.description LIKE ?
+                                            OR u.brand LIKE ?
+                                           GROUP BY p.upc,
+                                            p.formatted_name
+                                            ORDER BY p.formatted_name");
+                    } else {
                     $prep = $dbc->prepare('SELECT p.upc,
                                             p.description
                                            FROM products AS p
@@ -69,7 +87,8 @@ class FannieAutoComplete extends FannieWebService
                                             OR u.brand LIKE ?
                                            GROUP BY p.upc,
                                             p.description
-                                           ORDER BY p.description');
+                                            ORDER BY p.description');
+                    }
                     $term = '%' . $args->search . '%';
                     $res = $dbc->execute($prep, array($term, $term, $term, $term));
                 } elseif (ltrim($args->search, '0') != '') {
