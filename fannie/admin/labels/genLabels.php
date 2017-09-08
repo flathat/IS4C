@@ -59,6 +59,9 @@ if ($id !== False) {
         case 'alphabetically':
             $query .= ' ORDER BY s.description';
             break;
+        case 'brand':
+            $query .= ' ORDER BY s.brand, s.description';
+            break;
         case 'department':
         default:
             $query .= ' ORDER BY p.department, s.upc';

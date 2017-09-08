@@ -113,6 +113,7 @@ function printMany(){
             <select id="tag-sort" class="form-control">
                 <option>Department</option>
                 <option>Alphabetically</option>
+                <option>Brand</option>
                 <option>Order Entered</option>
             </select>
         </div>

@@ -140,7 +140,7 @@ class EditShelfTags extends FannieRESTfulPage
         <td>{{ tag.upc }}</td>
         <input type="hidden" name="upc[]" value="{{ tag.upc }}" /> 
         <td><input type="text" name="desc[]" value="{{ tag.description }}"
-            class="form-control input-sm" /></td>
+            class="form-control input-sm" size="10" /></td>
         <td><div class="input-group">
             <span class="input-group-addon">$</span>
             <input type=text name=price[] value="{{ tag.normal_price }}" 
@@ -196,22 +196,22 @@ HTML;
         foreach ($tags->find() as $tag) {
             $ret .= '<tr>';
             $ret .= "<td>" . $tag->upc() . "</td><input type=hidden name=upc[] value=\"" . $tag->upc() . "\" />";
-            $ret .= "<td><input type=text name=desc[] value=\"" . $tag->description() . "\" 
-                        class=\"form-control input-sm\" /></td>";
-            $ret .= "<td><div class=\"input-group\">
+            $ret .= "<td style=\"width:20em;\"><input type=text name=desc[] value=\"" . $tag->description() . "\" 
+                        class=\"form-control input-sm\" size=\"25\" /></td>";
+            $ret .= "<td style=\"width:10em;\"><div class=\"input-group\">
                     <span class=\"input-group-addon\">\$</span>
                     <input type=text name=price[] value=\"" . $tag->normal_price() . "\" 
                         class=\"form-control price-field input-sm\" />
                     </div></td>";
-            $ret .= "<td><input type=text name=brand[] value=\"" . $tag->brand() . "\" 
+            $ret .= "<td style=\"width:20em;\"><input type=text name=brand[] value=\"" . $tag->brand() . "\" 
                         class=\"form-control input-sm\" /></td>";
-            $ret .= "<td><input type=text name=sku[] value=\"" . $tag->sku() . "\" 
+            $ret .= "<td style=\"width:15em;\"><input type=text name=sku[] value=\"" . $tag->sku() . "\" 
                         class=\"form-control input-sm\" /></td>";
-            $ret .= "<td><input type=text name=size[] value=\"" . $tag->size() . "\" 
+            $ret .= "<td style=\"width:10em;\"><input type=text name=size[] value=\"" . $tag->size() . "\" 
                         class=\"form-control input-sm\" /></td>";
             $ret .= "<td><input type=text name=units[] value=\"" . $tag->units() . "\" 
                         class=\"form-control input-sm price-field\" /></td>";
-            $ret .= "<td><input type=text name=vendor[] value=\"" . $tag->vendor() . "\" 
+            $ret .= "<td style=\"width:15em;\"><input type=text name=vendor[] value=\"" . $tag->vendor() . "\" 
                         class=\"form-control input-sm\" /></td>";
             $ret .= "<td><input type=text name=ppo[] value=\"" . $tag->pricePerUnit() . "\" 
                         class=\"form-control input-sm\" /></td>";
