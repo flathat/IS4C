@@ -1,0 +1,19 @@
+#  2Oct2014 Running jobs from the command line.
+# To be like cron running them as user www-data:
+# (sudo -u www-data crontab -l)
+# 30 19 27 9 * php /var/www/IS4C/fannie/classlib2.0/FannieTask.php TransArchiveTask >> /var/www/IS4C/fannie/logs/dayend.log
+# 10 2 1 1 * cd /var/www/IS4C/fannie/cron && php ./nightly.pcbatch.php >> /var/www/IS4C/fannie/logs/dayend.log
+
+# Tasks
+# Doesn't matter where the FooTask.php is, FannieTask.php will find it.
+sudo -u www-data php $FCL2/FannieTask.php CoopCredHistoryTask
+# Messages that go to $LOGS/dayend.log will display to the console.
+# To log them, append >> /var/www/IS4C/fannie/logs/dayend.log
+
+# Old-style 
+# cd to fannie/cron
+cd $CRON
+sudo -u www-data php ./lanesync.api.php
+# Messages that go to $LOGS/dayend.log will display to the console.
+# To log them, append >> /var/www/IS4C/fannie/logs/dayend.log
+
