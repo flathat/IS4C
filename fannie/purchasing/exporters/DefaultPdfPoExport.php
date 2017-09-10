@@ -24,8 +24,6 @@
 class DefaultPdfPoExport {
 
     public $nice_name = 'PDF (Default)';
-    public $extension = 'pdf';
-    public $mime_type = 'application/pdf';
 
     function send_headers(){
     }
@@ -93,3 +91,4 @@ class DefaultPdfPoExport {
     }
 }
 
+?>

@@ -24,8 +24,6 @@
 class Unfi7DigitCsvExport 
 {
     public $nice_name = 'UNFI (7 Digit Code CSV)';
-    public $extension = 'csv';
-    public $mime_type = 'text/csv';
 
     public function send_headers()
     {

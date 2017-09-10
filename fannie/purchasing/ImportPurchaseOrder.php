@@ -100,10 +100,21 @@ class ImportPurchaseOrder extends \COREPOS\Fannie\API\FannieUploadPage
 
     private $results = '';
 
-    public function process_file($linedata, $indexes)
+    function process_file($linedata)
     {
         global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
+
+        $skuCol = $this->get_column_index('sku');
+        $costCol = $this->get_column_index('cost');
+        $uQtyCol = $this->get_column_index('unitQty');
+        $cQtyCol = $this->get_column_index('caseQty');
+        $uSizeCol = $this->get_column_index('unitSize');
+        $cSizeCol = $this->get_column_index('caseSize');
+        $brandCol = $this->get_column_index('brand');
+        $descCol = $this->get_column_index('desc');
+        $upcCol = $this->get_column_index('upc');
+        $upccCol = $this->get_column_index('upcc');
 
         $vendorID = FormLib::get('vendorID');
         $inv = FormLib::get('identifier', '');
@@ -125,11 +136,11 @@ class ImportPurchaseOrder extends \COREPOS\Fannie\API\FannieUploadPage
 
         $ret = '';
         foreach ($linedata as $line) {
-            if (!isset($line[$indexes['sku']])) continue;
-            if (!isset($line[$indexes['cost']])) continue;
+            if (!isset($line[$skuCol])) continue;
+            if (!isset($line[$costCol])) continue;
 
-            $sku = $line[$indexes['sku']];
-            $cost = $line[$indexes['cost']];
+            $sku = $line[$skuCol];
+            $cost = $line[$costCol];
             $cost = trim($cost,' ');
             $cost = trim($cost,'$');
             if (!is_numeric($cost)) {
@@ -137,22 +148,22 @@ class ImportPurchaseOrder extends \COREPOS\Fannie\API\FannieUploadPage
                 continue;
             }
 
-            $unitQty = $indexes['unitQty'] !== false && isset($line[$indexes['unitQty']]) ? $line[$indexes['unitQty']] : 0;
-            $caseQty = $indexes['caseQty'] !== false && isset($line[$indexes['caseQty']]) ? $line[$indexes['caseQty']] : 0;
+            $unitQty = $uQtyCol !== false && isset($line[$uQtyCol]) ? $line[$uQtyCol] : 0;
+            $caseQty = $cQtyCol !== false && isset($line[$cQtyCol]) ? $line[$cQtyCol] : 0;
             if ($unitQty == 0 && $caseQty == 0) {
                 // no qty specified. 
                 continue;
             }
 
-            $unitSize = $indexes['unitSize'] !== false && isset($line[$indexes['unitSize']]) ? $line[$indexes['unitSize']] : 0;
-            $caseSize = $indexes['caseSize'] !== false && isset($line[$indexes['caseSize']]) ? $line[$indexes['caseSize']] : 0;
-            $brand = $indexes['brand'] !== '' && isset($line[$indexes['brand']]) ? $line[$indexes['brand']] : '';
-            $desc = $indexes['desc'] !== false && isset($line[$indexes['desc']]) ? $line[$indexes['desc']] : '';
+            $unitSize = $uSizeCol !== false && isset($line[$uSizeCol]) ? $line[$uSizeCol] : 0;
+            $caseSize = $cSizeCol !== false && isset($line[$cSizeCol]) ? $line[$cSizeCol] : 0;
+            $brand = $brandCol !== '' && isset($line[$brandCol]) ? $line[$brandCol] : '';
+            $desc = $descCol !== false && isset($line[$descCol]) ? $line[$descCol] : '';
             $upc = '';
-            if ($indexes['upc'] !== false && isset($line[$indexes['upc']])) {
-                $upc = BarcodeLib::padUPC($line[$indexes['upc']]);
-            } elseif ($indexes['upcc'] !== false && isset($line[$indexes['upcc']])) {
-                $upc = BarcodeLib::padUPC($line[$indexes['upcc']]);
+            if ($upcCol !== false && isset($line[$upcCol])) {
+                $upc = BarcodeLib::padUPC($line[$upcCol]);
+            } elseif ($upccCol !== false && isset($line[$upccCol])) {
+                $upc = BarcodeLib::padUPC($line[$upccCol]);
                 $upc = '0' . substr($upc, 0, 12);
             }
 
@@ -312,3 +323,4 @@ class ImportPurchaseOrder extends \COREPOS\Fannie\API\FannieUploadPage
 
 FannieDispatch::conditionalExec(false);
 
+?>

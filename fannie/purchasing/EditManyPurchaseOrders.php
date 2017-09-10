@@ -26,30 +26,24 @@ if (!class_exists('FannieAPI')) {
     include_once($FANNIE_ROOT.'classlib2.0/FannieAPI.php');
 }
 
-class EditManyPurchaseOrders extends FannieRESTfulPage 
-{
+class EditManyPurchaseOrders extends FannieRESTfulPage {
+
     protected $header = 'Purchase Orders';
     protected $title = 'Purchase Orders';
 
     public $description = '[Multi-Vendor Purchase Order] creates and edits multiple purchase orders
     as items from different vendors are scanned.';
+    public $themed = true;
 
-    protected $must_authenticate = true;
+    protected $must_authenticate = True;
 
-    function preprocess()
-    {
+    function preprocess(){
         $this->__routes[] = 'get<search>';
         $this->__routes[] = 'get<id><sku><qty>';
-        if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
-            $this->enable_linea = false;
-            $this->header = 'Purchase Orders for One-or-More Vendors';
-            $this->title = 'PO-Many Vendors';
-        }
         return parent::preprocess();
     }
 
-    protected function get_search_handler()
-    {
+    function get_search_handler(){
         global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
         $ret = array(); 
@@ -59,8 +53,8 @@ class EditManyPurchaseOrders extends FannieRESTfulPage
             i.vendorID, vendorName
             FROM vendorItems AS i LEFT JOIN vendors AS v ON
             i.vendorID=v.vendorID WHERE sku LIKE ?';
-        $skuP = $dbc->prepare($skuQ);
-        $skuR = $dbc->execute($skuP, array('%'.$this->search.'%'));
+        $skuP = $dbc->prepare_statement($skuQ);
+        $skuR = $dbc->exec_statement($skuP, array('%'.$this->search.'%'));
         while($w = $dbc->fetch_row($skuR)){
             $result = array(
             'sku' => $w['sku'],
@@ -74,12 +68,7 @@ class EditManyPurchaseOrders extends FannieRESTfulPage
             $ret[] = $result;
         }
         if (count($ret) > 0){
-/*
-$j_echoed = json_encode($ret);
-$dbc->logger("Many::get_search_handler() j_echoed: $j_echoed");
- */
-            echo json_encode($this->addCurrentQty($dbc, $ret));
-            //echo json_encode($ret);
+            echo json_encode($ret);
             return False;
         }
 
@@ -88,8 +77,8 @@ $dbc->logger("Many::get_search_handler() j_echoed: $j_echoed");
             i.vendorID, vendorName
             FROM vendorItems AS i LEFT JOIN vendors AS v ON
             i.vendorID = v.vendorID WHERE upc=?';
-        $upcP = $dbc->prepare($upcQ);
-        $upcR = $dbc->execute($upcP, array(BarcodeLib::padUPC($this->search)));
+        $upcP = $dbc->prepare_statement($upcQ);
+        $upcR = $dbc->exec_statement($upcP, array(BarcodeLib::padUPC($this->search)));
         while($w = $dbc->fetch_row($upcR)){
             $result = array(
             'sku' => $w['sku'],
@@ -103,8 +92,34 @@ $dbc->logger("Many::get_search_handler() j_echoed: $j_echoed");
             $ret[] = $result;
         }
         if (count($ret) > 0){
-            echo json_encode($this->addCurrentQty($dbc, $ret));
-            //echo json_encode($ret);
+            echo json_encode($ret);
+            return False;
+        }
+
+        // search by internalSKU / order code
+        $iskuQ = 'SELECT brand, description, size, units, cost, sku,
+            v.vendorID, vendorName
+            FROM internalSKUs as i
+            INNER JOIN vendorItems as v
+            ON i.vendor_sku = v.sku AND i.vendorID=v.vendorID
+            LEFT JOIN vendors AS n ON v.vendorID=n.vendorID
+            WHERE our_sku = ? ';
+        $iskuP = $dbc->prepare_statement($iskuQ);
+        $iskuR = $dbc->exec_statement($iskuP, array($this->search));
+        while($w = $dbc->fetch_row($iskuR)){
+            $result = array(
+            'sku' => $w['sku'],
+            'title' => '['.$w['vendorName'].'] '.$w['brand'].' - '.$w['description'],
+            'unitSize' => $w['size'],   
+            'caseSize' => $w['units'],
+            'unitCost' => sprintf('%.2f',$w['cost']),
+            'caseCost' => sprintf('%.2f',$w['cost']*$w['units']),
+            'vendorID' => $w['vendorID']
+            );
+            $ret[] = $result;
+        }
+        if (count($ret) > 0){
+            echo json_encode($ret);
             return False;
         }
 
@@ -112,40 +127,15 @@ $dbc->logger("Many::get_search_handler() j_echoed: $j_echoed");
         return False;
     }
 
-    private function addCurrentQty($dbc, $results)
-    {
-        $idCache = array();
-        $uid = FannieAuth::getUID($this->current_user);
-        $lookupP = $dbc->prepare('SELECT quantity FROM PurchaseOrderItems WHERE orderID=? AND sku=?');
-        for ($i=0; $i<count($results); $i++) {
-            $vendorID = $results[$i]['vendorID'];
-            $sku = $results[$i]['sku'];
-            if (isset($idCache[$vendorID])) {
-                $orderID = $idCache[$vendorID];
-            } else {
-                $orderID = $this->getOrderID($vendorID, $uid);
-                $idCache[$vendorID] = $orderID;
-            }
-            $qty = $dbc->getValue($lookupP, array($orderID, $sku));
-            $results[$i]['currentQty'] = $qty === false ? 0 : $qty;
-        }
-
-        return $results;
-    }
-
     /**
       AJAX call: ?id=<vendor ID>&sku=<vendor SKU>&qty=<# of cases>
       Add the given SKU & qty to the order
-
-      EL: Heading and Home button with calculate_sidebar.
     */
-    protected function get_id_sku_qty_handler()
-    {
+    function get_id_sku_qty_handler(){
         global $FANNIE_OP_DB;
 
         $dbc = FannieDB::get($FANNIE_OP_DB);
         $orderID = $this->getOrderID($this->id, FannieAuth::getUID($this->current_user));
-$dbc->logger("EM:gisqh id: " . $this->id . " sku: " . $this->sku . " qty: " . $this->qty);
 
         $vitem = new VendorItemsModel($dbc);
         $vitem->vendorID($this->id);
@@ -171,23 +161,15 @@ $dbc->logger("EM:gisqh id: " . $this->id . " sku: " . $this->sku . " qty: " . $t
         $pitem->sku($this->sku);
         if (count($pitem->find()) == 0){
             $ret['error'] = 'Error saving entry';
-        } else {
-            $sidebar = '<p><strong>Pending Orders</strong></p>';
-            $sidebar .= $this->calculate_sidebar();
-            $sidebar .= '<button class="btn btn-default" onclick="location=\'PurchasingIndexPage.php\'; return false;">Home</button>';
-            $ret['sidebar'] = $sidebar;
-            //$ret['sidebar'] = $this->calculate_sidebar();
+        }
+        else {
+            $ret['sidebar'] = $this->calculate_sidebar();
         }
         echo json_encode($ret);
-        return false;
+        return False;
     }
 
-    /* EL AND p.placed =0
-     * EL "Order #"
-     * EL Link/drill to Order
-     */
-    protected function calculate_sidebar()
-    {
+    function calculate_sidebar(){
         global $FANNIE_OP_DB;
         $userID = FannieAuth::getUID($this->current_user);
 
@@ -201,25 +183,15 @@ $dbc->logger("EM:gisqh id: " . $this->id . " sku: " . $this->sku . " qty: " . $t
             LEFT JOIN PurchaseOrderItems as i
             ON p.orderID=i.orderID
             WHERE p.userID=?
-                AND p.placed=0
             GROUP BY p.orderID, vendorName
             ORDER BY vendorName';
-        $p = $dbc->prepare($q);
-        $r = $dbc->execute($p, array($userID));  
+        $p = $dbc->prepare_statement($q);
+        $r = $dbc->exec_statement($p, array($userID));  
 
         $ret = '<ul id="vendorList">';
         while($w = $dbc->fetch_row($r)){
             $ret .= '<li><span id="orderInfoVendor">'.$w['vendorName'].'</span>';
-            if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
-                $ret .= '<ul class="vendorSubList"><li>' .
-                    '<a href="' . $this->config->get('URL') . 
-                    'purchasing/ViewPurchaseOrders.php?id=' . $w['orderID'] . '"' .
-                    ' target="PO_' . $w['orderID'] . '">' .
-                    'Order #' . $w['orderID'].' '.$w['date'] . '</a>';
-                //$ret .= '<ul class="vendorSubList"><li>Order #'.$w['orderID'].' '.$w['date'];
-            } else {
-                $ret .= '<ul class="vendorSubList"><li>'.$w['date'];
-            }
+            $ret .= '<ul class="vendorSubList"><li>'.$w['date'];
             $ret .= '<li># of Items: <span class="orderInfoCount">'.$w['rows'].'</span>';
             $ret .= '<li>Est. cost: $<span class="orderInfoCost">'.sprintf('%.2f',$w['estimatedCost']).'</span>';
             $ret .= '</ul></li>';
@@ -229,21 +201,11 @@ $dbc->logger("EM:gisqh id: " . $this->id . " sku: " . $this->sku . " qty: " . $t
         return $ret;
     }
 
-    /*
-     *  EL $ret .= '<p><strong>Pending Orders</strong></p>';
-     *  EL $ret .= Home button
-     *  col-sm-4, not 6
-     *    Needs -4 to keep descriptions on one line
-     *  sku/upc input width 200px
-     *  cases input width 75px instead of size=3
-     */
-    protected function get_view()
-    {
-        $ret = '<div class="col-sm-4">';
+    function get_view(){
+        $ret = '<div class="col-sm-6">';
         $ret .= '<div id="ItemSearch">';
         $ret .= '<form class="form" action="" onsubmit="itemSearch();return false;">';
-        $ret .= '<label>UPC/SKU</label><input style="width:200px;" class="form-control" type="text" id="searchField" />';
-        //$ret .= '<label>UPC/SKU</label><input class="form-control" type="text" id="searchField" />';
+        $ret .= '<label>UPC/SKU</label><input class="form-control" type="text" id="searchField" />';
         $ret .= '<button type="submit" class="btn btn-default">Search</button>';
         $ret .= '</form>';
         $ret .= '</div>';
@@ -251,12 +213,8 @@ $dbc->logger("EM:gisqh id: " . $this->id . " sku: " . $this->sku . " qty: " . $t
         $ret .= '</div>';
 
         $ret .= '<div class="col-sm-6" id="orderInfo">';
-        $ret .= '<p><strong>Pending Orders</strong></p>';
         $ret .= $this->calculate_sidebar();
-        $ret .= '<button class="btn btn-default" onclick="location=\'PurchasingIndexPage.php\'; return false;">Home</button>';
-        $ret .= '<p> &nbsp; </p>';
         $ret .= '</div>';
-        /* EL is an empty col-sm-N needed to fill the page to 12? */
 
         $this->add_onload_command("\$('#searchField').focus();\n");
         $this->add_script('js/editmany.js');
@@ -264,97 +222,39 @@ $dbc->logger("EM:gisqh id: " . $this->id . " sku: " . $this->sku . " qty: " . $t
         return $ret;
     }
 
-    /**
-      Utility: find orderID from vendorID and userID
-      EL: Assign and use $default_store to assign storeID
-      EL: Assign $po_prefix and use to assign vendorOrderID
-    */
-    private function getOrderID($vendorID, $userID)
-    {
+    private function getOrderID($vendorID, $userID){
         global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
         $orderQ = 'SELECT orderID FROM PurchaseOrder WHERE
             vendorID=? AND userID=? and placed=0
             ORDER BY creationDate DESC';
-        $orderP = $dbc->prepare($orderQ);
-        $orderR = $dbc->execute($orderP, array($vendorID, $userID));
+        $orderP = $dbc->prepare_statement($orderQ);
+        $orderR = $dbc->exec_statement($orderP, array($vendorID, $userID));
         if ($dbc->num_rows($orderR) > 0){
             $row = $dbc->fetch_row($orderR);
             return $row['orderID'];
-        } else {
-            /*
+        }
+        else {
             $insQ = 'INSERT INTO PurchaseOrder (vendorID, creationDate,
                 placed, userID) VALUES (?, '.$dbc->now().', 0, ?)';
-            $insP = $dbc->prepare($insQ);
-            $insR = $dbc->execute($insP, array($vendorID, $userID));
-            return $dbc->insertID();
-             */
-            $insQ = 'INSERT INTO PurchaseOrder (vendorID, creationDate,
-                placed, userID, storeID) VALUES (?, '.$dbc->now().', 0, ?, ?)';
-            $insP = $dbc->prepare($insQ);
-            $default_store = $this->config->get('STORE_ID');
-            $po_prefix = $this->config->get('PO_PREFIX','');
-            $store = COREPOS\Fannie\API\lib\Store::getIdByIp($default_store);
-            $insR = $dbc->execute($insP, array($vendorID, $userID, $store));
-            $insertID = $dbc->insertID();
-            if (!empty($po_prefix)) {
-                $poQ = "UPDATE PurchaseOrder SET vendorOrderID = ? WHERE orderID = ?";
-                $poP = $dbc->prepare($poQ);
-                $poArgs = array("{$po_prefix}{$insertID}", $insertID);
-                $poR = $dbc->execute($poP,$poArgs);
-            }
-            return $insertID;
+            $insP = $dbc->prepare_statement($insQ);
+            $insR = $dbc->exec_statement($insP, array($vendorID, $userID));
+            return $dbc->insert_id();
         }
     }
 
     public function helpContent()
     {
-        $ret = '';
-        if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
-            $ret .= '
-            <p>Enter UPCs or SKUs. If there are multiple matching items,
-            use the dropdown to specify which. Then enter the number
-            of cases to order.
-            </p>
-            <p>On the right side of the page
-            summaries of all current Pending orders are listed.
-            As each item is entered the summary for the order the item
-            was added to is updated.
-            </p>
-            <p>If this is the first item for a vendor
-            a new Pending order is automatically created.
-            </p>
-            <p>Original: Each time you select an item from a different vendor,
-            a pending order is automatically created for that vendor
-            if one does not already exist.</p>';
-        } else {
-            $ret .= '
+        return '
             <p>Enter UPCs or SKUs. If there are multiple matching items,
             use the dropdown to specify which. Then enter the number
             of cases to order.</p>
             <p>Each time you select an item from a different vendor,
             a pending order is automatically created for that vendor
             if one does not already exist.</p>';
-        }
-
-        return $ret;
-    }
-
-    public function unitTest($phpunit)
-    {
-        $phpunit->assertNotEquals(0, strlen($this->get_view()));
-        $this->search = '4011';
-        ob_start();
-        $this->get_search_handler();
-        $phpunit->assertInternalType('array', json_decode(ob_get_clean(), true));
-        $this->id = 1;
-        $this->sku = '4011';
-        $this->qty = 1;
-        ob_start();
-        $this->get_id_sku_qty_handler();
-        $phpunit->assertInternalType('array', json_decode(ob_get_clean(), true));
     }
 }
 
 FannieDispatch::conditionalExec();
 
+?>
