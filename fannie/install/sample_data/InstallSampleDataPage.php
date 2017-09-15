@@ -21,23 +21,22 @@
 
 *********************************************************************************/
 
-ini_set('display_errors','1');
 include(dirname(__FILE__) . '/../../config.php'); 
 if (!class_exists('FannieAPI')) {
-    include_once(dirnam(__FILE__) . '/../../classlib2.0/FannieAPI.php');
+    include_once(dirname(__FILE__) . '/../../classlib2.0/FannieAPI.php');
 }
 if (!function_exists('confset')) {
-    include(dirname(__FILE__) . '/util.php');
+    include(dirname(__FILE__) . '/../util.php');
 }
-if (!function_exists('create_if_needed')) {
-    include(dirname(__FILE__) . '/db.php');
+if (!function_exists('dropDeprecatedStructure')) {
+    include(dirname(__FILE__) . '/../db.php');
 }
 
 /**
     @class InstallSampleDataPage
     Class for the SampleData install and config options
 */
-class InstallSampleDataPage extends InstallPage {
+class InstallSampleDataPage extends \COREPOS\Fannie\API\InstallPage {
 
     protected $title = 'Fannie: Sample Data';
     protected $header = 'Fannie: Sample Data';
@@ -45,25 +44,6 @@ class InstallSampleDataPage extends InstallPage {
     public $description = "
     Class for the Sample Data install page.
     ";
-    public $themed = true;
-
-    // This replaces the __construct() in the parent.
-    public function __construct() {
-
-        // To set authentication.
-        FanniePage::__construct();
-
-        // Link to a file of CSS by using a function.
-        $this->add_css_file("../../src/style.css");
-        $this->add_css_file("../../src/javascript/jquery-ui.css");
-        $this->add_css_file("../../src/css/install.css");
-
-        // Link to a file of JS by using a function.
-        $this->add_script("../../src/javascript/jquery.js");
-        $this->add_script("../../src/javascript/jquery-ui.js");
-
-    // __construct()
-    }
 
     // If chunks of CSS are going to be added the function has to be
     //  redefined to return them.
@@ -83,20 +63,10 @@ class InstallSampleDataPage extends InstallPage {
     //css_content()
     }
 
-    // If chunks of JS are going to be added the function has to be
-    //  redefined to return them.
-    /**
-      Define any javascript needed
-      @return A javascript string
-    function javascript_content(){
-
-    }
-    */
-
     function body_content(){
         //Should this really be done with global?
         //global $FANNIE_URL, $FANNIE_EQUITY_DEPARTMENTS;
-        include('../../config.php'); 
+        include(dirname(__FILE__) . '/../../config.php'); 
         ob_start();
 ?>
 <?php
@@ -104,122 +74,55 @@ echo showInstallTabs("Sample Data", '../');
 ?>
 
 <form action=InstallSampleDataPage.php method=post>
-<h1 class="install">
-    <?php 
-    if (!$this->themed) {
-        echo "<h1 class='install'>{$this->header}</h1>";
-    }
-    ?>
-</h1>
 <?php
-if (is_writable('../../config.php')){
-    echo "<div class=\"alert alert-success\"><i>config.php</i> is writeable</div>";
-}
-else {
-    echo "<div class=\"alert alert-danger\"><b>Error</b>: config.php is not writeable</div>";
-}
+echo $this->writeCheck(dirname(__FILE__) . '/../config.php');
 ?>
 <hr />
 <div class="well"><em>
 <?php
 /* First, if this is a request to load a file, do that.
 */
-$db = new SQLManager($FANNIE_SERVER,
+$dbc = new SQLManager($FANNIE_SERVER,
     $FANNIE_SERVER_DBMS,
     $FANNIE_OP_DB,
     $FANNIE_SERVER_USER,
     $FANNIE_SERVER_PW);
 
-if (isset($_REQUEST['employees'])){
-    echo "Loading employees";
-    $db->query("TRUNCATE TABLE employees");
-    \COREPOS\Fannie\API\data\DataLoad::loadSampleData($db,'employees');  
-} elseif (isset($_REQUEST['custdata'])) {
-    echo "Loading custdata";
-    $backup1 = $db->query('TRUNCATE TABLE custdataBackup');
-    $backup2 = $db->query('INSERT INTO custdataBackup SELECT * FROM custdata');
-    if ($backup1 === false || $backup2 === false) {
-        echo _(' - failed to backup current data. Sample data not loaded.');
-    } else {
-        $db->query("TRUNCATE TABLE custdata");
-        \COREPOS\Fannie\API\data\DataLoad::loadSampleData($db,'custdata');
-    }
-} elseif(isset($_REQUEST['memtype'])){
-    echo "Loading memtype";
-    $db->query("TRUNCATE TABLE memtype");
-    \COREPOS\Fannie\API\data\DataLoad::loadSampleData($db,'memtype');
-} elseif (isset($_REQUEST['products'])) {
-    echo "Loading products";
-    $backup1 = $db->query('TRUNCATE TABLE productBackup');
-    $backup2 = $db->query('INSERT INTO productBackup SELECT * FROM products');
-    if ($backup1 === false || $backup2 === false) {
-        echo _(' - failed to backup current data. Sample data not loaded.');
-    } else {
-        $db->query("TRUNCATE TABLE products");
-        \COREPOS\Fannie\API\data\DataLoad::loadSampleData($db,'products');
-    }
-}
-elseif(isset($_REQUEST['prod-flags'])){
-    echo "Loading product flags";
-    $db->query("TRUNCATE TABLE prodFlags");
-    \COREPOS\Fannie\API\data\DataLoad::loadSampleData($db,'prodFlags');
-}
-elseif(isset($_REQUEST['batchType'])){
-    echo "Loading batchn types";
-    $db->query("TRUNCATE TABLE batchType");
-    \COREPOS\Fannie\API\data\DataLoad::loadSampleData($db,'batchType');
-}
-elseif(isset($_REQUEST['depts'])){
-    echo "Loading departments";
-    $db->query("TRUNCATE TABLE departments");
-    \COREPOS\Fannie\API\data\DataLoad::loadSampleData($db,'departments');
-    /* subdepts sample data is of questionable use
-    echo "<br />Loading subdepts";
-    $db->query("TRUNCATE TABLE subdepts");
-    \COREPOS\Fannie\API\data\DataLoad::loadSampleData($db,'subdepts');
-    */
-}
-elseif (isset($_REQUEST['superdepts'])){
-    echo "Loading super departments";
-    $db->query("TRUNCATE TABLE superdepts");
-    \COREPOS\Fannie\API\data\DataLoad::loadSampleData($db,'superdepts');
-    $db->query("TRUNCATE TABLE superDeptNames");
-    \COREPOS\Fannie\API\data\DataLoad::loadSampleData($db,'superDeptNames');
-}
-elseif (isset($_REQUEST['tenders'])){
-    echo "Loading tenders";
-    $db->query("TRUNCATE TABLE tenders");
-    \COREPOS\Fannie\API\data\DataLoad::loadSampleData($db,'tenders');
-}
-elseif (isset($_REQUEST['authentication'])){
-    echo "Loading authentication info";
-    $db->query("TRUNCATE TABLE userKnownPrivs");
-    \COREPOS\Fannie\API\data\DataLoad::loadSampleData($db,'userKnownPrivs');
-}
-elseif (isset($_REQUEST['origin'])){
-    echo "Loading country info";
-    $db->query("TRUNCATE TABLE originCountry");
-    \COREPOS\Fannie\API\data\DataLoad::loadSampleData($db,'originCountry');
-    echo "<br />Loading state/province info";
-    $db->query("TRUNCATE TABLE originStateProv");
-    \COREPOS\Fannie\API\data\DataLoad::loadSampleData($db,'originStateProv');
-} else if (isset($_REQUEST['authGroups'])) {
-    echo "Loading authentication groups";
-    $db->query("TRUNCATE TABLE userGroups");
-    \COREPOS\Fannie\API\data\DataLoad::loadSampleData($db,'userGroups');
-    $db->query("TRUNCATE TABLE userGroupPrivs");
-    \COREPOS\Fannie\API\data\DataLoad::loadSampleData($db,'userGroupPrivs');
+if (FormLib::get('employees') !== '') {
+    $this->reloadTable($dbc, 'employees');
+} elseif (FormLib::get('custdata') !== ''){
+    $this->reloadTable($dbc, 'custdata', 'custdataBackup');
+} elseif (FormLib::get('memtype') !== ''){
+    $this->reloadTable($dbc, 'memtype');
+} elseif (FormLib::get('products') !== ''){
+    $this->reloadTable($dbc, 'products', 'productBackup');
+} elseif (FormLib::get('prod-flags') !== ''){
+    $this->reloadTable($dbc, 'prodFlags');
+} elseif (FormLib::get('batchType') !== ''){
+    $this->reloadTable($dbc, 'batchType');
+} elseif (FormLib::get('depts') !== ''){
+    $this->reloadTable($dbc, 'departments');
+} elseif (FormLib::get('superdepts') !== ''){
+    $this->reloadTable($dbc, 'superdepts');
+    $this->reloadTable($dbc, 'superDeptNames');
+} elseif (FormLib::get('tenders') !== ''){
+    $this->reloadTable($dbc, 'tenders');
+} elseif (FormLib::get('authentication') !== ''){
+    $this->reloadTable($dbc, 'userKnownPrivs');
+} elseif (FormLib::get('origin') !== ''){
+    $this->reloadTable($dbc, 'originCountry');
+    $this->reloadTable($dbc, 'originStateProv');
+} elseif (FormLib::get('authGroups') !== ''){
+    $this->reloadTable($dbc, 'userGroups');
+    $this->reloadTable($dbc, 'userGroupPrivs');
     // give "Administrators" group all permissions
-    $db->query("INSERT userGroupPrivs SELECT 
+    $dbc->query("INSERT userGroupPrivs SELECT 
             1, auth_class, 'all', 'all'
             FROM userKnownPrivs");
 }
 ?>
 </em></div>
 
-<?php /* Display a list of data that can be loaded.
-*/
-?>
 <p class="ichunk">
 Some sample data is available to get a test lane
 up and running quickly and to try Fannie functions.
@@ -293,11 +196,9 @@ utilities to populate the lane tables.
 <hr />
 
 </form>
-
 <?php
 
         return ob_get_clean();
-
     // body_content
     }
 
@@ -334,8 +235,32 @@ utilities to populate the lane tables.
                 </button>';
         }
     }
+
+    private function reloadTable($dbc, $table, $backup_table=false)
+    {
+        echo 'Loading ' . $table;
+        $ready = true;
+        if ($backup_table !== false) {
+            $backup1 = $dbc->query('TRUNCATE TABLE ' . $dbc->identifierEscape($backup_table));
+            $backup2 = $dbc->query('INSERT INTO ' . $dbc->identifierEscape($backup_table) 
+                . ' SELECT * FROM ' . $dbc->identifierEscape($table));
+            if ($backup1 === false || $backup2 === false) {
+                echo _(' - failed to backup current data. Sample data not loaded.');
+                $ready = false;
+            }
+        }
+
+        if ($ready === true) {
+            $dbc->query("TRUNCATE TABLE " . $dbc->identifierEscape($table));
+            \COREPOS\Fannie\API\data\DataLoad::loadSampleData($dbc, $table);
+        }
+    }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->body_content()));
+    }
 }
 
-FannieDispatch::conditionalExec(false);
+FannieDispatch::conditionalExec();
 
-?>

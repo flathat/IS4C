@@ -21,6 +21,8 @@
 
 *********************************************************************************/
 
+use COREPOS\Fannie\API\lib\Store;
+
 include(dirname(__FILE__) . '/../../config.php');
 if (!class_exists('FannieAPI')) {
     include($FANNIE_ROOT.'classlib2.0/FannieAPI.php');
@@ -57,6 +59,7 @@ class ItemLastQuarterReport extends FannieReportPage
 
         $upc = $this->form->upc;
         $upc = BarcodeLib::padUPC($upc);
+        $store = Store::getIdByIp();
 
         $query = "SELECT 
                     l.quantity, l.total,
@@ -65,33 +68,33 @@ class ItemLastQuarterReport extends FannieReportPage
                     w.weekStart, w.weekEnd
                 FROM products AS p
                     LEFT JOIN " . $FANNIE_ARCHIVE_DB . $dbc->sep() . "productWeeklyLastQuarter AS l
-                        ON p.upc=l.upc
+                        ON p.upc=l.upc AND p.store_id=l.storeID
                     LEFT JOIN " . $FANNIE_ARCHIVE_DB . $dbc->sep() . "weeksLastQuarter AS w
                         ON l.weekLastQuarterID=w.weekLastQuarterID 
                 WHERE p.upc = ?
+                    AND p.store_id=?
                 ORDER BY l.weekLastQuarterID";
         $prep = $dbc->prepare($query);
-        $result = $dbc->execute($prep, array($upc));
+        $result = $dbc->execute($prep, array($upc, $store));
 
         $data = array();
-        while($row = $dbc->fetch_row($result)) {
-            $record = array(
-                'Week ' . date('Y-m-d', strtotime($row['weekStart'])) . ' to ' . date('Y-m-d', strtotime($row['weekEnd'])),
-                sprintf('%.2f', $row['quantity']),
-                sprintf('%.2f', $row['total']),
-                sprintf('%.4f%%', $row['percentageStoreSales'] * 100),
-                sprintf('%.4f%%', $row['percentageSuperDeptSales'] * 100),
-                sprintf('%.4f%%', $row['percentageDeptSales'] * 100),
-            );
-            $data[] = $record;
+        while ($row = $dbc->fetchRow($result)) {
+            $data[] = $this->rowToRecord($row);
         }
 
         return $data;
     }
 
-    public function calculate_footers($data)
+    private function rowToRecord($row)
     {
-        return array();
+        return array(
+            'Week ' . date('Y-m-d', strtotime($row['weekStart'])) . ' to ' . date('Y-m-d', strtotime($row['weekEnd'])),
+            sprintf('%.2f', $row['quantity']),
+            sprintf('%.2f', $row['total']),
+            sprintf('%.4f%%', $row['percentageStoreSales'] * 100),
+            sprintf('%.4f%%', $row['percentageSuperDeptSales'] * 100),
+            sprintf('%.4f%%', $row['percentageDeptSales'] * 100),
+        );
     }
 
     public function form_content()
@@ -132,6 +135,14 @@ class ItemLastQuarterReport extends FannieReportPage
             Lists an item\'s sales over the previous thirteen weeks
             with its percentage of category sales.
             </p>';
+    }
+
+    public function unitTest($phpunit)
+    {
+        $data = array('weekStart'=>'2000-01-01', 'weekEnd'=>'2000-01-06',
+            'quantity'=>1, 'total'=>1, 'percentageStoreSales'=>0.1,
+            'percentageSuperDeptSales'=>0.1, 'percentageDeptSales'=>0.1);
+        $phpunit->assertInternalType('array', $this->rowToRecord($data));
     }
 }
 

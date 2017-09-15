@@ -48,6 +48,7 @@ class CapSalesIndexPage extends FanniePage
         <li>EDLP<ul>
             <li><a href="EdlpUploadPage.php">Upload EDLP Max Prices</a></li>
             <li><a href="EdlpBatchPage.php">Create Price Change Batch</a></li>
+            <li><a href="EdlpCatalogOverwrite.php">Update Item and Vendor Catalog Costs</a></li>
         </ul></li>
         </ul>
         <?php
@@ -62,8 +63,12 @@ class CapSalesIndexPage extends FanniePage
             create a price change batch if necessary.</p>
             <p>The unifying thread here is NCG-related.</p>';
     }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->body_content()));
+    }
 }
 
 FannieDispatch::conditionalExec();
 
-?>

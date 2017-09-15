@@ -21,6 +21,11 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\gui\NoInputCorePage;
+use COREPOS\pos\lib\DisplayLib;
+use COREPOS\pos\lib\MiscLib;
+use COREPOS\pos\lib\Search\Products\ProductSearch;
+use COREPOS\pos\parser\parse\UPC;
 
 include_once(dirname(__FILE__).'/../lib/AutoLoader.php');
 
@@ -28,72 +33,87 @@ include_once(dirname(__FILE__).'/../lib/AutoLoader.php');
 class productlist extends NoInputCorePage 
 {
 
-    private $temp_result;
-    private $temp_num_rows;
     private $boxSize;
+    private $searchResults = array();
+    private $quantity = 0;
+
+    private function adjustUPC($entered)
+    {
+        // expand UPC-E to UPC-A
+        if (substr($entered, 0, 1) == 0 && strlen($entered) == 7) {
+            $parser = new UPC($this->session);
+            $entered = $parser->expandUPCE($entered);
+        }
+
+        // UPCs should be length 13 w/ at least one leading zero
+        if (strlen($entered) == 13 && substr($entered, 0, 1) != 0) 
+            $entered = "0".substr($entered, 0, 12);
+        else 
+            $entered = substr("0000000000000".$entered, -13);
+
+        // zero out the price field of scale UPCs
+        if (substr($entered, 0, 3) == "002")
+            $entered = substr($entered, 0, 8)."00000";
+
+        return $entered;
+    }
+
+    private function getQuantity($entered)
+    {
+        $qty = 0;
+        if (strstr($entered, '*')) {
+            list($qty,$entered) = explode('*', $entered, 2);
+            $qty = is_numeric($qty) ? $qty : 1;
+        } elseif ($this->form->tryGet('qty') !== '') {
+            $qty = is_numeric($this->form->qty) ? $this->form->qty : 0;
+        }
+
+        return array($qty, $entered);
+    }
 
     function preprocess()
     {
         global $CORE_LOCAL;
         $entered = "";
-        if (isset($_REQUEST["search"]))
-            $entered = strtoupper(trim($_REQUEST["search"]));
-        elseif ($CORE_LOCAL->get("pvsearch") != "")
-            $entered = strtoupper(trim($CORE_LOCAL->get("pvsearch")));
-        else{
-            $this->temp_num_rows = 0;
-            return True;
+        try {
+            $entered = strtoupper(trim($this->form->search));
+        } catch (Exception $ex) {
+            return true;
         }
 
         // canceled
-        if (empty($entered)){
+        if (empty($entered)) {
             $this->change_page($this->page_url."gui-modules/pos2.php");
-            return False;
+            return false;
         }
+
+        list($qty, $entered) = $this->getQuantity($entered);
+        $this->quantity = $qty;
 
         // picked an item from the list
         if (is_numeric($entered) && strlen($entered) == 13) {
+            $inp = $qty ? $qty . '*' . $entered : $entered;
             $this->change_page(
                 $this->page_url
                 . "gui-modules/pos2.php"
-                . '?reginput=' . urlencode($entered)
+                . '?reginput=' . urlencode($inp)
                 . '&repeat=1');
             return false;
         }
 
         if (is_numeric($entered)) {
-            // expand UPC-E to UPC-A
-            if (substr($entered, 0, 1) == 0 && strlen($entered) == 7) {
-                $p6 = substr($entered, -1);
-
-                if ($p6 == 0) 
-                    $entered = substr($entered, 0, 3)."00000".substr($entered, 3, 3);
-                elseif ($p6 == 1) 
-                    $entered = substr($entered, 0, 3)."10000".substr($entered, 4, 3);
-                elseif ($p6 == 2) 
-                    $entered = substr($entered, 0, 3)."20000".substr($entered, 4, 3);
-                elseif ($p6 == 3) 
-                    $entered = substr($entered, 0, 4)."00000".substr($entered, 4, 2);
-                elseif ($p6 == 4) 
-                    $entered = substr($entered, 0, 5)."00000".substr($entered, 6, 1);
-                else 
-                    $entered = substr($entered, 0, 6)."0000".$p6;
-
-            }
-
-            // UPCs should be length 13 w/ at least one leading zero
-            if (strlen($entered) == 13 && substr($entered, 0, 1) != 0) 
-                $entered = "0".substr($entered, 0, 12);
-            else 
-                $entered = substr("0000000000000".$entered, -13);
-
-            // zero out the price field of scale UPCs
-            if (substr($entered, 0, 3) == "002")
-                $entered = substr($entered, 0, 8)."00000";
+            $entered = $this->adjustUPC($entered);
         }
 
+        $this->searchResults = $this->runSearch($entered);
+
+        return true;
+    } // END preprocess() FUNCTION
+
+    private function runSearch($entered)
+    {
         /* Get all enabled plugins and standard modules of the base. */
-        $modules = AutoLoader::ListModules('ProductSearch');
+        $modules = AutoLoader::ListModules('COREPOS\\pos\\lib\\Search\\Products\\ProductSearch');
         $results = array();
         $this->boxSize = 1;
         /* Search first with the plugins
@@ -101,10 +121,10 @@ class productlist extends NoInputCorePage
          * Keep only the first instance of each upc.
          * Increase the depth of the list from module parameters.
          */
-        foreach($modules as $mod_name){
-            $mod = new $mod_name();
-            $mod_results = $mod->search($entered);
-            foreach($mod_results as $upc => $record){
+        foreach($modules as $modName){
+            $mod = new $modName();
+            $modResults = $mod->search($entered);
+            foreach($modResults as $upc => $record){
                 if (!isset($results[$upc]))
                     $results[$upc] = $record;
             }
@@ -115,16 +135,13 @@ class productlist extends NoInputCorePage
             }
         }
 
-        $this->temp_result = $results;
-        $this->temp_num_rows = count($results);
-
-        return True;
-    } // END preprocess() FUNCTION
+        return $results;
+    }
 
     function head_content()
     {
         // Javascript is only really needed if there are results
-        if ($this->temp_num_rows != 0) {
+        if (count($this->searchResults) > 0) {
             ?>
             <script type="text/javascript" src="../js/selectSubmit.js"></script>
             <?php
@@ -133,6 +150,10 @@ class productlist extends NoInputCorePage
 
     function body_content()
     {
+        global $CORE_LOCAL;
+/*
+<<<<<<< HEAD  cruft to remove if leading 0s being removed. {
+
         global $CORE_LOCAL;
         $result = $this->temp_result;
         $num_rows = $this->temp_num_rows;
@@ -204,9 +225,86 @@ class productlist extends NoInputCorePage
                 ."</form>"
                 ."<div class=\"clear\"></div>";
             echo "</div>";
-        }
+=======
+}*/
+//Start >>>>>>> upstream/version-2.7
+        if (count($this->searchResults) == 0) {
+            return $this->productsearchbox(_("no match found")."<br />"._("next search or enter upc"));
+        } 
 
-        $this->add_onload_command("\$('#search').focus();\n");
+        $this->addOnloadCommand("selectSubmit('#search', '#selectform', '#filter-span')\n");
+
+        // originally 390
+        $maxSelectWidth = $this->session->get('touchscreen') ? 470 : 530;
+        echo "<div class=\"baseHeight\">"
+            ."<div class=\"listbox\">"
+            ."<form name=\"selectform\" method=\"post\" action=\""
+            . filter_input(INPUT_SERVER, 'PHP_SELF') . "\""
+            ." id=\"selectform\">"
+            ."<select name=\"search\" id=\"search\" "
+            .' style="min-height: 200px; min-width: 220px;'
+            ." max-width: {$maxSelectWidth}px;\""
+            ."size=".$this->boxSize." onblur=\"\$('#search').focus();\" "
+            ."ondblclick=\"document.forms['selectform'].submit();\">";
+
+        $selected = "selected";
+        foreach ($this->searchResults as $row){
+            $price = $row["normal_price"];    
+            $price = MiscLib::truncate2($price);
+
+            $scale = ($row['scale']) ? 'S' : '';
+
+            /* Regular 2.7
+            echo "<option value='".$row["upc"]."' ".$selected.">".$row["upc"]." - ".$row["description"]
+                ." -- [".$price."] ".$scale."\n";
+                
+            $selected = "";
+             */
+//End >>>>>>> upstream/version-2.7
+// xxxxx restore WEFC
+	        if ($CORE_LOCAL->get('store') == 'WEFC_Toronto') {
+                    printf("<option value='%s' %s>%s%s | \$%s%s</option>\n",
+                        $row["upc"],
+                        $selected,
+                        ((substr($row['upc'],0,5) == "00000") ? (substr($row['upc'],8) . " - ") : ""),
+                        $row["description"],
+                        $price,
+                        (($scale != '') ? " - $scale" : '')
+                        );
+                } else {
+                    echo "<option value='".$row["upc"]."' ".$selected.">".$row["upc"]." - ".$row["description"]
+                        ." -- [".$price."] ".$scale."\n";
+                }
+                    
+                $selected = "";
+            }
+
+// xxxxx
+// extra brace?        }
+        echo "</select>"
+            . '<div id="filter-span"></div>'
+            ."</div>";
+        if ($this->session->get('touchscreen')) {
+            echo '<div class="listbox listboxText">'
+                . DisplayLib::touchScreenScrollButtons()
+                . '</div>';
+        }
+        echo "<div class=\"listboxText coloredText centerOffset\">"
+            . _("use arrow keys") . '<br />' . _("to navigate") . '<br />' . _("the list")
+            . '<p><button type="submit" class="pos-button wide-button coloredArea">'
+            . _('OK') . ' <span class="smaller">' . _('[enter]') . '</span>
+                </button></p>'
+            . '<p><button type="submit" class="pos-button wide-button errorColoredArea"
+                onclick="$(\'#search\').append($(\'<option>\').val(\'\'));$(\'#search\').val(\'\');">'
+            . _('Cancel') . ' <span class="smaller">' . _('[clear]') . '</span>
+                </button></p>'
+            ."</div><!-- /.listboxText coloredText .centerOffset -->"
+            .'<input type="hidden" name="qty" value="' . $this->quantity . '" />'
+            ."</form>"
+            ."<div class=\"clear\"></div>";
+        echo "</div>";
+
+        $this->addOnloadCommand("\$('#search').focus();\n");
     } // END body_content() FUNCTION
 
     function productsearchbox($strmsg) {
@@ -216,24 +314,52 @@ class productlist extends NoInputCorePage
             <span class="larger">
             <?php echo $strmsg;?>
             </span>
-            <form action="<?php echo $_SERVER['PHP_SELF']; ?>" method="post" autocomplete="off">
+            <form action="<?php echo filter_input(INPUT_SERVER, 'PHP_SELF'); ?>" method="post" autocomplete="off">
             <p>
             <input type="text" name="search" size="15" id="search"
                 onblur="$('#search').focus();" />
+            <input type="hidden" name="qty" value="<?php echo $this->quantity; ?>" />
             </p>
             <button class="pos-button" type="button"
                 onclick="$('#search').val('');$(this).closest('form').submit();">
-                Cancel [enter]
+                <?php echo _('Cancel [enter]'); ?>
             </button>
             </form>
             </div>
         </div>
         <?php
+        $this->addOnloadCommand("\$('#search').focus();\n");
+    }
+
+    public function unitTest($phpunit)
+    {
+        $res = $this->runSearch('BANA');
+        $phpunit->assertInternalType('array', $res);
+        $phpunit->assertNotEquals(0, count($res));
+        $one = array_pop($res);
+        $this->searchResults = array($one); // no need to loop whole list
+        $this->onload_commands = array();
+        ob_start();
+        $this->body_content();
+        $phpunit->assertNotEquals(0, strlen(ob_get_clean()));
+        $phpunit->assertNotEquals(false, strstr(implode('', $this->onload_commands), "\$('#search').focus();"));
+        list($qty, $entered) = $this->getQuantity('5*1234');
+        $phpunit->assertEquals(5, $qty);
+        $phpunit->assertEquals('1234', $entered);
+        $this->form = new COREPOS\common\mvc\ValueContainer();
+        $this->form->qty = 2;
+        list($qty, $entered) = $this->getQuantity('1234');
+        $phpunit->assertEquals(2, $qty);
+        $phpunit->assertEquals('1234', $entered);
+        $this->searchResults = array();
+        $this->onload_commands = array();
+        ob_start();
+        $this->body_content();
+        $phpunit->assertNotEquals(0, strlen(ob_get_clean()));
+        $phpunit->assertNotEquals(false, strstr(implode('', $this->onload_commands), "\$('#search').focus();"));
     }
 
 }
 
-if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
-    new productlist();
+AutoLoader::dispatch();
 
-?>

@@ -37,16 +37,13 @@ if (!class_exists('FannieAPI')) {
 // -----------------------------------------------------------------
 
 
-// $db =$dbc->connect('localhost',$_SESSION["mUser"],$_SESSION["mPass"]);
-// $dbc->select_db('is4c_op',$db);
-
 function select_to_table($query,$args,$border,$bgcolor, $no_end=false)
 {
     global $FANNIE_OP_DB;
     $dbc = FannieDB::get($FANNIE_OP_DB);
-    $prep = $dbc->prepare_statement($query);
-    $results = $dbc->exec_statement($prep,$args); 
-    $number_cols = $dbc->num_fields($results);
+    $prep = $dbc->prepare($query);
+    $results = $dbc->execute($prep,$args); 
+    $number_cols = $dbc->numFields($results);
     //display query
     //echo "<b>query: $query</b>";
     //layout table header
@@ -56,7 +53,7 @@ function select_to_table($query,$args,$border,$bgcolor, $no_end=false)
     echo "<tr align left>\n";
     for($i=0; $i<$number_cols; $i++)
     {
-        echo "<th><font size =2>" . $dbc->field_name($results,$i). "</font></th>\n";
+        echo "<th><font size =2>" . $dbc->fieldName($results,$i). "</font></th>\n";
     }
     echo "</tr>\n"; //end table header
     */
@@ -92,9 +89,9 @@ function select_to_table2($query,$args,$border,$bgcolor,$width="120",$spacing="0
 {
     global $FANNIE_OP_DB;
     $dbc = FannieDB::get($FANNIE_OP_DB);
-    $prep = $dbc->prepare_statement($query);
-    $results = $dbc->exec_statement($prep,$args); 
-    $number_cols = $dbc->num_fields($results);
+    $prep = $dbc->prepare($query);
+    $results = $dbc->execute($prep,$args); 
+    $number_cols = $dbc->numFields($results);
     $num_rows = $dbc->num_rows($results);
     $backgrounds = array('#ffffff',$bgcolor);
     $b = 0;    
@@ -121,7 +118,7 @@ function select_to_table2($query,$args,$border,$bgcolor,$width="120",$spacing="0
         echo "</tr>";
         $b = 1;
     }
-    while($row = $dbc->fetch_array($results))
+    while($row = $dbc->fetchRow($results))
     {
         echo "<tr align left>\n";
         for ($i=0;$i<$number_cols; $i++)
@@ -138,6 +135,36 @@ function select_to_table2($query,$args,$border,$bgcolor,$width="120",$spacing="0
         $b = ($b+1)%2;
     } } echo "</table>\n";
     echo "</font>";
+}
+
+function select_to_table3($arr,$number_cols,$border,$bgcolor, $no_end=false)
+{
+    echo "<font size = 2>";
+    echo "<table border = $border bgcolor=$bgcolor cellspacing=0 cellpadding=3>\n";
+    //layout table body
+    foreach ($arr as $row)
+    {
+        echo "<tr align left>\n";
+        for ($i=0;$i<$number_cols; $i++) {
+            echo "<td width=";
+            if(is_numeric($row[$i]) || !isset($row[$i])) { echo "89";} else { echo "170";} 
+            echo " align=";
+            if(is_numeric($row[$i]) || !isset($row[$i])) { echo "right";} else { echo "left";} 
+            echo "><font size = 2>";
+            if(!isset($row[$i])) {//test for null value
+                echo "0.00";
+            }elseif (is_numeric($row[$i]) && strstr($row[$i],".")){
+                printf("%.2f",$row[$i]);
+            }else{
+                echo $row[$i];
+            }
+            echo "</font></td>\n";
+        } echo "</tr>\n";
+    } 
+    if (!$no_end) {
+        echo "</table>\n";
+        echo "</font>";
+    }
 }
 
 /* pads upc with zeroes to make $upc into IT CORE compliant upc*/
@@ -182,6 +209,3 @@ function get_get_data($int){
 
 /* rounding function to create 'non-stupid' pricing */
 
-
-
-?>

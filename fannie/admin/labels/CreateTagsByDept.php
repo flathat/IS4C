@@ -45,12 +45,12 @@ class CreateTagsByDept extends FanniePage {
             $end = FormLib::get_form_value('deptEnd');
             $pageID = FormLib::get_form_value('sID',0);
             $dbc = FannieDB::get($FANNIE_OP_DB);
-            $prodP = $dbc->prepare_statement("
+            $prodP = $dbc->prepare("
                 SELECT p.upc
                 FROM products AS p
                 WHERE p.department BETWEEN ? AND ?
             ");
-            $prodR = $dbc->exec_statement($prodP, array($start,$end));
+            $prodR = $dbc->execute($prodP, array($start,$end));
             $tag = new ShelftagsModel($dbc);
             $product = new ProductsModel($dbc);
             while ($row = $dbc->fetch_row($prodR)) {
@@ -72,14 +72,14 @@ class CreateTagsByDept extends FanniePage {
     function body_content()
     {
         $dbc = FannieDB::getReadOnly($this->config->get('OP_DB'));
-        $deptsQ = $dbc->prepare_statement("select dept_no,dept_name from departments order by dept_no");
-        $deptsR = $dbc->exec_statement($deptsQ);
+        $deptsQ = $dbc->prepare("select dept_no,dept_name from departments order by dept_no");
+        $deptsR = $dbc->execute($deptsQ);
         $deptsList = "";
 
         $qmodel = new ShelfTagQueuesModel($dbc);
         $deptSubList = $qmodel->toOptions();
 
-        while ($deptsW = $dbc->fetch_array($deptsR))
+        while ($deptsW = $dbc->fetchRow($deptsR))
           $deptsList .= "<option value=$deptsW[0]>$deptsW[0] $deptsW[1]</option>";
 
         $ret = '';
@@ -136,6 +136,11 @@ class CreateTagsByDept extends FanniePage {
         return '<p>Create shelf tags for all items in a 
             POS department range. Tags will be queued for
             printing under the selected super department.</p>';
+    }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->body_content()));
     }
 }
 

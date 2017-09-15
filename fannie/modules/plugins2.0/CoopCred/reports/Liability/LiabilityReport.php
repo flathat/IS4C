@@ -334,12 +334,12 @@ class LiabilityReport extends FannieReportPage
         // summary
         }
 
-        $statement = $dbc->prepare_statement("$query");
+        $statement = $dbc->prepare("$query");
         if ($statement === False) {
             $ret[] = "***Error preparing: $query";
             return $ret;
         }
-        $results = $dbc->exec_statement($statement,$args);
+        $results = $dbc->execute($statement,$args);
         if ($results === False) {
             $allArgs = implode(' : ',$args);
             $ret[] = "***Error executing: $query with: $allArgs";
@@ -374,7 +374,7 @@ class LiabilityReport extends FannieReportPage
             $record = array('',0,0,0,0,0,0,0);
             $rowCount = 0;
             $lastRow = array();
-            while ($row = $dbc->fetch_array($results)) {
+            while ($row = $dbc->fetchRow($results)) {
                 if ($row['programID'] != $lastProgramID && $lastProgramID != 0) {
                     // Finish the Program row.
                     $record[2] = ($record[2] * -1); // as positive
@@ -701,6 +701,5 @@ class LiabilityReport extends FannieReportPage
 // /class LiabilityReport
 }
 
-FannieDispatch::conditionalExec(false);
+FannieDispatch::conditionalExec();
 
-?>

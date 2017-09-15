@@ -21,83 +21,70 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\gui\BasicCorePage;
+use COREPOS\pos\lib\Authenticate;
+use COREPOS\pos\lib\CoreState;
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\Drawers;
+use COREPOS\pos\lib\LaneLogger;
+use COREPOS\pos\lib\MiscLib;
+use COREPOS\pos\lib\TransRecord;
+use COREPOS\pos\lib\UdpComm;
+use COREPOS\pos\lib\Kickers\Kicker;
 include_once(dirname(__FILE__).'/../lib/AutoLoader.php');
-AutoLoader::LoadMap();
-CoreState::loadParams();
 
 class login2 extends BasicCorePage 
 {
 
-    private $box_css_class;
+    private $boxCSS;
     private $msg;
+
+    private function getPassword()
+    {
+        $passwd = $this->form->tryGet('reginput');
+        if ($passwd !== '') {
+            UdpComm::udpSend('goodBeep');
+        } else {
+            $passwd = $this->form->tryGet('userPassword');
+        }
+
+        return $passwd;
+    }
 
     public function preprocess()
     {
-        $this->box_css_class = 'coloredArea';
+        $this->boxCSS = 'coloredArea';
         $this->msg = _('please enter your password');
         $this->body_class = '';
 
-        if (isset($_REQUEST['reginput']) || isset($_REQUEST['userPassword'])) {
-
-            $passwd = '';
-            if (isset($_REQUEST['reginput']) && !empty($_REQUEST['reginput'])) {
-                $passwd = $_REQUEST['reginput'];
-                UdpComm::udpSend('goodBeep');
-            } elseif (isset($_REQUEST['userPassword']) && !empty($_REQUEST['userPassword'])) {
-                $passwd = $_REQUEST['userPassword'];
-            }
-
+        if ($this->form->tryGet('reginput', false) !== false || $this->form->tryGet('userPassword', false) !== false) {
+            $passwd = $this->getPassword();
             if (Authenticate::checkPassword($passwd)) {
+
                 Database::testremote();
-                $sd = MiscLib::scaleObject();
-                if (is_object($sd)) {
-                    $sd->ReadReset();
+                UdpComm::udpSend("termReset");
+                $sdObj = MiscLib::scaleObject();
+                if (is_object($sdObj)) {
+                    $sdObj->readReset();
                 }
 
-                /**
-                  Find a drawer for the cashier
-                */
-                $my_drawer = ReceiptLib::currentDrawer();
-                if ($my_drawer == 0) {
-                    $available = ReceiptLib::availableDrawers();    
-                    if (count($available) > 0) { 
-                        ReceiptLib::assignDrawer(CoreLocal::get('CashierNo'),$available[0]);
-                        $my_drawer = $available[0];
-                    }
-                } else {
-                    ReceiptLib::assignDrawer(CoreLocal::get('CashierNo'),$my_drawer);
-                }
-
+                $drawer = $this->getDrawer();
                 TransRecord::addLogRecord(array(
                     'upc' => 'SIGNIN',
-                    'description' => 'Sign In Emp#' . CoreLocal::get('CashierNo'),
+                    'description' => 'Sign In Emp#' . $this->session->get('CashierNo'),
                 ));
+                $this->kick($drawer);
 
-                /**
-                  Use Kicker object to determine whether the drawer should open
-                  The first line is just a failsafe in case the setting has not
-                  been configured.
-                */
-                if (session_id() != '') {
-                    session_write_close();
-                }
-                $kicker_class = (CoreLocal::get("kickerModule")=="") ? 'Kicker' : CoreLocal::get('kickerModule');
-                $kicker_object = new $kicker_class();
-                if ($kicker_object->kickOnSignIn()) {
-                    ReceiptLib::drawerKick();
-                }
-
-                if ($my_drawer == 0) {
+                if ($drawer->current() == 0) {
                     $this->change_page($this->page_url."gui-modules/drawerPage.php");
                 } else {
                     $this->change_page($this->page_url."gui-modules/pos2.php");
                 }
 
                 return false;
-            } else {
-                $this->box_css_class = 'errorColoredArea';
-                $this->msg = _('password invalid, please re-enter');
             }
+            $this->boxCSS = 'errorColoredArea';
+            $this->msg = _('password invalid, please re-enter');
         }
 
         return true;
@@ -121,6 +108,8 @@ class login2 extends BasicCorePage
         // 18Agu12 EL Add separately for readability of source.
         $this->add_onload_command("\$('#userPassword').focus();");
         $this->add_onload_command("\$('#scalebox').css('display','none');");
+        $logger = new LaneLogger();
+        $logging = $logger->isLogging() ? '' : '<div class="errorColoredArea">Default log(s) unavailable</div>';
 
         ?>
         <div id="loginTopBar">
@@ -133,13 +122,13 @@ class login2 extends BasicCorePage
             </div>
             <div class="welcome coloredArea" style="border-radius: 0px 0px 4px 4px;">
                 <?php echo _("W E L C O M E"); ?>
-            </div>
+            </div><?php echo $logging; ?>
         </div>
         <div id="loginCenter">
-        <div class="box <?php echo $this->box_css_class; ?> rounded">
+        <div class="box <?php echo $this->boxCSS; ?> rounded">
                 <b><?php echo _("log in"); ?></b>
                 <form id="formlocal" name="form" method="post" autocomplete="off" 
-                    action="<?php echo $_SERVER['PHP_SELF']; ?>">
+                    action="<?php echo filter_input(INPUT_SERVER, 'PHP_SELF'); ?>">
                 <input type="password" name="userPassword" size="20" tabindex="0" 
                     onblur="$('#userPassword').focus();" id="userPassword" >
                 <input type="hidden" name="reginput" id="reginput" value="" />
@@ -165,10 +154,50 @@ class login2 extends BasicCorePage
         <?php
     } // END true_body() FUNCTION
 
+    private function getDrawer()
+    {
+        /**
+          Find a drawer for the cashier
+        */
+        $dbc = Database::pDataConnect();
+        $drawer = new Drawers($this->session, $dbc);
+        $drawerID = $drawer->current();
+        $drawer->assign($this->session->get('CashierNo'), $drawerID);
+        if ($drawerID == 0) {
+            $available = $drawer->available();    
+            if (count($available) > 0) { 
+                $drawer->assign($this->session->get('CashierNo'),$available[0]);
+                $drawerID = $available[0];
+            }
+        }
+
+        return $drawer;
+    }
+
+    private function kick($drawer)
+    {
+        /**
+          Use Kicker object to determine whether the drawer should open
+          The first line is just a failsafe in case the setting has not
+          been configured.
+        */
+        if (session_id() != '') {
+            session_write_close();
+        }
+        $kicker = Kicker::factory($this->session->get('kickerModule'));
+        if ($kicker->kickOnSignIn()) {
+            $drawer->kick();
+        }
+    }
+
+    public function unitTest($phpunit)
+    {
+        $drawer = $this->getDrawer();
+        $phpunit->assertEquals(1, $drawer->current());
+        $this->kick($drawer); // coverage
+    }
+
 }
 
-if (basename(__FILE__) == basename($_SERVER['PHP_SELF'])) {
-    new login2();
-}
+AutoLoader::dispatch();
 
-?>

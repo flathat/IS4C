@@ -100,7 +100,9 @@ function printMany(){
             <label>Layout</label>: 
         <select id=layoutselector class="form-control">
         <?php
+        $tagEnabled = $this->config->get('ENABLED_TAGS');
         foreach($this->layouts as $l){
+            if (!in_array($l, $tagEnabled) && count($tagEnabled) > 0) continue;
             if ($l == $this->config->get('DEFAULT_PDF'))
                 echo "<option selected>".$l."</option>";
             else
@@ -118,7 +120,7 @@ function printMany(){
             </select>
         </div>
         </p>
-        <table class="table">
+        <table class="table table-striped">
         <?php
 
         $dbc = FannieDB::getReadOnly($FANNIE_OP_DB);
@@ -190,6 +192,12 @@ function printMany(){
             actual shelf tag PDF. <em>Clear</em> will clear the queued up
             tags for that super department. The pencil icon is for editing
             the currently queued tags.</p>';
+    }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->body_content()));
+        $phpunit->assertNotEquals(0, strlen($this->javascript_content()));
     }
 }
 

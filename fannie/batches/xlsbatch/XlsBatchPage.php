@@ -34,20 +34,17 @@ class XlsBatchPage extends \COREPOS\Fannie\API\FannieUploadPage {
     protected $must_authenticate = true;
 
     public $description = '[Excel Batch] creates a sale or price change batch from a spreadsheet.';
-    public $themed = true;
 
     protected $preview_opts = array(
         'upc_lc' => array(
-            'name' => 'upc_lc',
             'display_name' => 'UPC/LC',
             'default' => 0,
-            'required' => True
+            'required' => true
         ),
         'price' => array(
-            'name' => 'price',
             'display_name' => 'Price',
             'default' => 1,
-            'required' => True
+            'required' => true
         )
     );
 
@@ -57,47 +54,50 @@ class XlsBatchPage extends \COREPOS\Fannie\API\FannieUploadPage {
         global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
         $batchtypes = array();
-        $typesQ = $dbc->prepare_statement("select batchTypeID,typeDesc from batchType order by batchTypeID");
-        $typesR = $dbc->exec_statement($typesQ);
-        while ($typesW = $dbc->fetch_array($typesR))
+        $typesQ = $dbc->prepare("select batchTypeID,typeDesc from batchType order by batchTypeID");
+        $typesR = $dbc->execute($typesQ);
+        while ($typesW = $dbc->fetchRow($typesR))
             $batchtypes[$typesW[0]] = $typesW[1];
         return $batchtypes;
     }
 
-    function process_file($linedata){
-        global $FANNIE_OP_DB;
-        $dbc = FannieDB::get($FANNIE_OP_DB);
+    private function createBatch($dbc)
+    {
+        $btype = FormLib::get('btype',0);
+        $date1 = FormLib::get('date1',date('Y-m-d'));
+        $date2 = FormLib::get('date2',date('Y-m-d'));
+        $bname = FormLib::get('bname','');
+        $owner = FormLib::get('bowner','');
 
-        $upcCol = $this->get_column_index('upc_lc');
-        $priceCol = $this->get_column_index('price');
+        $dtQ = $dbc->prepare("SELECT discType FROM batchType WHERE batchTypeID=?");
+        $discountType = $dbc->getValue($dtQ, array($btype));
 
-        $btype = FormLib::get_form_value('btype',0);
-        $date1 = FormLib::get_form_value('date1',date('Y-m-d'));
-        $date2 = FormLib::get_form_value('date2',date('Y-m-d'));
-        $bname = FormLib::get_form_value('bname','');
-        $owner = FormLib::get_form_value('bowner','');
-        $ftype = FormLib::get_form_value('ftype','UPCs');
-        $has_checks = FormLib::get_form_value('has_checks') !== '' ? True : False;
-
-        $dtQ = $dbc->prepare_statement("SELECT discType FROM batchType WHERE batchTypeID=?");
-        $dtR = $dbc->execute($dtQ, array($btype));
-        $dtW = $dbc->fetchRow($dtR);
-        $discountType = is_array($dtW) ? $dtW[0] : 0;
-
-        $insQ = $dbc->prepare_statement("
+        $insQ = $dbc->prepare("
             INSERT INTO batches 
             (startDate,endDate,batchName,batchType,discounttype,priority,owner)
             VALUES 
             (?,?,?,?,?,0,?)");
         $args = array($date1,$date2,$bname,$btype,$discountType,$owner);
-        $insR = $dbc->exec_statement($insQ,$args);
-        $batchID = $dbc->insert_id();
+        $insR = $dbc->execute($insQ,$args);
+        $batchID = $dbc->insertID();
 
+        return $batchID;
+    }
+
+    function process_file($linedata, $indexes)
+    {
+        global $FANNIE_OP_DB;
+        $dbc = FannieDB::get($FANNIE_OP_DB);
+
+        $ftype = FormLib::get('ftype','UPCs');
+        $has_checks = FormLib::get('has_checks') !== '' ? True : False;
+
+        $batchID = $this->createBatch($dbc);
         if ($this->config->get('STORE_MODE') === 'HQ') {
             StoreBatchMapModel::initBatch($batchID);
         }
 
-        $upcChk = $dbc->prepare_statement("SELECT upc FROM products WHERE upc=?");
+        $upcChk = $dbc->prepare("SELECT upc FROM products WHERE upc=?");
 
         $model = new BatchListModel($dbc);
         $model->batchID($batchID);
@@ -106,20 +106,19 @@ class XlsBatchPage extends \COREPOS\Fannie\API\FannieUploadPage {
         $model->active(0);
 
         $ret = '';
-        foreach($linedata as $line){
-            if (!isset($line[$upcCol])) continue;
-            if (!isset($line[$priceCol])) continue;
-            $upc = $line[$upcCol];
-            $price = $line[$priceCol];
+        foreach ($linedata as $line) {
+            if (!isset($line[$indexes['upc_lc']])) continue;
+            if (!isset($line[$indexes['price']])) continue;
+            $upc = $line[$indexes['upc_lc']];
+            $price = $line[$indexes['price']];
             $upc = str_replace(" ","",$upc);    
             $upc = str_replace("-","",$upc);    
             $price = trim($price,' ');
             $price = trim($price,'$');
-            if(!is_numeric($upc)){
+            if (!is_numeric($upc)) {
                 $ret .= "<i>Omitting item. Identifier {$upc} isn't a number</i><br />";
                 continue; 
-            }
-            elseif(!is_numeric($price)){
+            } elseif(!is_numeric($price)){
                 $ret .= "<i>Omitting item. Price {$price} isn't a number</i><br />";
                 continue;
             }
@@ -129,7 +128,7 @@ class XlsBatchPage extends \COREPOS\Fannie\API\FannieUploadPage {
                 $upc = '0'.substr($upc,0,12);
 
             if ($ftype == 'UPCs'){
-                $chkR = $dbc->exec_statement($upcChk, array($upc));
+                $chkR = $dbc->execute($upcChk, array($upc));
                 if ($dbc->num_rows($chkR) ==  0) continue;
             }   
 
@@ -158,25 +157,27 @@ class XlsBatchPage extends \COREPOS\Fannie\API\FannieUploadPage {
     function preview_content()
     {
         $batchtypes = $this->get_batch_types();
+        $type = FormLib::get('btype');
         $ret = sprintf("<b>Batch Type</b>: %s <input type=hidden value=%d name=btype /><br />",
-            $batchtypes[FormLib::get_form_value('btype')],FormLib::get_form_value('btype'));
+            isset($batchtypes[$type]) ? $batchtypes[$type] : 1, $type);
         $ret .= sprintf("<b>Batch Name</b>: %s <input type=hidden value=\"%s\" name=bname /><br />",
-            FormLib::get_form_value('bname'),FormLib::get_form_value('bname'));
+            FormLib::get('bname'),FormLib::get('bname'));
         $ret .= sprintf("<b>Owner</b>: %s <input type=hidden value=\"%s\" name=bowner /><br />",
-            FormLib::get_form_value('bowner'),FormLib::get_form_value('bowner'));
+            FormLib::get('bowner'),FormLib::get('bowner'));
         $ret .= sprintf("<b>Start Date</b>: %s <input type=hidden value=\"%s\" name=date1 /><br />",
-            FormLib::get_form_value('date1'),FormLib::get_form_value('date1'));
+            FormLib::get('date1'),FormLib::get('date1'));
         $ret .= sprintf("<b>End Date</b>: %s <input type=hidden value=\"%s\" name=date2 /><br />",
-            FormLib::get_form_value('date2'),FormLib::get_form_value('date2'));
+            FormLib::get('date2'),FormLib::get('date2'));
         $ret .= sprintf("<b>Product Identifier</b>: %s <input type=hidden value=\"%s\" name=ftype /><br />",
-            FormLib::get_form_value('ftype'),FormLib::get_form_value('ftype'));
+            FormLib::get('ftype'),FormLib::get('ftype'));
         $ret .= sprintf("<b>Includes check digits</b>: <input type=checkbox name=has_checks /><br />");
         $ret .= "<i>&nbsp;&nbsp;&nbsp;&nbsp;UPCs have check digits</i><br />";
         $ret .= "<br />";
         return $ret;
     }
 
-    function form_content(){
+    function form_content()
+    {
         ob_start();
         ?>
         <div class="well">
@@ -193,7 +194,6 @@ class XlsBatchPage extends \COREPOS\Fannie\API\FannieUploadPage {
     */
     protected function basicForm()
     {
-        global $FANNIE_URL;
         $batchtypes = $this->get_batch_types();
         $dbc = FannieDB::get($this->config->get('OP_DB'));
         $owners = new MasterSuperDeptsModel($dbc);
@@ -248,7 +248,8 @@ class XlsBatchPage extends \COREPOS\Fannie\API\FannieUploadPage {
         <div class="row form-group form-horizontal">
             <label class="col-sm-2 control-label">Type</label>
             <div class="col-sm-4">
-                <select name="ftype" class="form-control">
+                <select name="ftype" class="form-control" required>
+                    <option value="">Select one...</option>
                     <option>UPCs</option>
                     <option>Likecodes</option>
                 </select>
@@ -262,7 +263,18 @@ class XlsBatchPage extends \COREPOS\Fannie\API\FannieUploadPage {
 
         return ob_get_clean();
     }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->basicForm()));
+        $phpunit->assertNotEquals(0, strlen($this->preview_content()));
+        $this->results = 'foo';
+        $phpunit->assertNotEquals(0, strlen($this->results_content()));
+        $data = array('4011', 0.99);
+        $indexes = array('upc_lc' => 0, 'price' => 1);
+        $phpunit->assertEquals(true, $this->process_file(array($data), $indexes));
+    }
 }
 
-FannieDispatch::conditionalExec(false);
+FannieDispatch::conditionalExec();
 

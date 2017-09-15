@@ -21,10 +21,41 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\gui\NoInputCorePage;
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\DisplayLib;
 include_once(dirname(__FILE__).'/../lib/AutoLoader.php');
 
 class tenderlist extends NoInputCorePage 
 {
+    private function handleInput($entered)
+    {
+        $entered = strtoupper($entered);
+
+        if ($entered == "" || $entered == "CL"){
+            // should be empty string
+            // javascript causes this input if the
+            // user presses CL{enter}
+            // Redirect to main screen
+            $this->change_page($this->page_url."gui-modules/pos2.php");
+            return false;
+        }
+
+        if (!empty($entered)){ 
+            // built department input string and set it
+            // to be the next POS entry
+            // Redirect to main screen
+            $input = $this->form->amt . $entered;
+            $this->change_page(
+                $this->page_url
+                . "gui-modules/pos2.php"
+                . '?reginput=' . urlencode($input)
+                . '&repeat=1');
+            return false;
+        }
+
+        return true;
+    }
 
     /**
       Input processing function
@@ -32,33 +63,11 @@ class tenderlist extends NoInputCorePage
     function preprocess()
     {
         // a selection was made
-        if (isset($_REQUEST['search'])){
-            $entered = strtoupper($_REQUEST['search']);
+        try {
+            return $this->handleInput($this->form->search);
+        } catch (Exception $ex) {}
 
-            if ($entered == "" || $entered == "CL"){
-                // should be empty string
-                // javascript causes this input if the
-                // user presses CL{enter}
-                // Redirect to main screen
-                CoreLocal::set("tenderTotal","0");    
-                $this->change_page($this->page_url."gui-modules/pos2.php");
-                return False;
-            }
-
-            if (!empty($entered)){ 
-                // built department input string and set it
-                // to be the next POS entry
-                // Redirect to main screen
-                $input = CoreLocal::get("tenderTotal").$entered;
-                $this->change_page(
-                    $this->page_url
-                    . "gui-modules/pos2.php"
-                    . '?reginput=' . urlencode($input)
-                    . '&repeat=1');
-                return false;
-            }
-        }
-        return True;
+        return true;
     } // END preprocess() FUNCTION
 
     /**
@@ -77,15 +86,24 @@ class tenderlist extends NoInputCorePage
     */
     function body_content()
     {
+//<<<<<<< HEAD see ~_conflict_2.7
         $showCode = 0;
         if (CoreLocal::get('store') == 'WEFC_Toronto') {
             $showCode = 1;
         }
+/* was in WEFC HEAD cruft
         $db = Database::pDataConnect();
         $q = "SELECT TenderCode,TenderName FROM tenders 
+            =======
+*/
+        $amount = $this->form->tryGet('amt', 0);
+        $dbc = Database::pDataConnect();
+        $res = $dbc->query("
+            SELECT TenderCode,TenderName 
+            FROM tenders 
             WHERE MaxAmount > 0
-            ORDER BY TenderName";
-        $r = $db->query($q);
+                AND TenderModule NOT LIKE '%DisabledTender'
+            ORDER BY TenderName");
 
         echo "<div class=\"baseHeight\">"
             ."<div class=\"listbox\">"
@@ -95,7 +113,7 @@ class tenderlist extends NoInputCorePage
             ."size=\"15\" onblur=\"\$('#search').focus();\">";
 
         $selected = "selected";
-        while($row = $db->fetch_row($r)){
+        while ($row = $dbc->fetchRow($res)) {
             echo "<option value='".$row["TenderCode"]."' ".$selected.">";
             echo (($showCode) ? "{$row['TenderCode']} " : '') .
                 $row['TenderName'];
@@ -104,28 +122,25 @@ class tenderlist extends NoInputCorePage
         }
         echo "</select>"
             ."</div>";
-        if (CoreLocal::get('touchscreen')) {
+        if ($this->session->get('touchscreen')) {
             echo '<div class="listbox listboxText">'
                 . DisplayLib::touchScreenScrollButtons()
                 . '</div>';
         }
         echo "<div class=\"listboxText coloredText centerOffset\">";
-        if (CoreLocal::get("tenderTotal") >= 0) {
-            echo _("tendering").' $';
-        } else {
-            echo _("refunding").' $';
-        }
-        printf('%.2f',abs(CoreLocal::get("tenderTotal"))/100);
+        echo $amount >= 0 ? _("tendering").' $' : _("refunding").' $';
+        printf('%.2f',abs($amount)/100);
         echo '<br />';
         echo _("use arrow keys to navigate")
-            . '<p><button type="submit" class="pos-button wide-button coloredArea">
-                OK <span class="smaller">[enter]</span>
+            . '<p><button type="submit" class="pos-button wide-button coloredArea">'
+            . _('OK') . ' <span class="smaller">' . _('[enter]') . '</span>
                 </button></p>'
             . '<p><button type="submit" class="pos-button wide-button errorColoredArea"
-                onclick="$(\'#search\').append($(\'<option>\').val(\'\'));$(\'#search\').val(\'\');">
-                Cancel <span class="smaller">[clear]</span>
+                onclick="$(\'#search\').append($(\'<option>\').val(\'\'));$(\'#search\').val(\'\');">'
+            . _('Cancel') . ' <span class="smaller">' . _('[clear]') . '</span>
                 </button></p>'
             ."</div><!-- /.listboxText coloredText .centerOffset -->"
+            .'<input type="hidden" name="amt" value="' . $amount . '" />'
             ."</form>"
             ."<div class=\"clear\"></div>";
         echo "</div>";
@@ -134,9 +149,16 @@ class tenderlist extends NoInputCorePage
         $this->add_onload_command("\$('#search').focus();\n");
     } // END body_content() FUNCTION
 
+    public function unitTest($phpunit)
+    {
+        ob_start();
+        $phpunit->assertEquals(false, $this->handleInput(''));
+        $phpunit->assertEquals(false, $this->handleInput('CL'));
+        $this->form->amt = 1;
+        $phpunit->assertEquals(false, $this->handleInput('CA'));
+        ob_get_clean();
+    }
 }
 
-if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
-    new tenderlist();
+AutoLoader::dispatch();
 
-?>

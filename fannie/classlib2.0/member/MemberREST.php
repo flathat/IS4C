@@ -21,11 +21,73 @@
 
 *********************************************************************************/
 
-namespace COREPOS\Fannie\API\member
-{
+namespace COREPOS\Fannie\API\member;
+use \FannieDB;
+use \FannieConfig;
+use \CustomerAccountsModel;
+use \CustomersModel;
+use \CustdataModel;
+use \MemtypeModel;
+use \MeminfoModel;
+use \MemDatesModel;
+use \MemberCardsModel;
+use \MemContactModel;
 
 class MemberREST
 {
+    private static $FIELD_INFO = array(
+        'cardNo' => array('map'=>'CardNo', 'match'=>'strict'),
+        'memberStatus' => array('map'=>'Type', 'match'=>'strict'),
+        'customerTypeID' => array('map'=>'memType', 'match'=>'strict'),
+        'chargeBalance' => array('map'=>'Balance', 'match'=>'strict'),
+        'idCardUPC' => array('map'=>'upc', 'match'=>'strict'),
+        'startDate' => array('map'=>'start_date', 'match'=>'date'),
+        'endDate' => array('map'=>'end_date', 'match'=>'date'),
+        'addressFirstLine' => array('map'=>'street', 'match'=>'fuzzy'),
+        'addressSecondLine' => array('map'=>'street', 'match'=>'fuzzy'),
+        'city' => array('map'=>'city', 'match'=>'fuzzy'),
+        'state' => array('map'=>'state', 'match'=>'fuzzy'),
+        'zip' => array('map'=>'zip', 'match'=>'fuzzy'),
+        'contactAllowed' => array('map'=>'ads_OK', 'match'=>'strict'),
+        'firstName' => array('map'=>'FirstName', 'match'=>'fuzzy'),
+        'lastName' => array('map'=>'LastName', 'match'=>'fuzzy'),
+        'chargeAllowed' => array('map'=>'ChargeOk', 'match'=>'strict'),
+        'checksAllowed' => array('map'=>'writeChecks', 'match'=>'strict'),
+        'discount' => array('map'=>'Discount', 'match'=>'strict'),
+        'staff' => array('map'=>'staff', 'match'=>'strict'),
+        'email' => array('map'=>'email_1', 'match'=>'fuzzy'),
+        'lowIncomeBenefits' => array('map'=>'SSI', 'match'=>'strict'),
+    );
+
+    private static $hook_cache = array();
+
+    private static $test_mode = false;
+    public static function testMode($mode)
+    {
+        self::$test_mode = $mode;
+    }
+
+    /**
+      A model class, on save, can trigger one or more hooks
+      to perform additional operations. Discovering available
+      hooks involves walking the file system. When creating 
+      multiple objects of the same class this means walking the
+      file system way more often than is really necessary. This
+      wrapper caches per-class information about known hooks so
+      subsequent instances don't have to re-walk the file system.
+      This caching only persists through the current request so
+      is only relevant to bulk edits.
+    */
+    private static function getModel($dbc, $class)
+    {
+        $model = new $class($dbc);
+        if (isset(self::$hook_cache[$class])) {
+            $model->setHooks(self::$hook_cache[$class]);
+        }
+
+        return $model;
+    }
+
     /**
       Get an array representing a customer account
       @param $id [int] account ID (classically card_no / CardNo)
@@ -36,8 +98,8 @@ class MemberREST
     */
     public static function get($id=0)
     {
-        $config = \FannieConfig::factory();
-        $dbc = \FannieDB::get($config->get('OP_DB'));
+        $config = FannieConfig::factory();
+        $dbc = FannieDB::get($config->get('OP_DB'));
 
         if ($config->get('CUST_SCHEMA') == 1 && $dbc->tableExists('CustomerAccounts') && $dbc->tableExists('Customers')) {
             return self::getAccount($dbc, $id);
@@ -55,8 +117,8 @@ class MemberREST
             return self::getAllAccounts($dbc);
         }
 
-        $account = new \CustomerAccountsModel($dbc);
-        $customers = new \CustomersModel($dbc);
+        $account = new CustomerAccountsModel($dbc);
+        $customers = new CustomersModel($dbc);
         $account->cardNo($id);
         if (!$account->load()) {
             // migrate already at this point?
@@ -70,7 +132,7 @@ class MemberREST
             $ret['customers'][] = $c->toJSON();
         }
 
-        $type = new \MemtypeModel($dbc);
+        $type = new MemtypeModel($dbc);
         $type->memtype($account->customerTypeID());
         $type->load();
         $ret['customerType'] = $type->memDesc();
@@ -80,8 +142,8 @@ class MemberREST
 
     private static function getAllAccounts($dbc)
     {
-        $account = new \CustomerAccountsModel($dbc);
-        $customers = new \CustomersModel($dbc);
+        $account = new CustomerAccountsModel($dbc);
+        $customers = new CustomersModel($dbc);
         $accounts = array();
         foreach ($account->find() as $obj) {
             $entry = $obj->toJSON();
@@ -180,6 +242,67 @@ class MemberREST
             $ret['contactMethod'] == 'both';
         }
 
+        $ret['customers'] = self::getCustdataCustomers($dbc, $id);
+
+        // if the new tables are present in classic mode,
+        // migrate the account if needed and include the new style
+        // record ID in the response
+        if ($dbc->tableExists('CustomerAccounts') && $dbc->tableExists('Customers')) {
+            $ret = self::addAccountIDs($dbc, $id, $ret);
+        } else {
+            // plug a value so the returned structure is complete
+            $ret['customerAccountID'] = 0;
+            $personNum = 2;
+            for ($i=0; $i<count($ret['customers']); $i++) {
+                if ($ret['customers'][$i]['accountHolder']) {
+                    $ret['customers'][$i]['customerID'] = 1;
+                } else {
+                    $ret['customers'][$i]['customerID'] = $personNum;
+                    $personNum++;
+                }
+            }
+        }
+
+        return $ret;
+    }
+
+    private static function addAccountIDs($dbc, $id, $ret)
+    {
+        $account = new CustomerAccountsModel($dbc);
+        $account->cardNo($id);
+        if ($account->load()) {
+            $ret['customerAccountID'] = $account->customerAccountID();
+        } else {
+            $ret['customerAccountID'] = $account->migrateAccount($id);
+        }
+        // customers tables is more complicated
+        // try to match IDs by names
+        $customers = new CustomersModel($dbc);
+        $customers->cardNo($id);
+        $current = $customers->find();
+        if (count($current) != count($ret['customers'])) {
+            foreach ($customers as $c) {
+                $c->delete();
+            }
+            $customers->migrateAccount($id);
+            $customers->reset();
+            $customers->cardNo($id);
+        }
+        foreach ($customers->find() as $c) {
+            for ($i=0; $i<count($ret['customers']); $i++) {
+                if ($ret['customers'][$i]['firstName'] == $c->firstName() && $ret['customers'][$i]['lastName'] == $c->lastName()) {
+                    $ret['customers'][$i]['customerID'] = $c->customerID();
+                    $ret['customers'][$i]['customerAccountID'] = $ret['customerAccountID'];
+                    break;
+                }
+            }
+        }
+
+        return $ret;
+    }
+
+    private static function getCustdataCustomers($dbc, $id)
+    {
         $query = '
             SELECT c.personNum,
                 c.FirstName,
@@ -201,6 +324,7 @@ class MemberREST
             ORDER BY c.personNum';
         $prep = $dbc->prepare($query);
         $res = $dbc->execute($prep, array($id));
+        $ret = array();
         while ($row = $dbc->fetchRow($res)) {
             $customer = array(
                 'customerID' => 0, // placeholder for compatibility
@@ -228,45 +352,7 @@ class MemberREST
                 $customer['memberPricingAllowed'] = 1;
                 $customer['memberCouponsAllowed'] = 1;
             }
-            $ret['customers'][] = $customer;
-        }
-
-        // if the new tables are present in classic mode,
-        // migrate the account if needed and include the new style
-        // record ID in the response
-        if ($dbc->tableExists('CustomerAccounts') && $dbc->tableExists('Customers')) {
-            $account = new \CustomerAccountsModel($dbc);
-            $account->cardNo($id);
-            if ($account->load()) {
-                $ret['customerAccountID'] = $account->customerAccountID();
-            } else {
-                $ret['customerAccountID'] = $account->migrateAccount($id);
-            }
-            // customers tables is more complicated
-            // try to match IDs by names
-            $customers = new \CustomersModel($dbc);
-            $customers->cardNo($id);
-            $current = $customers->find();
-            if (count($current) != count($ret['customers'])) {
-                foreach ($customers as $c) {
-                    $c->delete();
-                }
-                $customers->migrateAccount($id);
-                $customers->reset();
-                $customers->cardNo($id);
-            }
-            foreach ($customers->find() as $c) {
-                for ($i=0; $i<count($ret['customers']); $i++) {
-                    if ($ret['customers'][$i]['firstName'] == $c->firstName() && $ret['customers'][$i]['lastName'] == $c->lastName()) {
-                        $ret['customers'][$i]['customerID'] = $c->customerID();
-                        $ret['customers'][$i]['customerAccountID'] = $ret['customerAccountID'];
-                        break;
-                    }
-                }
-            }
-        } else {
-            // plug a value so the returned structure is complete
-            $ret['customerAccountID'] = 0;
+            $ret[] = $customer;
         }
 
         return $ret;
@@ -383,6 +469,9 @@ class MemberREST
                 'memberCouponsAllowed' => $account['memberStatus'] == 'PC' ? 1 : 0,
             );
             $accounts[$row['CardNo']]['customers'][] = $customer;
+            if (self::$test_mode) {
+                break;
+            }
         }
 
         $ret = array();
@@ -401,8 +490,8 @@ class MemberREST
     */
     public static function post($id, $json)
     {
-        $config = \FannieConfig::factory();
-        $dbc = \FannieDB::get($config->get('OP_DB'));
+        $config = FannieConfig::factory();
+        $dbc = FannieDB::get($config->get('OP_DB'));
 
         if ($id == 0) {
             $id = self::createAccount($dbc, $config);
@@ -435,17 +524,20 @@ class MemberREST
         // even if using the old schema it should still create
         // this record if the new table exists.
         if ($dbc->tableExists('CustomerAccounts')) {
-            $account = new \CustomerAccountsModel($dbc);
+            $account = self::getModel($dbc, 'CustomerAccountsModel');
             $account->cardNo($max);
             $account->save();
+            self::$hook_cache['CustomerAccountsModel'] = $account->getHooks();
         }
-        $custdata = new \CustdataModel($dbc);
+        $custdata = self::getModel($dbc, 'CustdataModel');
         $custdata->CardNo($max);
         $custdata->personNum(1);
         $custdata->save();
-        $meminfo = new \MeminfoModel($dbc);
+        self::$hook_cache['CustdataModel'] = $custdata->getHooks();
+        $meminfo = self::getModel($dbc, 'MeminfoModel');
         $meminfo->card_no($max);
         $meminfo->save();
+        self::$hook_cache['MeminfoModel'] = $meminfo->getHooks();
 
         return $max;
     }
@@ -457,9 +549,9 @@ class MemberREST
     private static function postAccount($dbc, $id, $json)
     {
         $ret = array('errors' => 0, 'error-msg' => '');
-        $config = \FannieConfig::factory();
-        $account = new \CustomerAccountsModel($dbc);
-        $customers = new \CustomersModel($dbc);
+        $config = FannieConfig::factory();
+        $account = self::getModel($dbc, 'CustomerAccountsModel');
+        $customers = self::getModel($dbc, 'CustomersModel');
 
         $account->cardNo($id);
         foreach ($account->getColumns() as $col_name => $info) {
@@ -474,6 +566,7 @@ class MemberREST
         if (!$account->save()) {
             $ret['errors']++;
         }
+        self::$hook_cache['CustomerAccountsModel'] = $account->getHooks();
 
         if (isset($json['customers']) && is_array($json['customers'])) {
             $columns = $customers->getColumns();
@@ -485,13 +578,7 @@ class MemberREST
                     if ($col_name == 'cardNo') continue;
                     if ($col_name == 'modified') continue;
 
-                    if ($col_name == 'customerID' && isset($c_json[$col_name]) && $c_json[$col_name] != 0) {
-                        $deletable++;
-                    } elseif ($col_name == 'firstName' && isset($c_json[$col_name]) && $c_json[$col_name] == '') {
-                        $deletable++;
-                    } elseif ($col_name == 'lastName' && isset($c_json[$col_name]) && $c_json[$col_name] == '') {
-                        $deletable++;
-                    }
+                    $deletable += self::deletableCustomer($col_name, $c_json);
 
                     if (isset($c_json[$col_name])) {
                         $customers->$col_name($c_json[$col_name]);
@@ -507,6 +594,7 @@ class MemberREST
                 }
             }
         }
+        self::$hook_cache['CustomersModel'] = $customers->getHooks();
 
         // mirror changes to older tables
         if ($config->get('CUST_SCHEMA') == 1) {
@@ -519,67 +607,45 @@ class MemberREST
         return $ret;
     }
 
+    private static function deletableCustomer($col_name, $c_json)
+    {
+        $deletable = 0;
+        if ($col_name == 'customerID' && isset($c_json[$col_name]) && $c_json[$col_name] != 0) {
+            $deletable++;
+        } elseif ($col_name == 'firstName' && isset($c_json[$col_name]) && $c_json[$col_name] == '') {
+            $deletable++;
+        } elseif ($col_name == 'lastName' && isset($c_json[$col_name]) && $c_json[$col_name] == '') {
+            $deletable++;
+        }
+
+        return $deletable;
+    }
+
     /**
       Update older tables.
     */
     private static function postCustdata($dbc, $id, $json)
     {
-        $config = \FannieConfig::factory();
+        $config = FannieConfig::factory();
         $ret = array('errors' => 0, 'error-msg' => '');
 
         /** save dates if provided **/
-        if (isset($json['startDate']) || isset($json['endDate'])) {
-            $dates = new \MemDatesModel($dbc);
-            $dates->start_date($json['startDate']); 
-            $dates->end_date($json['endDate']); 
-            $dates->card_no($id);
-            if (!$dates->save()) {
-                $ret['errors']++;
-                $ret['error-msg'] .= 'ErrDates ';
-            }
-        }
+        $ret = self::postMemDates($dbc, $id, $json, $ret);
 
         /** save UPC if provided **/
-        if (isset($json['idCardUPC'])) {
-            $cards = new \MemberCardsModel($dbc);
-            $cards->card_no($id);
-            if ($json['idCardUPC'] != '') {
-                $cards->upc(\BarcodeLib::padUPC($json['idCardUPC']));
-            } else {
-                $cards->upc('');
-            }
-            if (!$cards->save()) {
-                $ret['errors']++;
-            }
-        }
+        $ret = self::postMemberCards($dbc, $id, $json, $ret);
 
         /** save contact method if provided **/
-        if (isset($json['contactMethod'])) {
-            $contact = new \MemContactModel($dbc);
-            $contact->card_no($id);
-            if (isset($json['contactAllowed']) && !$json['contactAllowed']) {
-                $contact->pref(0);
-            } elseif ($json['contactMethod'] == 'email') {
-                $contact->pref(2);
-            } elseif ($json['contactMethod'] == 'both') {
-                $contact->pref(3);
-            } else {
-                $contact->pref(1);
-            }
-            if (!$contact->save()) {
-                $ret['errors']++;
-                $ret['error-msg'] .= 'ErrUPC ';
-            }
-        }
+        $ret = self::postMemContact($dbc, $id, $json, $ret);
 
         /**
           Custdata and meminfo are messier. Start with account-level
           settings.
         */
-        $custdata = new \CustdataModel($dbc);
+        $custdata = self::getModel($dbc, 'CustdataModel');
         $custdata->CardNo($id);
         $custdata_changed = false;
-        $meminfo = new \MeminfoModel($dbc);
+        $meminfo = self::getModel($dbc, 'MeminfoModel');
         $meminfo->card_no($id);
         if (isset($json['addressFirstLine'])) {
             $street = $json['addressFirstLine'];
@@ -634,7 +700,7 @@ class MemberREST
                     $ret['error-msg'] .= 'ErrAcctHolder ';
                     continue;
                 }
-                $loopCD = new \CustdataModel($dbc);
+                $loopCD = new CustdataModel($dbc);
                 $loopCD->CardNo($id);
                 $loopCD_changed = false;
                 if ($c_json['accountHolder']) {
@@ -648,7 +714,7 @@ class MemberREST
                     if (isset($c_json['email'])) {
                         $meminfo->email_1($c_json['email']);
                     }
-                } elseif (isset($c_json['firstName']) && isset($c_json['lastName']) && $c_json['firstName'] == '' && $c_json['lastName'] == '') {
+                } elseif (isset($c_json['firstName']) && isset($c_json['lastName']) && trim($c_json['firstName']) == '' && trim($c_json['lastName']) == '') {
                     // blank name fields on non-account holder mean
                     // the customer was removed from the account
                     continue;
@@ -698,13 +764,14 @@ class MemberREST
             $ret['errors']++;
             $ret['error-msg'] .= 'ErrMeminfo ';
         }
+        self::$hook_cache['MeminfoModel'] = $meminfo->getHooks();
 
         /**
           Finally, apply account-level settings to
           all custdata records for the account.
         */
         if ($custdata_changed) {
-            $allCD = new \CustdataModel($dbc);
+            $allCD = new CustdataModel($dbc);
             $allCD->CardNo($id);
             foreach ($allCD->find() as $c) {
                 $custdata->personNum($c->personNum());
@@ -713,6 +780,7 @@ class MemberREST
                     $ret['error-msg'] .= 'ErrGlobal ';
                 }
             }
+            self::$hook_cache['CustdataModel'] = $custdata->getHooks();
         }
         self::setBlueLines($id);
 
@@ -726,19 +794,80 @@ class MemberREST
         return $ret;
     }
 
+    private static function postMemDates($dbc, $id, $json, $ret)
+    {
+        if (isset($json['startDate']) || isset($json['endDate'])) {
+            $dates = self::getModel($dbc, 'MemDatesModel');
+            $dates->start_date($json['startDate']); 
+            $dates->end_date($json['endDate']); 
+            $dates->card_no($id);
+            if (!$dates->save()) {
+                $ret['errors']++;
+                $ret['error-msg'] .= 'ErrDates ';
+            }
+            self::$hook_cache['MemDatesModel'] = $dates->getHooks();
+        }
+
+        return $ret;
+    }
+
+    private static function postMemberCards($dbc, $id, $json, $ret)
+    {
+        if (isset($json['idCardUPC'])) {
+            $cards = self::getModel($dbc, 'MemberCardsModel');
+            $cards->card_no($id);
+            if ($json['idCardUPC'] != '') {
+                $cards->upc(\BarcodeLib::padUPC($json['idCardUPC']));
+            } else {
+                $cards->upc('');
+            }
+            if (!$cards->save()) {
+                $ret['errors']++;
+            }
+            self::$hook_cache['MemberCardsModel'] = $cards->getHooks();
+        }
+
+        return $ret;
+    }
+
+    private static function postMemContact($dbc, $id, $json, $ret)
+    {
+        if (isset($json['contactMethod'])) {
+            $contact = new MemContactModel($dbc);
+            $contact = self::getModel($dbc, 'MemContactModel');
+            $contact->card_no($id);
+            if (isset($json['contactAllowed']) && !$json['contactAllowed']) {
+                $contact->pref(0);
+            } elseif ($json['contactMethod'] == 'email') {
+                $contact->pref(2);
+            } elseif ($json['contactMethod'] == 'both') {
+                $contact->pref(3);
+            } else {
+                $contact->pref(1);
+            }
+            if (!$contact->save()) {
+                $ret['errors']++;
+                $ret['error-msg'] .= 'ErrUPC ';
+            }
+            self::$hook_cache['MemContactModel'] = $contact->getHooks();
+        }
+
+        return $ret;
+    }
+
     /**
       Assign blueLine values to account based on template configuration
       @param $id [int] account identifier
     */
     public static function setBlueLines($id)
     {
-        $config = \FannieConfig::factory();
+        $config = FannieConfig::factory();
         $template = $config->get('BLUELINE_TEMPLATE');
         if ($template == '') {
             $template = '{{ACCOUNTNO}} {{FIRSTINITIAL}}. {{LASTNAME}}';
         }
-        $dbc = \FannieDB::get($config->get('OP_DB'));
-        $custdata = new \CustdataModel($dbc);
+        $dbc = FannieDB::get($config->get('OP_DB'));
+        $custdata = self::getModel($dbc, 'CustdataModel');
         $custdata->CardNo($id);
         $account = self::get($id); 
         $personNum = 2;
@@ -762,6 +891,7 @@ class MemberREST
             $custdata->blueLine($blueline);
             $custdata->save();
         }
+        self::$hook_cache['CustdataModel'] = $custdata->getHooks();
     }
 
     /**
@@ -774,8 +904,8 @@ class MemberREST
     */
     public static function search($json, $limit=0, $minimal=false)
     {
-        $config = \FannieConfig::factory();
-        $dbc = \FannieDB::getReadOnly($config->get('OP_DB'));
+        $config = FannieConfig::factory();
+        $dbc = FannieDB::getReadOnly($config->get('OP_DB'));
 
         if ($config->get('CUST_SCHEMA') == 1 && $dbc->tableExists('CustomerAccounts') && $dbc->tableExists('Customers')) {
             return self::searchAccount($dbc, $json, $limit, $minimal);
@@ -785,135 +915,97 @@ class MemberREST
     }
 
     /**
+      Replace non-digit characters with wildcards so that
+      phone number format doesn't matter
+    */
+    private static function searchablePhone($phone)
+    {
+        $phone = preg_replace('/[^0-9]/', '%', $phone);
+        $phone = '%' . $phone . '%';
+        $phone = preg_replace('/%+/', '%', $phone);
+
+        return $phone;
+    }
+
+    /**
       Search using newer tables
     */
     private static function searchAccount($dbc, $json, $limit=0, $minimal=false)
     {
         $query = '
-            SELECT a.cardNo
+            SELECT a.cardNo,
+                c.firstName,
+                c.lastName,
             FROM CustomerAccounts AS a
                 LEFT JOIN Customers AS c ON a.customerAccountID=c.customerAccountID
             WHERE 1=1 ';
         $params = array();
-        if (isset($json['cardNo'])) {
-            $query .= ' AND a.cardNo=? ';
-            $params[] = $json['cardNo'];
-        }
-        if (isset($json['memberStatus'])) {
-            $query .= ' AND a.memberStatus=? ';
-            $params[] = $json['memberStatus'];
-        }
-        if (isset($json['customerTypeID'])) {
-            $query .= ' AND a.customerTypeID=? ';
-            $params[] = $json['customerTypeID'];
-        }
-        if (isset($json['chargeBalance'])) {
-            $query .= ' AND a.chargeBalance=? ';
-            $params[] = $json['chargeBalance'];
+        foreach (self::$FIELD_INFO as $field_name => $info) {
+            list($query, $params) = self::buildSearchClause($query, $params, $json, $field_name, false);
+            foreach ($json['customers'] as $j) {
+                list($query, $params) = self::buildSearchClause($query, $params, $j, $field_name, false);
+            }
         }
         if (isset($json['chargeLimit'])) {
             $query .= ' AND a.chargeLimit=? ';
             $params[] = $json['chargeBalance'];
         }
-        if (isset($json['idCardUPC'])) {
-            $query .= ' AND a.idCardUPC=? ';
-            $params[] = \BarcodeLib::padUPC($json['idCardUPC']);
-        }
-        if (isset($json['startDate'])) {
-            $query .= ' AND a.startDate BETWEEN ? AND ? ';
-            $params[] = $json['startDate'] . ' 00:00:00';
-            $params[] = $json['startDate'] . ' 23:59:59';
-        }
-        if (isset($json['endDate'])) {
-            $query .= ' AND a.endDate BETWEEN ? AND ? ';
-            $params[] = $json['endDate'] . ' 00:00:00';
-            $params[] = $json['endDate'] . ' 23:59:59';
-        }
-        if (isset($json['addressFirstLine'])) {
-            $query .= ' AND a.addressFirstLine LIKE ? ';
-            $params[] = '%' . $json['addressFirstLine'] . '%';
-        }
-        if (isset($json['addressSecondLine'])) {
-            $query .= ' AND a.addressSecondLine LIKE ? ';
-            $params[] = '%' . $json['addressSecondLine'] . '%';
-        }
-        if (isset($json['city'])) {
-            $query .= ' AND a.city LIKE ? ';
-            $params[] = '%' . $json['city'] . '%';
-        }
-        if (isset($json['state'])) {
-            $query .= ' AND a.state LIKE ? ';
-            $params[] = '%' . $json['state'] . '%';
-        }
-        if (isset($json['zip'])) {
-            $query .= ' AND a.zip LIKE ? ';
-            $params[] = '%' . $json['zip'] . '%';
-        }
-        if (isset($json['contactAllowed'])) {
-            $query .= ' AND a.contactAllowed = ? ';
-            $params[] = $json['contactAllowed'];
-        }
         foreach ($json['customers'] as $j) {
-            if (isset($j['lastName'])) {
-                $query .= ' AND c.lastName LIKE ? ';
-                $params[] = '%' . $j['lastName'] . '%';
-            }
-            if (isset($j['firstName'])) {
-                $query .= ' AND c.firstName LIKE ? ';
-                $params[] = '%' . $j['firstName'] . '%';
-            }
-            if (isset($j['chargeAllowed'])) {
-                $query .= ' AND c.chargeAllowed = ? ';
-                $params[] = $j['chargeAllowed'];
-            }
-            if (isset($j['checksAllowed'])) {
-                $query .= ' AND c.checksAllowed = ? ';
-                $params[] = $j['checksAllowed'];
-            }
             if (isset($j['accountHolder'])) {
                 $query .= ' AND c.accountHolder = ? ';
                 $params[] = $j['accountHolder'];
             }
-            if (isset($j['discount'])) {
-                $query .= ' AND c.discount = ? ';
-                $params[] = $j['discount'];
-            }
-            if (isset($j['staff'])) {
-                $query .= ' AND c.staff = ? ';
-                $params[] = $j['staff'];
-            }
             if (isset($j['phone'])) {
+                $j['phone'] = self::searchablePhone($j['phone']);
                 $query .= ' AND (c.phone LIKE ? OR c.altPhone LIKE ?) ';
                 $params[] = '%' . $j['phone'] . '%';
                 $params[] = '%' . $j['phone'] . '%';
             }
-            if (isset($j['email'])) {
-                $query .= ' AND c.email LIKE ? ';
-                $params[] = '%' . $j['email'] . '%';
-            }
-            if (isset($j['lowIncomeBenefits'])) {
-                $query .= ' AND c.lowIncomeBenefits = ? ';
-                $params[] = $j['lowIncomeBenefits'];
-            }
         }
 
-        if (count($params) == 0) {
-            return array();
+        if (!$minimal) {
+            $query .= ' GROUP BY a.cardNo';
         }
 
-        $query .= ' GROUP BY c.CardNo';
-        $prep = $dbc->prepare($query);
-        $res = $dbc->execute($prep, $params);
-        $ret = array();
-        while ($row = $dbc->fetchRow($res)) {
-            // this is not efficient
-            $ret[] = self::get($row['CardNo']);
-            if ($limit > 0 && count($ret) >= $limit) {
+        return self::getSearchResults($dbc, $query, $params, $minimal, $limit);
+    }
+
+    private static function buildSearchClause($query, $params, $json, $field_name, $use_map)
+    {
+        if (isset($json[$field_name]) && $json[$field_name] !== '' && isset(self::$FIELD_INFO[$field_name])) {
+            $column = ($use_map) ? self::$FIELD_INFO[$field_name]['map'] : $field_name;
+            $value = $json[$field_name];
+            $info = array(
+                'column' => $column,
+                'value' => $value,
+                'type' => self::$FIELD_INFO[$field_name]['match'],
+            );
+            list($query, $params) = self::genericSearchClause($query, $params, $info);
+        }
+
+        return array($query, $params);
+    }
+
+    private static function genericSearchClause($query, $params, $info)
+    {
+        switch ($info['type']) {
+            case 'strict':
+                $query .= ' AND ' . $info['column'] . '=? ';
+                $params[] = $info['value'];
                 break;
-            }
+            case 'date':
+                $query .= ' AND ' . $info['column'] . ' BETWEEN ? AND ? ';
+                $tstamp = strtotime($info['value']);
+                $params[] = date('Y-m-d 00:00:00', $tstamp);
+                $params[] = date('Y-m-d 23:59:59', $tstamp);
+                break;
+            case 'fuzzy':
+                $query .= ' AND ' . $info['column'] . ' LIKE ? ';
+                $params[] = '%' . $info['value'] . '%';
+                break;
         }
 
-        return $ret;
+        return array($query, $params);
     }
 
     /**
@@ -922,7 +1014,7 @@ class MemberREST
     private static function searchCustdata($dbc, $json, $limit=0, $minimal=false)
     {
         $query = '
-            SELECT c.CardNo,
+            SELECT c.CardNo AS cardNo,
                 c.FirstName,
                 c.LastName
             FROM custdata AS c
@@ -932,85 +1024,21 @@ class MemberREST
                 LEFT JOIN memContact AS t ON c.CardNo=t.card_no
             WHERE 1=1 ';
         $params = array();
-        if (isset($json['cardNo'])) {
-            $query .= ' AND c.CardNo=? ';
-            $params[] = $json['cardNo'];
+        if (!isset($json['customers']) || !is_array($json['customers'])) {
+            $json['customers'] = array();
         }
-        if (isset($json['memberStatus'])) {
-            $query .= ' AND c.Type=? ';
-            $params[] = $json['memberStatus'];
-        }
-        if (isset($json['customerTypeID'])) {
-            $query .= ' AND c.memType=? ';
-            $params[] = $json['customerTypeID'];
-        }
-        if (isset($json['chargeBalance'])) {
-            $query .= ' AND c.Balance=? ';
-            $params[] = $json['chargeBalance'];
+        foreach (self::$FIELD_INFO as $field_name => $info) {
+            list($query, $params) = self::buildSearchClause($query, $params, $json, $field_name, true);
+            foreach ($json['customers'] as $j) {
+                list($query, $params) = self::buildSearchClause($query, $params, $j, $field_name, true);
+            }
         }
         if (isset($json['chargeLimit'])) {
             $query .= ' AND (c.ChargeLimit=? OR c.MemDiscountLimit=?) ';
             $params[] = $json['chargeBalance'];
             $params[] = $json['chargeBalance'];
         }
-        if (isset($json['idCardUPC'])) {
-            $query .= ' AND u.upc=? ';
-            $params[] = \BarcodeLib::padUPC($json['idCardUPC']);
-        }
-        if (isset($json['startDate'])) {
-            $query .= ' AND d.start_date BETWEEN ? AND ? ';
-            $params[] = $json['startDate'] . ' 00:00:00';
-            $params[] = $json['startDate'] . ' 23:59:59';
-        }
-        if (isset($json['endDate'])) {
-            $query .= ' AND d.end_date BETWEEN ? AND ? ';
-            $params[] = $json['endDate'] . ' 00:00:00';
-            $params[] = $json['endDate'] . ' 23:59:59';
-        }
-        if (isset($json['addressFirstLine'])) {
-            $query .= ' AND m.street LIKE ? ';
-            $params[] = '%' . $json['addressFirstLine'] . '%';
-        }
-        if (isset($json['addressSecondLine'])) {
-            $query .= ' AND m.street LIKE ? ';
-            $params[] = '%' . $json['addressSecondLine'] . '%';
-        }
-        if (isset($json['city'])) {
-            $query .= ' AND m.city LIKE ? ';
-            $params[] = '%' . $json['city'] . '%';
-        }
-        if (isset($json['state'])) {
-            $query .= ' AND m.state LIKE ? ';
-            $params[] = '%' . $json['state'] . '%';
-        }
-        if (isset($json['zip'])) {
-            $query .= ' AND m.zip LIKE ? ';
-            $params[] = '%' . $json['zip'] . '%';
-        }
-        if (isset($json['contactAllowed'])) {
-            $query .= ' AND m.ads_OK = ? ';
-            $params[] = $json['contactAllowed'];
-        }
-        if (!isset($json['customers']) || !is_array($json['customers'])) {
-            $json['customers'] = array();
-        }
         foreach ($json['customers'] as $j) {
-            if (isset($j['lastName'])) {
-                $query .= ' AND c.LastName LIKE ? ';
-                $params[] = '%' . $j['lastName'] . '%';
-            }
-            if (isset($j['firstName'])) {
-                $query .= ' AND c.FirstName LIKE ? ';
-                $params[] = '%' . $j['firstName'] . '%';
-            }
-            if (isset($j['chargeAllowed'])) {
-                $query .= ' AND c.ChargeOk = ? ';
-                $params[] = $j['chargeAllowed'];
-            }
-            if (isset($j['checksAllowed'])) {
-                $query .= ' AND c.writeChecks = ? ';
-                $params[] = $j['checksAllowed'];
-            }
             if (isset($j['accountHolder'])) {
                 if ($j['accountHolder']) {
                     $query .= ' AND c.personNum = ? ';
@@ -1020,62 +1048,125 @@ class MemberREST
                     $params[] = 1;
                 }
             }
-            if (isset($j['discount'])) {
-                $query .= ' AND c.Discount = ? ';
-                $params[] = $j['discount'];
-            }
-            if (isset($j['staff'])) {
-                $query .= ' AND c.staff = ? ';
-                $params[] = $j['staff'];
-            }
             if (isset($j['phone'])) {
+                $j['phone'] = self::searchablePhone($j['phone']);
                 $query .= ' AND (m.phone LIKE ? OR m.email_2 LIKE ?) ';
                 $params[] = '%' . $j['phone'] . '%';
                 $params[] = '%' . $j['phone'] . '%';
             }
-            if (isset($j['email'])) {
-                $query .= ' AND m.email_1 LIKE ? ';
-                $params[] = '%' . $j['email'] . '%';
-            }
-            if (isset($j['lowIncomeBenefits'])) {
-                $query .= ' AND c.SSI = ? ';
-                $params[] = $j['lowIncomeBenefits'];
-            }
-        }
-
-        if (count($params) == 0) {
-            return array();
         }
 
         if (!$minimal) {
             $query .= ' GROUP BY c.CardNo';
         }
+
+        return self::getSearchResults($dbc, $query, $params, $minimal, $limit);
+    }
+
+    private static function getSearchResults($dbc, $query, $params, $minimal, $limit)
+    {
+        if (count($params) == 0) {
+            return array();
+        }
+
         $prep = $dbc->prepare($query);
         $res = $dbc->execute($prep, $params);
         $ret = array();
+        $ids = array();
         while ($row = $dbc->fetchRow($res)) {
             // this is not efficient
             if ($minimal) {
-                $ret[] = array(
-                    'cardNo' => $row['CardNo'],
-                    'customers' => array(
-                        array(
-                            'cardNo' => $row['CardNo'],
-                            'firstName' => $row['FirstName'],
-                            'lastName' => $row['LastName'],
-                        ),
-                    ),
-                );
+                $ret[] = self::searchResult($row, $minimal);
             } else {
-                $ret[] = self::get($row['CardNo']);
-                if ($limit > 0 && count($ret) >= $limit) {
-                    break;
-                }
+                $ids[] = $row['cardNo'];
             }
+
+            if ($limit > 0 && count($ret) >= $limit) {
+                break;
+            }
+        }
+        if (!$minimal) {
+            $ret = self::fastSearchResults($dbc, $ids);
         }
 
         return $ret;
     }
+
+    private static function fastSearchResults($dbc, $ids)
+    {
+        list($inStr, $args) = $dbc->safeInClause($ids);
+        $config = FannieConfig::factory();
+        if ($config->get('CUST_SCHEMA') == 1 && $dbc->tableExists('CustomerAccounts') && $dbc->tableExists('Customers')) {
+            $accountP = $dbc->prepare('SELECT * FROM CustomerAccounts WHERE cardNo IN (' . $inStr . ')');
+            $nameP = $dbc->prepare('SELECT * FROM Customers WHERE cardNo IN ('. $inStr . ')');
+        } else {
+            $account = new CustomerAccountsModel($dbc);
+            $accountP = $dbc->prepare(str_replace('?', $inStr, $account->migrateQuery()));
+            $customer = new CustomersModel($dbc);
+            $nameP = $dbc->prepare(str_replace('?', $inStr, $customer->migrateQuery()));
+        }
+        $ret = array();
+        $res = $dbc->execute($accountP, $args);
+        while ($row = $dbc->fetchRow($res)) {
+            $ret[$row['cardNo']] = array(
+                'cardNo' => $row['cardNo'],
+                'memberStatus' => $row['memberStatus'],
+                'activeStatus' => $row['activeStatus'],
+                'customerTypeID' => $row['customerTypeID'],
+                'chargeBalance' => $row['chargeBalance'],
+                'idCardUPC' => $row['idCardUPC'],
+                'startDate' => $row['startDate'],
+                'endDate' => $row['endDate'],
+                'addressFirstLine' => $row['addressFirstLine'],
+                'city' => $row['city'],
+                'state' => $row['state'],
+                'zip' => $row['zip'],
+                'contactAllowed' => $row['contactAllowed'],
+                'customers' => array(),
+            );
+        }
+        $res = $dbc->execute($nameP, $args);
+        while ($row = $dbc->fetchRow($res)) {
+            $ret[$row['cardNo']]['customers'][] = array(
+                'accountHolder' => $row['accountHolder'],
+                'firstName' => $row['firstName'],
+                'lastName' => $row['lastName'],
+                'chargeAllowed' => $row['chargeAllowed'],
+                'checksAllowed' => $row['checksAllowed'],
+                'discount' => $row['discount'],
+                'staff' => $row['staff'],
+                'phone' => $row['phone'],
+                'altPhone' => $row['altPhone'],
+                'email' => $row['email'],
+                'lowIncomeBenefits' => $row['lowIncomeBenefits'],
+            );
+        }
+        $dekey = array();
+        foreach ($ret as $card_no => $json) {
+            $dekey[] = $json;
+        }
+
+        return $dekey;
+    }
+    
+    private static function searchResult($row, $minimal)
+    {
+        if ($minimal) {
+            return array(
+                'cardNo' => $row['cardNo'],
+                'customers' => array(
+                    array(
+                        'cardNo' => $row['cardNo'],
+                        'firstName' => $row['FirstName'],
+                        'lastName' => $row['LastName'],
+                    ),
+                ),
+            );
+        } else {
+            return self::get($row['CardNo']);
+        }
+    }
+
 
     /**
       Get the next account number sequentially
@@ -1084,15 +1175,7 @@ class MemberREST
     */
     public static function nextAccount($id)
     {
-        $config = \FannieConfig::factory();
-        $dbc = \FannieDB::getReadOnly($config->get('OP_DB'));
-        if ($config->get('CUST_SCHEMA') == 1 && $dbc->tableExists('CustomerAccounts') && $dbc->tableExists('Customers')) {
-            $query = 'SELECT MIN(cardNo) FROM customerAccounts WHERE cardNo > ?';
-        } else {
-            $query = 'SELECT MIN(CardNo) FROM custdata WHERE CardNo > ?';
-        }
-        $prep = $dbc->prepare($query);
-        return $dbc->getValue($prep, array($id));
+        return self::prevNext($id, 'MIN', '>');
     }
 
     /**
@@ -1102,12 +1185,17 @@ class MemberREST
     */
     public static function prevAccount($id)
     {
-        $config = \FannieConfig::factory();
-        $dbc = \FannieDB::getReadOnly($config->get('OP_DB'));
+        return self::prevNext($id, 'MAX', '<');
+    }
+
+    private static function prevNext($id, $func, $op)
+    {
+        $config = FannieConfig::factory();
+        $dbc = FannieDB::getReadOnly($config->get('OP_DB'));
         if ($config->get('CUST_SCHEMA') == 1 && $dbc->tableExists('CustomerAccounts') && $dbc->tableExists('Customers')) {
-            $query = 'SELECT MAX(cardNo) FROM customerAccounts WHERE cardNo < ?';
+            $query = 'SELECT ' . $func . '(cardNo) FROM CustomerAccounts WHERE cardNo ' . $op . ' ?';
         } else {
-            $query = 'SELECT MAX(CardNo) FROM custdata WHERE CardNo < ?';
+            $query = 'SELECT ' . $func . '(CardNo) FROM custdata WHERE CardNo ' . $op . ' ?';
         }
         $prep = $dbc->prepare($query);
         return $dbc->getValue($prep, array($id));
@@ -1120,8 +1208,8 @@ class MemberREST
     */
     public static function autoComplete($field, $val)
     {
-        $config = \FannieConfig::factory();
-        $dbc = \FannieDB::getReadOnly($config->get('OP_DB'));
+        $config = FannieConfig::factory();
+        $dbc = FannieDB::getReadOnly($config->get('OP_DB'));
         if (strtolower($field) == 'mfirstname') {
             list($query, $args) = self::autoCompleteFirstName($val);
         } elseif (strtolower($field) == 'mlastname') {
@@ -1152,7 +1240,7 @@ class MemberREST
 
     private static function autoCompleteFirstName($val)
     {
-        if (\FannieConfig::config('CUST_SCHEMA') == 1) {
+        if (FannieConfig::config('CUST_SCHEMA') == 1) {
             $query = 'SELECT firstName
             FROM Customers
             WHERE firstName LIKE ?
@@ -1171,7 +1259,7 @@ class MemberREST
 
     private static function autoCompleteLastName($val)
     {
-        if (\FannieConfig::config('CUST_SCHEMA') == 1) {
+        if (FannieConfig::config('CUST_SCHEMA') == 1) {
             $query = 'SELECT lastName
             FROM Customers
             WHERE lastName LIKE ?
@@ -1190,7 +1278,7 @@ class MemberREST
 
     private static function autoCompleteAddress($val)
     {
-        if (\FannieConfig::config('CUST_SCHEMA') == 1) {
+        if (FannieConfig::config('CUST_SCHEMA') == 1) {
             $query = 'SELECT addressLineOne
                        FROM CustomerAccounts
                        WHERE addressLineOne LIKE ?
@@ -1209,7 +1297,7 @@ class MemberREST
 
     private static function autoCompleteCity($val)
     {
-        if (\FannieConfig::config('CUST_SCHEMA') == 1) {
+        if (FannieConfig::config('CUST_SCHEMA') == 1) {
             $query = 'SELECT city
                        FROM CustomerAccounts
                        WHERE city LIKE ?
@@ -1228,7 +1316,7 @@ class MemberREST
 
     private static function autoCompleteEmail($val)
     {
-        if (\FannieConfig::config('CUST_SCHEMA') == 1) {
+        if (FannieConfig::config('CUST_SCHEMA') == 1) {
             $query = 'SELECT email
                        FROM Customers
                        WHERE email LIKE ?
@@ -1256,10 +1344,3 @@ class MemberREST
     }
 }
 
-}
-
-namespace 
-{
-    // global namespace wrapper class
-    class MemberREST extends \COREPOS\Fannie\API\member\MemberREST {}
-}

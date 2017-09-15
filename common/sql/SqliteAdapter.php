@@ -25,6 +25,16 @@ namespace COREPOS\common\sql;
 
 class SqliteAdapter implements DialectAdapter
 {
+    public function createNamedDB($name)
+    {
+        return 'SELECT 1';
+    }
+
+    public function useNamedDB($name)
+    {
+        return 'SELECT 1';
+    }
+
     public function identifierEscape($str)
     {
         return '"' . $str . '"';
@@ -40,13 +50,13 @@ class SqliteAdapter implements DialectAdapter
             $row = $dbc->fetchRow($result);
             $ret = $row['sql'];
         }
-        $dbc->end_query($result, $db_name);
+        $dbc->endQuery($result, $db_name);
         return $ret;
     }
 
     public function defaultDatabase()
     {
-        return "SELECT '" . $this->default_db . '" AS db_name';
+        return "pragma database list";
     }
 
     public function temporaryTable($name, $source_table)
@@ -129,6 +139,16 @@ class SqliteAdapter implements DialectAdapter
         $ret = array_reduce($expressions, function($carry, $e) { return $carry . $e . '||'; }, '');
         
         return substr($ret, 0, strlen($ret)-1);
+    }
+
+    public function setLockTimeout($seconds)
+    {
+        return sprintf('PRAGMA busy_timeout = %d', 1000*$seconds);
+    }
+
+    public function setCharSet($charset)
+    {
+        return 'SELECT 1';
     }
 }
 

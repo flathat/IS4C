@@ -32,7 +32,7 @@ class ProductLineReport extends FannieReportPage
     public $themed = true;
     public $discoverable = false;
 
-    protected $report_headers = array('UPC', 'Brand', 'Description', 'Alt. Brand', 'Alt. Desc.', 'Price', 'Vendor', 'Location');
+    protected $report_headers = array('UPC', 'Brand', 'Description', 'Alt. Brand', 'Alt. Desc.', 'Price', 'Dept', 'Vendor', 'Location');
     protected $title = "Fannie : Product Line";
     protected $header = "Fannie : Product Line";
     protected $required_fields = array('prefix');
@@ -59,8 +59,11 @@ class ProductLineReport extends FannieReportPage
                 u.brand AS altBrand,
                 v.vendorName AS vendor,
                 p.normal_price,
+                d.dept_no,
+                d.dept_name,
                 {$loc_col}
             FROM products AS p
+                LEFT JOIN departments AS d ON p.department=d.dept_no
                 LEFT JOIN productUser AS u ON p.upc=u.upc
                 LEFT JOIN vendors AS v ON p.default_vendor_id=v.vendorID
                 LEFT JOIN prodPhysicalLocation AS y ON p.upc=y.upc
@@ -78,25 +81,39 @@ class ProductLineReport extends FannieReportPage
         $prep = $dbc->prepare($query);
         $result = $dbc->execute($prep, $args);
         $data = array();
-        while ($row = $dbc->fetch_row($result)) {
-            $data[] = array(
-                $row['upc'],
-                $row['brand'],
-                $row['description'],
-                empty($row['altBrand']) ? 'n/a' : $row['altBrand'],
-                empty($row['altDescription']) ? 'n/a' : $row['altDescription'],
-                sprintf('%.2f', $row['normal_price']),
-                empty($row['vendor']) ? 'n/a' : $row['vendor'],
-                empty($row['floorSection']) ? 'n/a' : $row['floorSection'],
-            );
+        while ($row = $dbc->fetchRow($result)) {
+            $data[] = $this->rowToRecord($row);
         }
 
         return $data;
     }
 
+    private function rowToRecord($row)
+    {
+        return array(
+            $row['upc'],
+            $row['brand'],
+            $row['description'],
+            empty($row['altBrand']) ? 'n/a' : $row['altBrand'],
+            empty($row['altDescription']) ? 'n/a' : $row['altDescription'],
+            sprintf('%.2f', $row['normal_price']),
+            $row['dept_no'] . ' ' . $row['dept_name'],
+            empty($row['vendor']) ? 'n/a' : $row['vendor'],
+            empty($row['floorSection']) ? 'n/a' : $row['floorSection'],
+        );
+    }
+
     public function form_content()
     {
         return 'No direct entries allowed on this report';
+    }
+
+    public function unitTest($phpunit)
+    {
+        $data = array('upc'=>'4011', 'brand'=>'test', 'description'=>'test',
+            'altBrand'=>'test', 'altDescription'=>'test', 'normal_price'=>1,
+            'vendor'=>'test', 'floorSection'=>'test', 'dept_no'=>1, 'dept_name'=>'foo');
+        $phpunit->assertInternalType('array', $this->rowToRecord($data));
     }
 }
 

@@ -21,6 +21,10 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\parser\Parser;
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\DisplayLib;
+
 class WicParser extends Parser 
 {
     private $mode = false;
@@ -59,19 +63,43 @@ class WicParser extends Parser
         return $ret;
     }
 
+    private $bulk = array(
+        '000000000440',
+        '000000000442',
+        '000000000443',
+        '000000000454',
+    );
+
     private function wicUPC($str)
     {
+        $dbc = Database::tDataConnect();
+        $dbc->query('UPDATE localtemptrans SET percentDiscount=0');
         $arr = CoreLocal::get('WicOverride');
+        $upc = substr('0000000000000' . $str, -13);
         if (is_array($arr) && in_array(ltrim($str, '0'), $arr)) {
+            if (in_array($upc, $this->bulk) && (CoreLocal::get('weight') - CoreLocal::get('tare')) > 1) {
+                CoreLocal::set('quantity', 1);
+                CoreLocal::set('multiplier', 1);
+                CoreLocal::set('tare', 0);
+            }
             return true;
         }
-        $upc = substr('0000000000000' . $str, -13);
         $dbc = Database::pDataConnect();
+        if (substr($upc, 0, 3) == '002') {
+            $upc = substr($upc, 0, 7) . '000000';
+        }
         $itemP = $dbc->prepare('SELECT wicable FROM products WHERE upc=?');
         $wicable = $dbc->getValue($itemP, array($upc));
-        if ($wicable !== false  && $wicable == 0) {
+        if ($wicable !== false  && $wicable == 0 && !in_array($upc, $this->bulk)) {
             return false;
         } else {
+            if (in_array($upc, $this->bulk) && (CoreLocal::get('weight') - CoreLocal::get('tare')) > 1.10) {
+                return false;
+            } elseif (in_array($upc, $this->bulk) && (CoreLocal::get('weight') - CoreLocal::get('tare')) > 1) {
+                CoreLocal::set('quantity', 1);
+                CoreLocal::set('multiplier', 1);
+                CoreLocal::set('tare', 0);
+            }
             return true;
         }
     }

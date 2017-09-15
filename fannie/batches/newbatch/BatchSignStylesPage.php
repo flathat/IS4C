@@ -62,6 +62,7 @@ class BatchSignStylesPage extends FannieRESTfulPage
         $mult['-1'] = '$X off';
         $mult['-2'] = 'X% off';
         $mult['-3'] = 'BOGO';
+        $mult['-4'] = 'Exact';
 
         return $mult;
     }
@@ -75,7 +76,7 @@ class BatchSignStylesPage extends FannieRESTfulPage
         }, '');
     }
 
-    protected function get_id_view()
+    private function getUpcItems()
     {
         $query = '
             SELECT l.upc,
@@ -101,6 +102,11 @@ class BatchSignStylesPage extends FannieRESTfulPage
             $rows[] = $row;
         }
 
+        return $rows;
+    }
+
+    private function getLcItems($rows)
+    {
         $query = '
             SELECT l.upc,
                 \'\' AS brand,
@@ -118,10 +124,14 @@ class BatchSignStylesPage extends FannieRESTfulPage
         while ($row = $this->connection->fetchRow($res)) {
             $rows[] = $row;
         }
-        $args = array($this->id);
-        while ($row = $this->connection->fetchRow($res)) {
-            $rows[] = $row;
-        }
+
+        return $rows;
+    }
+
+    protected function get_id_view()
+    {
+        $rows = $this->getUpcItems();
+        $rows = $this->getLcItems($rows);
 
         $ret = '<form method="post">
             <table class="table table-bordered"><thead><tr>
@@ -161,6 +171,30 @@ class BatchSignStylesPage extends FannieRESTfulPage
         </form>';
 
         return $ret;
+    }
+
+    public function unitTest($phpunit)
+    {
+        $this->id = 1;
+        $phpunit->assertNotEquals(0, strlen($this->get_id_view()));
+    }
+
+    public function helpContent()
+    {
+        return '<p>There are a variety of ways to format prices when generating
+sale signage via Office. A sales batch can optionally specify how prices should
+be formatted.</p>
+        <p>In the default case, <em>Normal</em>, the system tries to guess whether
+or not the price should be displayed with a multiplier (e.g., 3/$1) based on what
+potential multipliers match the price. If no matches are found the price itself
+is displayed.</p>
+        <p>The <em>2/X</em> through <em>10/X</em> are used to set a specific multiplier.
+If for example an item is on sale for $1, it could be advertised as 3/$3 or 5/$5.</p>
+        <p>The <em>$X off</em> option will display the amount saved, in dollars, rather
+than the sale prices. The <em>%X off</em> option does the same as a percentage.</p>
+        <p><em>BOGO</em> will actually write "Buy one get one" on the sign. The
+<em>Exact</em> option disables the default multiplier guessing. An item set to exact
+will always display the exact sale price.</p>';
     }
 }
 

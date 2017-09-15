@@ -116,101 +116,82 @@ class DefaultUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
     protected $use_splits = true;
     protected $use_js = true;
 
-    function process_file($linedata)
+    private function validateVendorID($dbc)
+    {
+        if (!isset($this->session->vid)){
+            throw new Exception('Missing vendor setting');
+        }
+        $VENDOR_ID = $this->session->vid;
+
+        $prep = $dbc->prepare("SELECT vendorID,vendorName FROM vendors WHERE vendorID=?");
+        $row = $dbc->getRow($prep,array($VENDOR_ID));
+        if ($row === false) {
+            throw new Exception('Missing vendor setting');
+        }
+
+        return array($VENDOR_ID, $row['vendorName']);
+    }
+
+    public function process_file($linedata, $indexes)
     {
         global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
 
-        if (!isset($_SESSION['vid'])){
-            $this->error_details = 'Missing vendor setting';
-            return False;
+        try {
+            list($VENDOR_ID, $vendorName) = $this->validateVendorID($dbc);
+        } catch (Exception $ex) {
+            $this->error_details = $ex->getMessage();
+            return false;
         }
-        $VENDOR_ID = $_SESSION['vid'];
-
-        $p = $dbc->prepare_statement("SELECT vendorID,vendorName FROM vendors WHERE vendorID=?");
-        $idR = $dbc->exec_statement($p,array($VENDOR_ID));
-        if ($dbc->num_rows($idR) == 0){
-            $this->error_details = 'Cannot find vendor';
-            return False;
-        }
-        $idW = $dbc->fetch_row($idR);
-        $vendorName = $idW['vendorName'];
-
-        $SKU = $this->get_column_index('sku');
-        $BRAND = $this->get_column_index('brand');
-        $DESCRIPTION = $this->get_column_index('desc');
-        $QTY = $this->get_column_index('qty');
-        $SIZE1 = $this->get_column_index('size');
-        $UPC = $this->get_column_index('upc');
-        $CATEGORY = $this->get_column_index('vDept');
-        $REG_COST = $this->get_column_index('cost');
-        $NET_COST = $this->get_column_index('saleCost');
-        $REG_UNIT = $this->get_column_index('unitCost');
-        $NET_UNIT = $this->get_column_index('unitSaleCost');
-        $SRP = $this->get_column_index('srp');
 
         // PLU items have different internal UPCs
         // map vendor SKUs to the internal PLUs
         $SKU_TO_PLU_MAP = array();
-        $skusP = $dbc->prepare('SELECT sku, upc FROM vendorSKUtoPLU WHERE vendorID=?');
+        $skusP = $dbc->prepare('SELECT sku, upc, isPrimary, multiplier FROM VendorAliases WHERE vendorID=?');
         $skusR = $dbc->execute($skusP, array($VENDOR_ID));
         while($skusW = $dbc->fetch_row($skusR)) {
-            $SKU_TO_PLU_MAP[$skusW['sku']] = $skusW['upc'];
+            if (!isset($SKU_TO_PLU_MAP[$skusW['sku']])) {
+                $SKU_TO_PLU_MAP[$skusW['sku']] = array();
+            }
+            $SKU_TO_PLU_MAP[$skusW['sku']][] = $skusW;
         }
 
         $itemP = $dbc->prepare("
             INSERT INTO vendorItems (
-                brand, 
-                sku,
-                size,
-                upc,
-                units,
-                cost,
-                description,
-                vendorDept,
-                vendorID,
-                saleCost,
-                modified,
-                srp
+                brand, sku, size, upc, 
+                units, cost, description, vendorDept, 
+                vendorID, saleCost, modified, srp
             ) VALUES (
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?,
-                ?
+                ?, ?, ?, ?,
+                ?, ?, ?, ?,
+                ?, ?, ?, ?
             )");
         $srpP = false;
         if ($dbc->tableExists('vendorSRPs')) {
-            $srpP = $dbc->prepare_statement("INSERT INTO vendorSRPs (vendorID, upc, srp) VALUES (?,?,?)");
+            $srpP = $dbc->prepare("INSERT INTO vendorSRPs (vendorID, upc, srp) VALUES (?,?,?)");
         }
-        $pm = new ProductsModel($dbc);
+        $pmodel = new ProductsModel($dbc);
 
+        $dbc->startTransaction();
         foreach($linedata as $data) {
             if (!is_array($data)) continue;
 
-            if (!isset($data[$UPC])) continue;
+            if (!isset($data[$indexes['upc']])) continue;
 
             // grab data from appropriate columns
-            $sku = $data[$SKU];
-            $brand = ($BRAND === false) ? $vendorName : substr($data[$BRAND], 0, 50);
-            $description = substr($data[$DESCRIPTION], 0, 50);
-            if ($QTY === false) {
+            $sku = $data[$indexes['sku']];
+            $brand = ($indexes['brand'] === false) ? $vendorName : substr($data[$indexes['brand']], 0, 50);
+            $description = substr($data[$indexes['desc']], 0, 50);
+            if ($indexes['qty'] === false) {
                 $qty = 1.0;
             } else {
-                $qty = $data[$QTY];
+                $qty = $data[$indexes['qty']];
                 if (!is_numeric($qty)) {
                     $qty = 1.0;
                 }
             }
-            $size = ($SIZE1 === false) ? '' : substr($data[$SIZE1], 0, 25);
-            $upc = $data[$UPC];
+            $size = ($indexes['size'] === false) ? '' : substr($data[$indexes['size']], 0, 25);
+            $upc = $data[$indexes['upc']];
             $upc = str_replace(' ', '', $upc);
             $upc = str_replace('-', '', $upc);
             if (strlen($upc) > 13) {
@@ -221,20 +202,21 @@ class DefaultUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
             // zeroes isn't a real item, skip it
             if ($upc == "0000000000000")
                 continue;
-            if ($_SESSION['vUploadCheckDigits'])
+            if ($this->session->vUploadCheckDigits)
                 $upc = '0'.substr($upc,0,12);
+            $aliases = array(array('upc' => $upc, 'isPrimary'=>1, 'multiplier'=>1));
             if (isset($SKU_TO_PLU_MAP[$sku])) {
-                $upc = $SKU_TO_PLU_MAP[$sku];
+                $aliases = $SKU_TO_PLU_MAP[$sku];
             }
-            $category = ($CATEGORY === false) ? 0 : $data[$CATEGORY];
+            $category = ($indexes['vDept'] === false) ? 0 : $data[$indexes['vDept']];
 
             $reg_unit = '';
-            if ($REG_UNIT !== false) {
-                $reg_unit = trim($data[$REG_UNIT]);
+            if ($indexes['unitCost'] !== false) {
+                $reg_unit = trim($data[$indexes['unitCost']]);
                 $reg_unit = $this->priceFix($reg_unit);
             }
-            if (!is_numeric($reg_unit) && $REG_COST !== false) {
-                $reg = trim($data[$REG_COST]);
+            if (!is_numeric($reg_unit) && $indexes['cost'] !== false) {
+                $reg = trim($data[$indexes['cost']]);
                 $reg = $this->priceFix($reg);
                 if (is_numeric($reg)) {
                     $reg_unit = $reg / $qty;
@@ -250,12 +232,12 @@ class DefaultUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
                 continue;
 
             $net_unit = '';
-            if ($NET_UNIT !== false) {
-                $net_unit = trim($data[$NET_UNIT]);
+            if ($indexes['unitSaleCost'] !== false) {
+                $net_unit = trim($data[$indexes['unitSaleCost']]);
                 $net_unit = $this->priceFix($net_unit);
             }
-            if (!is_numeric($net_unit) && $NET_COST !== false) {
-                $net = trim($data[$NET_COST]);
+            if (!is_numeric($net_unit) && $indexes['saleCost'] !== false) {
+                $net = trim($data[$indexes['saleCost']]);
                 $net = $this->priceFix($net);
                 if (is_numeric($net)) {
                     $net_unit = $net / $qty;
@@ -265,7 +247,7 @@ class DefaultUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
             if (empty($net_unit)) {
                 $net_unit = 0.00;
             }
-            $srp = ($SRP === false) ? 0.00 : trim($data[$SRP]);
+            $srp = ($indexes['srp'] === false) ? 0.00 : trim($data[$indexes['srp']]);
 
             if ($net_unit == $reg_unit) {
                 $net_unit = 0.00; // not really a sale
@@ -279,41 +261,39 @@ class DefaultUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
                 $srp = 0;
             }
 
-            $brand = str_replace("'","",$brand);
-            $description = str_replace("'","",$description);
+            foreach ($aliases as $alias) {
+                $args = array(
+                    $brand, 
+                    $alias['isPrimary'] ? $sku : $alias['upc'],
+                    $size, $alias['upc'],
+                    $qty, $reg_unit, $description, $category,
+                    $VENDOR_ID, $net_unit, date('Y-m-d H:i:s'), $srp
+                );
+                $dbc->execute($itemP, $args);
 
-            $args = array(
-                $brand, 
-                $sku, 
-                $size,
-                $upc,
-                $qty,
-                $reg_unit,
-                $description,
-                $category,
-                $VENDOR_ID,
-                $net_unit,
-                date('Y-m-d H:i:s'),
-                $srp
-            );
-            $dbc->execute($itemP, $args);
+                if ($srpP) {
+                    $dbc->execute($srpP,array($VENDOR_ID,$alias['upc'],$srp));
+                }
 
-            if ($srpP) {
-                $dbc->exec_statement($srpP,array($VENDOR_ID,$upc,$srp));
-            }
-
-            if ($_SESSION['vUploadChangeCosts']) {
-                $pm->reset();
-                $pm->upc($upc);
-                $pm->default_vendor_id($VENDOR_ID);
-                foreach ($pm->find('store_id') as $obj) {
-                    $obj->cost($reg_unit);
-                    $obj->save();
+                if ($this->session->vUploadChangeCosts) {
+                    $this->updateCost($pmodel, $alias['upc'], $VENDOR_ID, $reg_unit*$alias['multiplier']);
                 }
             }
         }
+        $dbc->commitTransaction();
 
         return true;
+    }
+
+    private function updateCost($pmodel, $upc, $vendorID, $cost)
+    {
+        $pmodel->reset();
+        $pmodel->upc($upc);
+        $pmodel->default_vendor_id($vendorID);
+        foreach ($pmodel->find('store_id') as $obj) {
+            $obj->cost($cost);
+            $obj->save();
+        }
     }
 
     /* clear tables before processing */
@@ -322,34 +302,20 @@ class DefaultUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
         global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
 
-        if (!isset($_SESSION['vid'])){
-            $this->error_details = 'Missing vendor setting';
-            return False;
-        }
-        $VENDOR_ID = $_SESSION['vid'];
-
-        $p = $dbc->prepare_statement("SELECT vendorID FROM vendors WHERE vendorID=?");
-        $idR = $dbc->exec_statement($p,array($VENDOR_ID));
-        if ($dbc->num_rows($idR) == 0){
-            $this->error_details = 'Cannot find vendor';
-            return False;
+        try {
+            list($VENDOR_ID, $vendorName) = $this->validateVendorID($dbc);
+        } catch (Exception $ex) {
+            $this->error_details = $ex->getMessage();
+            return false;
         }
 
-        $p = $dbc->prepare_statement("DELETE FROM vendorItems WHERE vendorID=?");
-        $dbc->exec_statement($p,array($VENDOR_ID));
-        $p = $dbc->prepare_statement("DELETE FROM vendorSRPs WHERE vendorID=?");
-        $dbc->exec_statement($p,array($VENDOR_ID));
+        $delP = $dbc->prepare("DELETE FROM vendorItems WHERE vendorID=?");
+        $dbc->execute($delP,array($VENDOR_ID));
+        $delP = $dbc->prepare("DELETE FROM vendorSRPs WHERE vendorID=?");
+        $dbc->execute($delP,array($VENDOR_ID));
 
-        if (FormLib::get_form_value('rm_cds') !== '') {
-            $_SESSION['vUploadCheckDigits'] = true;
-        } else {
-            $_SESSION['vUploadCheckDigits'] = false;
-        }
-        if (FormLib::get('up_costs') !== '') {
-            $_SESSION['vUploadChangeCosts'] = true;
-        } else {
-            $_SESSION['vUploadChangeCosts'] = false;
-        }
+        $this->session->vUploadCheckDigits = FormLib::get('rm_cds') !== '' ? true : false;
+        $this->session->vUploadChangeCosts = FormLib::get('up_costs') !== '' ? true : false;
     }
 
     function preview_content()
@@ -363,34 +329,32 @@ class DefaultUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
         $ret = "<p>Price data import complete</p>";
         $ret .= sprintf('<p><a class="btn btn-default" 
             href="%sbatches/UNFI/RecalculateVendorSRPs.php?id=%d">Update SRPs</a></p>',
-            $this->config->get('URL'), $_SESSION['vid']);
+            $this->config->get('URL'), $this->session->vid);
 
-        unset($_SESSION['vid']);
-        unset($_SESSION['vUploadCheckDigits']);
-        unset($_SESSION['vUploadChangeCosts']);
+        unset($this->session->vid);
+        unset($this->session->vUploadCheckDigits);
+        unset($this->session->vUploadChangeCosts);
 
         return $ret;
     }
 
     function form_content()
     {
-        global $FANNIE_OP_DB;
-        $vid = FormLib::get_form_value('vid');
+        $vid = FormLib::get('vid');
         if ($vid === ''){
             $this->add_onload_command("\$('#FannieUploadForm').remove();");
             return '<div class="alert alert-danger">Error: No Vendor Selected</div>';
         }
-        $dbc = FannieDB::get($FANNIE_OP_DB);
-        $vp = $dbc->prepare_statement('SELECT vendorName FROM vendors WHERE vendorID=?');
-        $vr = $dbc->exec_statement($vp,array($vid));
-        if ($dbc->num_rows($vr)==0){
+        $dbc = $this->connection;
+        $vendP = $dbc->prepare('SELECT vendorName FROM vendors WHERE vendorID=?');
+        $vName = $dbc->getValue($vendP,array($vid));
+        if ($vName === false) {
             $this->add_onload_command("\$('#FannieUploadForm').remove();");
             return '<div class="alert alert-danger">Error: No Vendor Found</div>';
         }
-        $vrow = $dbc->fetch_row($vr);
-        $_SESSION['vid'] = $vid;
+        $this->session->vid = $vid;
         return '<div class="well"><legend>Instructions</legend>
-            Upload a price file for <i>'.$vrow['vendorName'].'</i> ('.$vid.'). File must be
+            Upload a price file for <i>'.$vName.'</i> ('.$vid.'). File must be
             CSV. Files &gt; 2MB may be zipped.</div>';
     }
 
@@ -405,7 +369,7 @@ class DefaultUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
         return parent::preprocess();
     }
 
-    private function pricefix($str)
+    private function priceFix($str)
     {
         $str = str_replace('$', '', $str);
         $str = str_replace(',', '', $str);
@@ -456,7 +420,12 @@ class DefaultUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
             </ul>
         </p>';
     }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->preview_content()));
+    }
 }
 
-FannieDispatch::conditionalExec(false);
+FannieDispatch::conditionalExec();
 

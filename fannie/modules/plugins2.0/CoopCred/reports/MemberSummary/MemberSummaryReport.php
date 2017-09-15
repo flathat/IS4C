@@ -387,12 +387,12 @@ class MemberSummaryReport extends FannieReportPage
         // summary
         }
 
-        $statement = $dbc->prepare_statement("$query");
+        $statement = $dbc->prepare("$query");
         if ($statement === False) {
             $ret[] = "***Error preparing: $query";
             return $ret;
         }
-        $results = $dbc->exec_statement($statement,$args);
+        $results = $dbc->execute($statement,$args);
         if ($results === False) {
             $allArgs = implode(' : ',$args);
             $ret[] = "***Error executing: $query with: $allArgs";
@@ -401,7 +401,7 @@ class MemberSummaryReport extends FannieReportPage
 
         if ($this->reportType == "detail") {
             // Compose the rows of the table.
-            while ($row = $dbc->fetch_array($results)) {
+            while ($row = $dbc->fetchRow($results)) {
                 // Array of cells of a row in the report table.
                 $record = array();
                 if ($this->reportType == "detail")
@@ -450,7 +450,7 @@ class MemberSummaryReport extends FannieReportPage
             $lastCardNo = 0;
             $record = array();
             $rowCount = 0;
-            while ($row = $dbc->fetch_array($results)) {
+            while ($row = $dbc->fetchRow($results)) {
                 if ($row['cardNo'] != $lastCardNo && $lastCardNo != 0) {
                     $ret[] = $record;
                     // Array of cells of a row in the report table.
@@ -679,6 +679,5 @@ title="Tick to display with sorting from column heads; un-tick for a plain formt
 // /class MemberSummaryReport
 }
 
-FannieDispatch::conditionalExec(false);
+FannieDispatch::conditionalExec();
 
-?>

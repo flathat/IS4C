@@ -49,8 +49,8 @@ class RecalculateVendorSRPs extends FannieRESTfulPage
 
         $id = $this->id;
 
-        $delQ = $dbc->prepare_statement("DELETE FROM vendorSRPs WHERE vendorID=?");
-        $delR = $dbc->exec_statement($delQ,array($id));
+        $delQ = $dbc->prepare("DELETE FROM vendorSRPs WHERE vendorID=?");
+        $delR = $dbc->execute($delQ,array($id));
 
         if ($this->config->get('COOP_ID') == 'WEFC_Toronto') {
             $query = '
@@ -95,7 +95,7 @@ class RecalculateVendorSRPs extends FannieRESTfulPage
                     AND (a.margin IS NOT NULL OR b.margin IS NOT NULL)';
         }
         $fetchP = $dbc->prepare($query);
-        $fetchR = $dbc->exec_statement($fetchP, array($id));
+        $fetchR = $dbc->execute($fetchP, array($id));
         $upP = $dbc->prepare('
             UPDATE vendorItems
             SET srp=?,
@@ -104,10 +104,16 @@ class RecalculateVendorSRPs extends FannieRESTfulPage
                 AND sku=?');
         $insP = false;
         if ($dbc->tableExists('vendorSRPs')) {
-            $insP = $dbc->prepare_statement('INSERT INTO vendorSRPs VALUES (?,?,?)');
+            $insP = $dbc->prepare('INSERT INTO vendorSRPs VALUES (?,?,?)');
         }
         $rounder = new \COREPOS\Fannie\API\item\PriceRounder();
-        while ($fetchW = $dbc->fetch_array($fetchR)) {
+        $upcs = array();
+        $dbc->startTransaction();
+        while ($fetchW = $dbc->fetchRow($fetchR)) {
+            if (isset($upcs[$fetchW['upc']])) {
+                continue;
+            }
+            $upcs[$fetchW['upc']] = true;
             // calculate a SRP from unit cost and desired margin
             $adj = \COREPOS\Fannie\API\item\Margin::adjustedCost($fetchW['cost'], $fetchW['discount'], $fetchW['shipping']);
             $srp = \COREPOS\Fannie\API\item\Margin::toPrice($adj, $fetchW['margin']);
@@ -123,9 +129,10 @@ class RecalculateVendorSRPs extends FannieRESTfulPage
 
             $upR = $dbc->execute($upP, array($srp, $id, $fetchW['sku']));
             if ($insP) {
-                $insR = $dbc->exec_statement($insP,array($id,$fetchW['upc'],$srp));
+                $insR = $dbc->execute($insP,array($id,$fetchW['upc'],$srp));
             }
         }
+        $dbc->commitTransaction();
 
         $ret = "<b>SRPs have been updated</b><br />";
         $ret .= sprintf('<p>
@@ -170,8 +177,8 @@ class RecalculateVendorSRPs extends FannieRESTfulPage
     {
         global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
-        $q = $dbc->prepare_statement("SELECT vendorID,vendorName FROM vendors ORDER BY vendorName");
-        $r = $dbc->exec_statement($q);
+        $q = $dbc->prepare("SELECT vendorID,vendorName FROM vendors ORDER BY vendorName");
+        $r = $dbc->execute($q);
         $opts = "";
         while($w = $dbc->fetch_row($r))
             $opts .= "<option value=$w[0]>$w[1]</option>";
@@ -311,8 +318,14 @@ class RecalculateVendorSRPs extends FannieRESTfulPage
 
         return $ret;
     }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->get_view()));
+        $this->id = 1;
+        $phpunit->assertNotEquals(0, strlen($this->get_id_view()));
+    }
 }
 
-FannieDispatch::conditionalExec(false);
+FannieDispatch::conditionalExec();
 
-?>

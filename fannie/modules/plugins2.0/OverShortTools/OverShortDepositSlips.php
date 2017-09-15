@@ -52,11 +52,12 @@ class OverShortDepositSlips extends FanniePage
         $dbc = FannieDB::get($FANNIE_PLUGIN_SETTINGS['OverShortDatabase']);
         $start = FormLib::get_form_value('startDate');
         $end = FormLib::get_form_value('endDate');
+        $store = FormLib::get('store');
 
-        $fs = 12;
+        $font_size = 12;
 
         $pdf = new FPDF("P","mm","A4"); 
-        $pdf->SetFont('Arial','',$fs);
+        $pdf->SetFont('Arial','',$font_size);
         $pdf->SetMargins(5,5,5);
         $pdf->SetAutoPageBreak(True,5);
         $pdf->AddPage();
@@ -71,12 +72,13 @@ class OverShortDepositSlips extends FanniePage
         */
         $query = "select checks from dailyChecks where
             date BETWEEN ? AND ?
+                AND storeID=?
             order by 
               case when id >= 68 then id+1
               when id = 43 then 68
               else id end";
-        $prep = $dbc->prepare_statement($query);
-        $result = $dbc->exec_statement($prep, array($start, $end));
+        $prep = $dbc->prepare($query);
+        $result = $dbc->execute($prep, array($start, $end, $store));
         $acc = array();
         $counts = array();
         $ckSum = 0;
@@ -102,10 +104,10 @@ class OverShortDepositSlips extends FanniePage
                 if (is_numeric($v)) $vcount++;
             }
 
-            // accumulate up to 57 checks
+            // accumulate up to 56 checks
             // that's max column size
             // put any leftovers in $extra
-            if ($vcount + count($acc) <= 57){
+            if ($vcount + count($acc) <= 56){
                 foreach($vals as $v){
                     if (is_numeric($v)) array_push($acc,$v);
                 }
@@ -122,7 +124,7 @@ class OverShortDepositSlips extends FanniePage
                 $str1 = "WFC #$num\n";
                 $sum = 0;
                 $str = "";
-                for($j=0;$j<57;$j++){
+                for($j=0;$j<56;$j++){
                     if ($j < count($acc)){
                         $str .= sprintf("%.2f",$acc[$j]);
                         $sum += $acc[$j];
@@ -141,12 +143,12 @@ class OverShortDepositSlips extends FanniePage
                 $pdf->SetXY(($width-0)*$j + ($width+7)*($real-1-$j),10);
                 $pdf->MultiCell($width+($j==0?-1:$k),5,$str1,'R','L');
                 $pdf->SetX(($width-0)*$j+ ($width+7)*($real-1-$j));
-                $pdf->SetFontSize($fs-1);
+                $pdf->SetFontSize($font_size-1);
                 $pdf->MultiCell($width+($j==0?-1:$k),4.35,$str,'R','L');
                 $pdf->SetX(($width-0)*$j+ ($width+7)*($real-1-$j));
-                $pdf->SetFont('Arial','B',$fs-1);
+                $pdf->SetFont('Arial','B',$font_size-1);
                 $pdf->MultiCell($width+($j==0?-1:$k),5,$str2,'R','L');
-                $pdf->SetFont('Arial','',$fs-1);
+                $pdf->SetFont('Arial','',$font_size-1);
                 $pdf->SetX(($width-0)*$j+ ($width+7)*($real-1-$j));
                 $pdf->MultiCell($width+($j==0?-1:$k),5,$str3,'R','L');
                 
@@ -169,7 +171,7 @@ class OverShortDepositSlips extends FanniePage
         if (count($acc) > 0){
             $sum = 0;
             $str = "";
-            for($j=0;$j<57;$j++){
+            for($j=0;$j<56;$j++){
                 if ($j < count($acc)){
                     $str .= sprintf("%.2f",$acc[$j]);
                     $sum += $acc[$j];
@@ -188,12 +190,12 @@ class OverShortDepositSlips extends FanniePage
             $pdf->SetXY(($width-0)*$j + ($width+7)*($real-1-$j),10);
             $pdf->MultiCell($width+($j==0?-1:$k),5,$str1,'R','L');
             $pdf->SetX(($width-0)*$j+ ($width+7)*($real-1-$j));
-            $pdf->SetFontSize($fs-1);
+            $pdf->SetFontSize($font_size-1);
             $pdf->MultiCell($width+($j==0?-1:$k),4.35,$str,'R','L');
             $pdf->SetX(($width-0)*$j+ ($width+7)*($real-1-$j));
-            $pdf->SetFont('Arial','B',$fs);
+            $pdf->SetFont('Arial','B',$font_size);
             $pdf->MultiCell($width+($j==0?-1:$k),5,$str2,'R','L');
-            $pdf->SetFont('Arial','',$fs);
+            $pdf->SetFont('Arial','',$font_size);
             $pdf->SetX(($width-0)*$j+ ($width+7)*($real-1-$j));
             $pdf->MultiCell($width+($j==0?-1:$k),5,$str3,'R','L');
         }
@@ -210,30 +212,30 @@ class OverShortDepositSlips extends FanniePage
 
         $pdf->SetXY(($width+2)*4 + 5,10);
         $pdf->SetFillColor(0,0,0);
-        $pdf->SetTextColor(255,255,255);
+        $pdf->SetTextColor(0,0,0);
         $pdf->SetFontSize(12);
         $str = "Whole Foods Community\nCO-OP Deposit Slip\n";
         $str .= trim(file_get_contents("acct"),"\r\n")."\n\n";
         $str .= "Date\t".date("m/d/y")."\n";
-        $pdf->MultiCell(55,5,$str,0,'C',1);
+        $pdf->MultiCell(55,8,$str,1,'C');
         
         $pdf->SetTextColor(0,0,0);
         $str = "";
-        for($i=0;$i<10 || $i < count($counts); $i++){
+        for($i=0;$i<5 || $i < count($counts); $i++){
             $str .= "Check # ".($i+1).":";
             if ($i < count($counts))
                 $str .= "\t\t$counts[$i]";
             $str .= "\n";
         }
         $pdf->SetX(($width+2)*4 + 5);
-        $pdf->MultiCell(55,7,$str,'LR','L');
+        $pdf->MultiCell(55,8,$str,'LR','L');
 
         $dbstack = array('buyAmount'=>array(),
                  'depositAmount'=>array());
         $dbQ = "SELECT rowName,denomination,amt FROM dailyDeposit WHERE
-            dateStr = ? AND rowName IN ('buyAmount','depositAmount')";
-        $dbP = $dbc->prepare_statement($dbQ);
-        $dbR = $dbc->exec_statement($dbP,array($dateClause));
+            dateStr = ? AND storeID=? AND rowName IN ('buyAmount','depositAmount')";
+        $dbP = $dbc->prepare($dbQ);
+        $dbR = $dbc->execute($dbP,array($dateClause,$store));
         while($dbW = $dbc->fetch_row($dbR)){
             $dbstack[$dbW[0]][$dbW[1]] = $dbW[2];
         }
@@ -255,25 +257,25 @@ class OverShortDepositSlips extends FanniePage
 
 
         $pdf->SetX(($width+2)*4 + 5);
-        $pdf->Cell(15,7,'Checks','L',0,'L');
-        $pdf->Cell(40,7,"\t$".sprintf('%.2f',$ckSum),'TBR',1);
+        $pdf->Cell(15,8,'Checks','L',0,'L');
+        $pdf->Cell(40,8,"\t$".sprintf('%.2f',$ckSum),'TBR',1);
         //$pdf->Cell(40,7,"",'TBR',1);
         $pdf->SetX(($width+2)*4 + 5);
-        $pdf->Cell(15,7,'Coin','L',0,'L');
-        $pdf->Cell(40,7,"\t$".sprintf('%.2f',$coin),'TBR',1);
+        $pdf->Cell(15,8,'Coin','L',0,'L');
+        $pdf->Cell(40,8,"\t$".sprintf('%.2f',$coin),'TBR',1);
         $pdf->SetX(($width+2)*4 + 5);
-        $pdf->Cell(15,7,'Cash','L',0,'L');
-        $pdf->Cell(40,7,"\t$".sprintf('%.2f',$cash),'TBR',1);
+        $pdf->Cell(15,8,'Cash','L',0,'L');
+        $pdf->Cell(40,8,"\t$".sprintf('%.2f',$cash),'TBR',1);
         $pdf->SetX(($width+2)*4 + 5);
-        $pdf->Cell(15,7,'Other','L',0,'L');
-        $pdf->Cell(40,7,"\t$".sprintf('%.2f',$junk),'TBR',1);
+        $pdf->Cell(15,8,'Other','L',0,'L');
+        $pdf->Cell(40,8,"\t$".sprintf('%.2f',$junk),'TBR',1);
         $pdf->SetX(($width+2)*4 + 5);
-        $pdf->Cell(15,7,'Total','L',0,'L');
-        $pdf->Cell(40,7,"\t$".sprintf('%.2f',$junk+$cash+$coin+$ckSum),'TBR',1);
+        $pdf->Cell(15,8,'Total','L',0,'L');
+        $pdf->Cell(40,8,"\t$".sprintf('%.2f',$junk+$cash+$coin+$ckSum),'TBR',1);
 
         $pdf->SetTextColor(255,255,255);
         $pdf->SetX(($width+2)*4+5);
-        $pdf->MultiCell(55,5,"Change Request",0,'C',1);
+        $pdf->MultiCell(55,8,"Change Request",0,'C',1);
 
         $pdf->SetTextColor(0,0,0);
         $denoms = array('0.01','0.05','0.10','0.25','1.00','5.00','10.00');
@@ -283,14 +285,14 @@ class OverShortDepositSlips extends FanniePage
                 $total = $dbstack['buyAmount']['0.01'];
             foreach($denoms as $d){
                 $pdf->SetX(($width+2)*4+5);
-                $pdf->Cell(10,7,'$','L',0,'L');
-                $pdf->Cell(10,7,"$d",0,0,'R');
-                $pdf->Cell(35,7,$dbstack['buyAmount'][$d],'RB',1,'C');
+                $pdf->Cell(10,8,'$','L',0,'L');
+                $pdf->Cell(10,8,"$d",0,0,'R');
+                $pdf->Cell(35,8,$dbstack['buyAmount'][$d],'RB',1,'C');
             }
         }
         $pdf->SetX(($width+2)*4+5);
-        $pdf->Cell(20,7,"Total:",'LB',0,'R');
-        $pdf->Cell(35,7,sprintf('%.2f',$total),'RB',1,'C');
+        $pdf->Cell(20,8,"Total:",'LB',0,'R');
+        $pdf->Cell(35,8,sprintf('%.2f',$total),'RB',1,'C');
 
         $pdf->Output('deposit.pdf','I');
     }
@@ -341,6 +343,17 @@ class OverShortDepositSlips extends FanniePage
                 </div>
             </div>
         </div>
+        <div class="panel panel-default">
+            <div class="panel-heading">Store</div>
+            <div class="panel-body">
+                <div class="form-group">
+                <?php
+                $stores = FormLib::storePicker('store', false);
+                echo $stores['html'];
+                ?>
+                </div>
+            </div>
+        </div>
         </div>
         </div> <!-- end row -->
         <p>
@@ -353,6 +366,5 @@ class OverShortDepositSlips extends FanniePage
     }
 }
 
-FannieDispatch::conditionalExec(false);
+FannieDispatch::conditionalExec();
 
-?>

@@ -21,6 +21,10 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\DisplayLib;
+use COREPOS\pos\parser\Parser;
+
 class QuickKeyLauncher extends Parser 
 {
 
@@ -28,21 +32,20 @@ class QuickKeyLauncher extends Parser
 
     function check($str)
     {
+        $tmp = false;
         if (strstr($str,"QK")) {
             $tmp = explode("QK",$str);
-            $ct = count($tmp);
-            if ($ct <= 2 && is_numeric($tmp[$ct-1])) {
-                return true;
-            }
         } elseif (strstr($str,"QO")) {
             $tmp = explode("QO",$str);
-            $ct = count($tmp);
-            if ($ct <= 2 && is_numeric($tmp[$ct-1])) {
-                $this->mode = 'overlay';
-                return true;
-            }
+            $this->mode = 'overlay';
         }
-        return false;
+
+        $len = count($tmp);
+        if ($tmp && $len <= 2 && is_numeric($tmp[$len-1])) {
+            return true;
+        } else {
+            return false;
+        }
     }
 
     function parse($str)
@@ -63,31 +66,38 @@ class QuickKeyLauncher extends Parser
         } else {
             $tmp = explode('QO', $str);
             $num = $tmp[1]; 
-            $ret['output'] = $this->overlayKeys($num);
+            $ret['output'] = $this->overlayKeys($num, $tmp[0]);
         }
 
         return $ret;
     }
 
-    private function overlayKeys($number)
+    public function getKeys($number)
     {
-        $db = Database::pDataConnect();
+        $dbc = Database::pDataConnect();
         $my_keys = array();
-        if ($db->table_exists('QuickLookups')) {
-            $prep = $db->prepare('
+        if (CoreLocal::get('NoCompat') == 1 || $dbc->table_exists('QuickLookups')) {
+            $prep = $dbc->prepare('
                 SELECT label,
                     action
                 FROM QuickLookups
                 WHERE lookupSet = ?
                 ORDER BY sequence');
-            $res = $db->execute($prep, array($number));
-            while ($row = $db->fetch_row($res)) {
+            $res = $dbc->execute($prep, array($number));
+            while ($row = $dbc->fetch_row($res)) {
                 $my_keys[] = new quickkey($row['label'], $row['action']);
             }
         }
         if (count($my_keys) == 0) {
-            include(dirname(__FILE__) . '/quickkeys/keys/' . $number . '.php');
+            include(dirname(__FILE__) . '/quickkeys/noauto/' . $number . '.php');
         }
+
+        return $my_keys;
+    }
+
+    private function overlayKeys($number, $preInput)
+    {
+        $my_keys = $this->getKeys($number);
         if (count($my_keys) == 0) {
             return DisplayLib::boxMsg('Menu not found', '', false, DisplayLib::standardClearButton());
         }
@@ -105,18 +115,18 @@ class QuickKeyLauncher extends Parser
                 <div class="qkBox">
                     <div id="qkDiv%d">
                         <button type="button" class="quick_button pos-button coloredBorder"
-                            onclick="$(\'#reginput\').val($(\'#reginput\').val()+\'%s\');submitWrapper();">
+                            onclick="$(\'#reginput\').val($(\'#reginput\').val()+\'%s\');pos2.submitWrapper();">
                         %s
                         </button>
                     </div>
                 </div>',
-                $i, $my_keys[$i]->output_text, $my_keys[$i]->title);
+                $i, $preInput . $my_keys[$i]->output_text, $my_keys[$i]->title);
         }
         if (!$clearButton) {
             $ret .= '<div class="qkBox">
                 <div>
                     <button type="button" class="quick_button pos-button errorColoredArea"
-                        onclick="$(\'#reginput\').val(\'CL\');submitWrapper();">
+                        onclick="$(\'#reginput\').val(\'CL\');pos2.submitWrapper();">
                         Clear <span class="smaller">[clear]</span>
                     </button>
                 </div>
@@ -143,4 +153,3 @@ class QuickKeyLauncher extends Parser
     }
 }
 
-?>

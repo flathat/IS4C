@@ -151,29 +151,56 @@ class FormLib extends \COREPOS\common\FormLib
 
     public static function date_range_picker($one='date1',$two='date2',$week_start=1)
     {
+        $week_start = (!FannieConfig::config('FANNIE_WEEK_START')) ? 1 :  FannieConfig::config('FANNIE_WEEK_START');
         return self::dateRangePicker($one, $two, $week_start);
     }
 
     /**
       Get <select> box for the store ID
       @param $field_name [string] select.name (default 'store')
+      $param $all [string] include an "all" option (default true)
       @return keyed [array]
         - html => [string] select box
         - names => [array] store names
     */
-    public static function storePicker($field_name='store')
+    public static function storePicker($field_name='store', $all=true)
     {
         $op_db = FannieConfig::config('OP_DB');
         $dbc = FannieDB::getReadOnly($op_db);
 
+        $clientIP = filter_input(INPUT_SERVER, 'REMOTE_ADDR');
+        $ranges = FannieConfig::config('STORE_NETS');
+
         $stores = new StoresModel($dbc);
+        /* $current and $labels[0] per WEFC_Toronto.
+         * WEFC_Toronto did this in connection with purchase orders
+         */
         $current = FannieConfig::config('STORE_ID',0);
         $labels = array(0 => _('All Stores'));
+        /* $current per upstream/version-2.7
+        $current = FormLib::get($field_name, false);
+         */
         $ret = '<select name="' . $field_name . '" class="form-control">';
-        $ret .= '<option value="0">' . $labels[0] . '</option>';
+        if ($all) {
+            $labels = array(0 => _('All Stores'));
+            $ret .= '<option value="0">' . $labels[0] . '</option>';
+        } else {
+            $labels = array();
+        }
         foreach($stores->find('storeID') as $store) {
+            $selected = '';
+            if ($store->storeID() == $current) {
+                $selected = 'selected';
+            } elseif (
+                $current === false
+                && isset($ranges[$store->storeID()]) 
+                && class_exists('\\Symfony\\Component\\HttpFoundation\\IpUtils')
+                && \Symfony\Component\HttpFoundation\IpUtils::checkIp($clientIP, $ranges[$store->storeID()])
+                ) {
+                $selected = 'selected';
+            }
             $ret .= sprintf('<option %s value="%d">%s</option>',
-                    ($store->storeID() == $current ? 'selected' : ''),
+                    $selected,
                     $store->storeID(),
                     $store->description()
             );
@@ -191,14 +218,23 @@ class FormLib extends \COREPOS\common\FormLib
       Generate a very standard form with date and department fields
       @return [string] html form
     */
-    public static function dateAndDepartmentForm()
+    public static function dateAndDepartmentForm($standardFieldNames=false)
     {
         ob_start();
         ?>
 <form method="get" class="form-horizontal">
 <div class="row">
     <div class="col-sm-6">
-        <?php echo self::standardDepartmentFields('buyer'); ?>
+        <?php echo $standardFieldNames ? self::standardDepartmentFields('super-dept', 'departments', 'dept-start', 'dept-end') : self::standardDepartmentFields('buyer');  ?>
+        <div class="form-group">
+            <label class="col-sm-4 control-label">Store</label>
+            <div class="col-sm-8">
+            <?php
+            $stores = FormLib::storePicker();
+            echo $stores['html'];
+            ?>
+            </div>
+        </div>
         <div id="date-dept-form-left-col"></div> 
     </div>
     <?php echo self::standardDateFields(); ?>
@@ -339,7 +375,12 @@ class FormLib extends \COREPOS\common\FormLib
           Precalculate options for superdept and dept selects
         */
         $dbc = FannieDB::getReadOnly(FannieConfig::config('OP_DB'));
-        $superR = $dbc->query('SELECT superID, super_name FROM superDeptNames');
+        $def = $dbc->tableDefinition('superDeptNames');
+        $superQ = 'SELECT superID, super_name FROM superDeptNames';
+        if (isset($def['deleted'])) {
+            $superQ .= ' WHERE deleted=0 ';
+        }
+        $superR = $dbc->query($superQ);
         $super_opts = '';
         while ($w = $dbc->fetchRow($superR)) {
             $super_opts .= sprintf('<option value="%d">%s</option>',
@@ -520,6 +561,13 @@ HTML;
         $end_date = self::getDate('date2', date('Y-m-d'));
         $dlog = DTransactionsModel::selectDlog($start_date, $end_date);
         $lookupType = self::get('lookup-type', 'dept');
+        $store = self::get('store', false);
+        if ($store === false) {
+            $store = COREPOS\Fannie\API\lib\Store::getIdByIp();
+            if ($store === false) {
+                $store = 0;
+            }
+        }
 
         $query = '
             FROM ' . $dlog . ' AS t 
@@ -528,6 +576,7 @@ HTML;
                 LEFT JOIN MasterSuperDepts AS m ON t.department=m.dept_ID 
                 LEFT JOIN subdepts AS b ON p.subdept=b.subdept_no
                 LEFT JOIN vendors AS v ON p.default_vendor_id=v.vendorID
+                LEFT JOIN vendorItems AS i ON p.upc=i.upc AND p.default_vendor_id=i.vendorID
                 LEFT JOIN prodExtra AS x ON t.upc=x.upc ';
         $args = array();
         switch ($lookupType) {
@@ -550,6 +599,8 @@ HTML;
         $query .= ' WHERE t.tdate BETWEEN ? AND ? ';
         $args[] = $start_date . ' 00:00:00';
         $args[] = $end_date . ' 23:59:59';
+        $query .= ' AND ' . DTrans::isStoreID($store, 't') . ' ';
+        $args[] = $store;
 
         switch ($lookupType) {
             case 'dept':
@@ -723,7 +774,7 @@ HTML;
         foreach ($pairs as $pair) {
             if (substr($pair, -1) == '=') {
                 $ret[substr($pair, 0, strlen($pair)-1)] = '';
-            } else {
+            } elseif (strstr($pair, '=')) {
                 list($key, $val) = explode('=', $pair, 2);
                 $ret[$key] = $val;
             }

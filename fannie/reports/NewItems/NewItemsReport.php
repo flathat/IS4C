@@ -67,6 +67,7 @@ class NewItemsReport extends FannieReportPage
         $deptStart = FormLib::get('deptStart');
         $deptEnd = FormLib::get('deptEnd');
         $deptMulti = FormLib::get('departments', array());
+        $subs = FormLib::get('subdepts', array());
     
         $buyer = FormLib::get('buyer', '');
 
@@ -86,6 +87,10 @@ class NewItemsReport extends FannieReportPage
             list($conditional, $args) = DTrans::departmentClause($deptStart, $deptEnd, $deptMulti, $args, 'p');
             $where .= $conditional;
         }
+        if (count($subs) > 0) {
+            list($inStr, $args) = $dbc->safeInClause($subs, $args);
+            $where .= " AND p.subdept IN ($inStr) ";
+        }
         $args[] = $date1.' 00:00:00';
         $args[] = $date2.' 23:59:59';
 
@@ -104,23 +109,26 @@ class NewItemsReport extends FannieReportPage
             HAVING entryDate BETWEEN ? AND ?
             ORDER BY entryDate";
 
-        $prep = $dbc->prepare_statement($query);
-        $result = $dbc->exec_statement($query, $args);
+        $prep = $dbc->prepare($query);
+        $result = $dbc->execute($query, $args);
 
         $data = array();
-        while($row = $dbc->fetch_row($result)) {
-            $record = array(
-                $row['entryDate'],
-                $row['upc'],
-                $row['description'],
-                $row['department'],
-                $row['dept_name'],
-            );
-
-            $data[] = $record;
+        while ($row = $dbc->fetchRow($result)) {
+            $data[] = $this->rowToRecord($row);
         }
 
         return $data;
+    }
+
+    private function rowToRecord($row)
+    {
+        return array(
+            $row['entryDate'],
+            $row['upc'],
+            $row['description'],
+            $row['department'],
+            $row['dept_name'],
+        );
     }
 
     public function form_content()
@@ -134,6 +142,13 @@ class NewItemsReport extends FannieReportPage
             List items that were added to POS
             in the given date range.
             </p>';
+    }
+
+    public function unitTest($phpunit)
+    {
+        $data = array('entryDate'=>'2000-01-01','upc'=>'4011',
+            'description'=>'test','department'=>1,'dept_name'=>'test');
+        $phpunit->assertInternalType('array', $this->rowToRecord($data));
     }
 }
 

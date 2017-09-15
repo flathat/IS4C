@@ -21,10 +21,11 @@
 
 *********************************************************************************/
 
-namespace COREPOS\Fannie\API\webservices 
-{
+namespace COREPOS\Fannie\API\webservices;
+use \FannieDB;
+use \FannieConfig;
 
-class FannieItemInfo extends FannieWebService 
+class FannieItemInfo extends FannieWebService
 {
     
     public $type = 'json'; // json/plain by default
@@ -102,13 +103,5 @@ class FannieItemInfo extends FannieWebService
         }
     }
 
-}
-
-}
-
-namespace 
-{
-    // global namespace wrapper class
-    class FannieItemInfo extends \COREPOS\Fannie\API\webservices\FannieItemInfo {}
 }
 

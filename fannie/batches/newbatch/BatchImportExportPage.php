@@ -32,6 +32,7 @@ class BatchImportExportPage extends FannieRESTfulPage
     protected $auth_classes = array('batches','batches_audited');
     protected $title = 'Batch Import/Export';
     protected $header = 'Batch Import/Export';
+    public $description = '[Batch Import/Export] can import or export sales batches as formatted text (specifically, JSON)';
 
     protected function post_id_handler()
     {
@@ -49,6 +50,9 @@ class BatchImportExportPage extends FannieRESTfulPage
         $batch->owner($json['owner']);
         $batch->transLimit($json['transLimit']);
         $batchID = $batch->save();
+        if ($this->config->get('STORE_MODE') === 'HQ') {
+            StoreBatchMapModel::initBatch($batchID);
+        }
 
         $item = new BatchListModel($this->connection);
         $item->batchID($batchID);
@@ -152,6 +156,14 @@ class BatchImportExportPage extends FannieRESTfulPage
             <p><em>
             Note: exporting & importing batches does not preserve numeric batch IDs.
             </em></p>';
+    }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->get_view()));
+        $this->id = 1;
+        $phpunit->assertNotEquals(0, strlen($this->get_id_view()));
+        $phpunit->assertNotEquals(0, strlen($this->post_id_view()));
     }
 }
 

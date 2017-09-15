@@ -21,8 +21,10 @@
 
 *********************************************************************************/
 
-namespace COREPOS\Fannie\API\webservices 
-{
+namespace COREPOS\Fannie\API\webservices; 
+use COREPOS\Fannie\API\member\MemberREST;
+use \FannieDB;
+use \FannieConfig;
 
 class FannieAutoComplete extends FannieWebService 
 {
@@ -54,7 +56,7 @@ class FannieAutoComplete extends FannieWebService
             return $ret;
         }
 
-        $dbc = \FannieDB::getReadOnly(\FannieConfig::factory()->get('OP_DB'));
+        $dbc = FannieDB::getReadOnly(FannieConfig::factory()->get('OP_DB'));
         switch (strtolower($args->field)) {
             case 'item':
                 $res = false;
@@ -145,19 +147,6 @@ class FannieAutoComplete extends FannieWebService
                 while ($row = $dbc->fetch_row($res)) {
                     $ret[] = $row['vendorName'];
                 }
-                if ($dbc->tableExists('prodExtra')) {
-                    $prep = $dbc->prepare('SELECT distributor
-                                           FROM prodExtra
-                                           WHERE distributor LIKE ?
-                                           GROUP BY distributor
-                                           ORDER BY distributor');
-                    $res = $dbc->execute($prep, array($args->search . '%'));
-                    while ($row = $dbc->fetch_row($res)) {
-                        if (!in_array($row['distributor'], $ret)) {
-                            $ret[] = $row['distributor'];
-                        }
-                    }
-                }
 
                 return $ret;
 
@@ -166,7 +155,7 @@ class FannieAutoComplete extends FannieWebService
             case 'maddress':
             case 'mcity':
             case 'memail':
-                return \COREPOS\Fannie\API\member\MemberREST::autoComplete($args->field, $args->search);
+                return MemberREST::autoComplete($args->field, $args->search);
 
             case 'sku':
                 $query = 'SELECT sku
@@ -215,11 +204,4 @@ class FannieAutoComplete extends FannieWebService
     }
 }
 
-}
-
-namespace 
-{
-    // global namespace wrapper class
-    class FannieAutoComplete extends \COREPOS\Fannie\API\webservices\FannieAutoComplete {}
-}
 

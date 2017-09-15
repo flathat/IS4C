@@ -27,12 +27,12 @@ function confset($key, $value)
     $FILEPATH = realpath(dirname(__FILE__).'/../');
     $lines = array();
     $found = false;
-    $fp = fopen($FILEPATH.'/config.php','r');
-    while($line = fgets($fp)) {
+    $fptr = fopen($FILEPATH.'/config.php','r');
+    while($line = fgets($fptr)) {
         if (strpos($line,"\$$key ") === 0) {
             $lines[] = "\$$key = $value;\n";
             $found = true;
-        } else if (strpos($line,"?>") === 0 && $found == false) {
+        } elseif (strpos($line,"?>") === 0 && $found === false) {
             $lines[] = "\$$key = $value;\n";
             $lines[] = "?>\n";
             $found = true;
@@ -41,11 +41,11 @@ function confset($key, $value)
             $lines[] = $line;
         }
     }
-    fclose($fp);
+    fclose($fptr);
 
     // implies no closing tag was found so new settings
     // still needs to be added
-    if ($found == false) {
+    if ($found === false) {
         $lines[] = "\$$key = $value;\n";
     }
 
@@ -68,11 +68,11 @@ function confset($key, $value)
         }
     }
 
-    $fp = fopen($FILEPATH.'/config.php','w');
+    $fptr = fopen($FILEPATH.'/config.php','w');
     foreach($lines as $line) {
-        fwrite($fp,$line);
+        fwrite($fptr,$line);
     }
-    fclose($fp);
+    fclose($fptr);
 }
 
 function check_db_host($host,$dbms)
@@ -95,8 +95,11 @@ function check_db_host($host,$dbms)
             $port = 1433;
             break;    
         case 'PGSQL':
+        case 'POSTGRES9':
             $port = 5432;
             break;
+        default:
+            return false;
     }
 
     if (strstr($host,":")) {
@@ -265,16 +268,16 @@ function check_writeable($filename, $optional=False, $template=False){
     $status = ($optional) ? 'Optional' : 'Warning';
 
     if (!file_exists($filename) && !$optional && is_writable($filename)){
-        $fp = fopen($filename,'w');
+        $fptr = fopen($filename,'w');
         if ($template !== False){
             switch($template){
             case 'PHP':
-                fwrite($fp,"<?php\n");
-                fwrite($fp,"\n");
+                fwrite($fptr,"<?php\n");
+                fwrite($fptr,"\n");
                 break;
             }
         }
-        fclose($fp);
+        fclose($fptr);
     }
 
     if (!file_exists($filename)){
@@ -293,6 +296,22 @@ function check_writeable($filename, $optional=False, $template=False){
             chown ".whoami()." \"".realpath(dirname($filename))."/".basename($filename)."\"<br />
             chmod 600 \"".realpath(dirname($filename))."/".basename($filename)."\"</div>";
     }
+}
+
+function sanitizeFieldQuoting($current_value)
+{
+    // quoted must not contain single quotes
+    $current_value = str_replace("'", '', $current_value);
+    // must not start with backslash
+    while (strlen($current_value) > 0 && substr($current_value, 0, 1) == "\\") {
+        $current_value = substr($current_value, 1);
+    }
+    // must not end with backslash
+    while (strlen($current_value) > 0 && substr($current_value, -1) == "\\") {
+        $current_value = substr($current_value, 0, strlen($current_value)-1);
+    }
+
+    return $current_value;
 }
 
 /**
@@ -322,17 +341,8 @@ function installTextField($name, &$current_value, $default_value='', $quoted=tru
         if (!is_numeric($current_value) && strtolower($current_value) !== 'true' && strtolower($current_value) !== false) {
             $current_value = (int)$current_value;
         }
-    } else if ($quoted) {
-        // quoted must not contain single quotes
-        $current_value = str_replace("'", '', $current_value);
-        // must not start with backslash
-        while (strlen($current_value) > 0 && substr($current_value, 0, 1) == "\\") {
-            $current_value = substr($current_value, 1);
-        }
-        // must not end with backslash
-        while (strlen($current_value) > 0 && substr($current_value, -1) == "\\") {
-            $current_value = substr($current_value, 0, strlen($current_value)-1);
-        }
+    } elseif ($quoted) {
+        $current_value = sanitizeFieldQuoting($current_value);
     }
 
     confset($name, ($quoted ? "'" . $current_value . "'" : $current_value));
@@ -398,17 +408,8 @@ function installSelectField($name, &$current_value, $options, $default_value='',
         if (!is_numeric($current_value) && strtolower($current_value) !== 'true' && strtolower($current_value) !== 'false') {
             $current_value = (int)$current_value;
         }
-    } else if ($quoted) {
-        // quoted must not contain single quotes
-        $current_value = str_replace("'", '', $current_value);
-        // must not start with backslash
-        while (strlen($current_value) > 0 && substr($current_value, 0, 1) == "\\") {
-            $current_value = substr($current_value, 1);
-        }
-        // must not end with backslash
-        while (strlen($current_value) > 0 && substr($current_value, -1) == "\\") {
-            $current_value = substr($current_value, 0, strlen($current_value)-1);
-        }
+    } elseif ($quoted) {
+        $current_value = sanitizeFieldQuoting($current_value);
     }
 
     confset($name, ($quoted ? "'" . $current_value . "'" : $current_value));
@@ -445,4 +446,30 @@ function installSelectField($name, &$current_value, $options, $default_value='',
     return $ret;
 }
 
-?>
+function installMultiSelectField($name, &$current_value, $options, $default_value=array())
+{
+    if (FormLib::get($name, false) !== false) {
+        $current_value = FormLib::get($name);
+    } elseif ($current_value === null) {
+        $current_value = $default_value;
+    }
+
+    if (!is_array($current_value)) {
+        $current_value = array();
+    }
+    $saveStr = 'array('
+        . implode(',', array_map(function ($i) { return "'" . $i . "'"; }, $current_value))
+        . ')';
+    confset($name, $saveStr);
+
+    $ret = '<select name="' . $name . '[]" class="form-control" multiple size="5">' . "\n";
+    foreach ($options as $opt) {
+        $cleaned = str_replace('\\', '-', $opt);
+        $selected = in_array($opt, $current_value) || in_array($cleaned, $current_value);
+        $ret .= sprintf('<option %s value="%s">%s</option>', ($selected ? 'selected' : ''), $cleaned, $opt);
+    }
+    $ret .= '</select>';
+
+    return $ret;
+}
+

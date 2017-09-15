@@ -1,4 +1,20 @@
 <?php
+
+use COREPOS\pos\lib\Authenticate;
+use COREPOS\pos\lib\CoreState;
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\DisplayLib;
+use COREPOS\pos\lib\DiscountModule;
+use COREPOS\pos\lib\ItemNotFound;
+use COREPOS\pos\lib\JsonLib;
+use COREPOS\pos\lib\MiscLib;
+use COREPOS\pos\lib\Notifier;
+use COREPOS\pos\lib\PrehLib;
+use COREPOS\pos\lib\TransRecord;
+use COREPOS\pos\lib\UdpComm;
+use COREPOS\pos\lib\LocalStorage\WrappedStorage;
+use COREPOS\pos\lib\ItemAction;
+
 /**
  * @backupGlobals disabled
  */
@@ -20,6 +36,7 @@ class BaseLibsTest extends PHPUnit_Framework_TestCase
         $this->assertEquals(1.99, MiscLib::truncate2(1.99));
         $this->assertEquals(1.99, MiscLib::truncate2("1.99"));
         $this->assertEquals(1.35, MiscLib::truncate2("1.345"));
+        $this->assertEquals(0.00, MiscLib::truncate2(""));
 
         $hostCheck = MiscLib::pingport(CoreLocal::get('localhost'),CoreLocal::get('DBMS'));
         $this->assertInternalType('integer', $hostCheck);
@@ -29,8 +46,21 @@ class BaseLibsTest extends PHPUnit_Framework_TestCase
 
         $scale = MiscLib::scaleObject();
         if ($scale !== 0){
-            $this->assertInstanceOf('ScaleDriverWrapper', $scale);
+            $this->assertInstanceOf('COREPOS\\pos\\lib\\DriverWrappers\\ScaleDriverWrapper', $scale);
         }
+
+        MiscLib::goodBeep();
+        MiscLib::rePoll();
+        MiscLib::twoPairs();
+
+        $this->assertEquals(array(1,2), MiscLib::getNumbers(array(1,2)));
+        $this->assertEquals(array(1,2), MiscLib::getNumbers('1,2'));
+        $this->assertEquals(array(1,2), MiscLib::getNumbers('1 2'));
+        $this->assertEquals(array(1,2), MiscLib::getNumbers('1, 2'));
+
+        $this->assertEquals(12.34, MiscLib::centStrToDouble('1234'));
+        $this->assertEquals(0, MiscLib::centStrToDouble(''));
+        $this->assertEquals(-12.34, MiscLib::centStrToDouble('-1234'));
     }
 
     public function testDatabase()
@@ -85,14 +115,17 @@ class BaseLibsTest extends PHPUnit_Framework_TestCase
         if (!class_exists('lttLib')) {
             include(dirname(__FILE__) . '/lttLib.php');
         }
+        $db = Database::mDataConnect();
+        $db->query('truncate table suspended');
         lttLib::clear();
         $record = lttLib::genericRecord(); 
         $record['upc'] = '0000000000000';
         $record['description'] = uniqid('TEST-');
         TransRecord::addRecord($record);
-        SuspendLib::suspendorder();
+        $session = new WrappedStorage();
+        COREPOS\pos\lib\SuspendLib::suspendorder($session);
+        $this->assertEquals(1, COREPOS\pos\lib\SuspendLib::checksuspended($session));
 
-        $db = Database::mDataConnect();
         $query = "
             SELECT *
             FROM suspended
@@ -108,6 +141,12 @@ class BaseLibsTest extends PHPUnit_Framework_TestCase
             $this->assertArrayHasKey($column, $row, 'Suspended missing ' . $column);
             $this->assertEquals($value, $row[$column], 'Suspended mismatch on column ' . $column);
         }
+        $db->query('truncate table suspended');
+
+        $p = CoreLocal::get('PluginList');
+        CoreLocal::set('PluginList', array('Paycards'));
+        $this->assertEquals(1, Database::testremote());
+        CoreLocal::set('PluginList', $p);
     }
 
     public function testAuthenticate()
@@ -156,11 +195,10 @@ class BaseLibsTest extends PHPUnit_Framework_TestCase
     {
         // get codepath where session var is not array
         CoreLocal::set('ClassLookup', false);
-        AutoLoader::loadClass('LocalStorage');
-        $this->assertEquals(true, class_exists('LocalStorage', false));
+        AutoLoader::loadClass('COREPOS\\pos\\lib\\LocalStorage\\LocalStorage');
+        $this->assertEquals(true, class_exists('COREPOS\\pos\\lib\\LocalStorage\\LocalStorage', false));
 
-        AutoLoader::loadMap();
-        $class_map = CoreLocal::get('ClassLookup');
+        $class_map = AutoLoader::loadMap();
         $this->assertInternalType('array', $class_map);
         $this->assertNotEmpty($class_map);
         
@@ -171,22 +209,9 @@ class BaseLibsTest extends PHPUnit_Framework_TestCase
         $required_classes = array(
             'AutoLoader',
             'Authenticate',
-            'PreParser',
-            'Parser',
-            'BasicCorePage',
-            'TenderModule',
             'DisplayLib',
-            'ReceiptLib',
             'Database',
-            'Kicker',
-            'SpecialUPC',
-            'SpecialDept',
-            'DiscountType',
-            'PriceMethod',
             'LocalStorage',
-            'FooterBox',
-            'Plugin',
-            'PrintHandler',
         );
 
         foreach($required_classes as $class){
@@ -194,38 +219,16 @@ class BaseLibsTest extends PHPUnit_Framework_TestCase
             $this->assertFileExists($class_map[$class]);
         }
 
-        $mods = AutoLoader::listModules('Parser');
+        $mods = AutoLoader::listModules('COREPOS\\pos\\parser\\Parser');
         $this->assertInternalType('array',$mods);
         $this->assertNotEmpty($mods);
         foreach($mods as $m){
             $obj = new $m();
-            $this->assertInstanceOf('Parser',$obj);
+            $this->assertInstanceOf('COREPOS\\pos\\parser\\Parser',$obj);
         }
 
         $listable = array(
-            'DiscountType',
-            'FooterBox',
-            'Kicker',
-            'Parser',
-            'PreParser',
-            'PriceMethod',
-            'SpecialUPC',
-            'SpecialDept',
-            'TenderModule',
-            'TenderReport',
-            'DefaultReceiptDataFetch',
-            'DefaultReceiptFilter',
-            'DefaultReceiptSort',
-            'DefaultReceiptTag',
-            'DefaultReceiptSavings',
-            'ReceiptMessage',
-            'CustomerReceiptMessage',
-            'ProductSearch',
             'DiscountModule',
-            'PrintHandler',
-            'TotalAction',
-            'VariableWeightReWrite',
-            'ItemNotFound',
         );
         foreach ($listable as $base_class) {
             $mods = AutoLoader::listModules($base_class);
@@ -236,12 +239,12 @@ class BaseLibsTest extends PHPUnit_Framework_TestCase
     public function testBitmap()
     {
         /**
-          Using PrintHandler::RenderBitmapFromFile
+          Using COREPOS\pos\lib\PrintHandlers\PrintHandler::RenderBitmapFromFile
           will call all the methods of the Bitmap class
           that actually get used
         */
 
-        $ph = new PrintHandler();
+        $ph = new COREPOS\pos\lib\PrintHandlers\PrintHandler();
         $file = dirname(__FILE__).'/../../pos/is4c-nf/graphics/WfcLogo2014.bmp';
 
         $this->assertFileExists($file);
@@ -267,19 +270,25 @@ class BaseLibsTest extends PHPUnit_Framework_TestCase
           so the test would only catch changes to the
           defaults.
         */
-        CoreState::initiate_session();
+        CoreState::initiateSession();
 
         $str = CoreState::getCustomerPref('asdf');
         $this->assertInternalType('string',$str);
         $this->assertEquals('',$str);
+        CoreLocal::set('memberID', 1);
+        $str = CoreState::getCustomerPref('asdf');
+        $this->assertEquals('',$str);
+        CoreLocal::set('memberID', 0);
 
         // non-numeric age converts to zero
         CoreState::cashierLogin(false, 'z');
         $this->assertEquals(0, CoreLocal::get('cashierAge'));
+
     }
 
     public function testDisplayLib()
     {
+        CoreLocal::set('FooterModules', ''); // force re-init
         $footer = DisplayLib::printfooter();
         $this->assertInternalType('string',$footer);
         $this->assertNotEmpty($footer);
@@ -363,6 +372,7 @@ class BaseLibsTest extends PHPUnit_Framework_TestCase
         $this->assertEquals('0.50 lb',$both['display']);
         $this->assertEquals('4011',$both['upc']);
 
+        CoreLocal::set('screenLines', ''); // force re-init
         $list = DisplayLib::listItems(0,0);
         $this->assertInternalType('string',$list);
 
@@ -372,6 +382,7 @@ class BaseLibsTest extends PHPUnit_Framework_TestCase
         $draw = DisplayLib::drawItems(0,11,0);
         $this->assertInternalType('string',$draw);
 
+        CoreLocal::set('screenLines', ''); // force re-init
         $lp = DisplayLib::lastpage();
         $this->assertInternalType('string',$lp);
 
@@ -406,7 +417,7 @@ class BaseLibsTest extends PHPUnit_Framework_TestCase
         if (!class_exists('lttLib')) include ('lttLib.php');
         lttLib::clear();
 
-        CoreLocal::set('infoRecordQueue',array());
+        CoreLocal::set('infoRecordQueue','not-array');
         TransRecord::addQueued('1234567890123','UNIT TEST',1,'UT',1.99);
         $queue = CoreLocal::get('infoRecordQueue');
         $this->assertInternalType('array',$queue);
@@ -438,6 +449,10 @@ class BaseLibsTest extends PHPUnit_Framework_TestCase
         $record['trans_status'] = 'D';
         lttLib::verifyRecord(1, $record, $this);
 
+        CoreLocal::set('infoRecordQueue','not-array');
+        TransRecord::emptyQueue();
+        $this->assertInternalType('array', CoreLocal::get('infoRecordQueue'));
+
         lttLib::clear();
 
         CoreLocal::set('taxTotal',1.23);
@@ -461,6 +476,18 @@ class BaseLibsTest extends PHPUnit_Framework_TestCase
 
         lttLib::clear();
 
+        TransRecord::addFlaggedTender('UT TENDER','UT',2.34,7,'TF');
+        $record = lttLib::genericRecord();
+        $record['description'] = 'UT TENDER';
+        $record['trans_type'] = 'T';
+        $record['trans_subtype'] = 'UT';
+        $record['total'] = 2.34;
+        $record['numflag'] = 7;
+        $record['charflag'] = 'TF';
+        lttLib::verifyRecord(1, $record, $this);
+
+        lttLib::clear();
+
         TransRecord::addcomment('UNIT TEST COMMENT');
         $record = lttLib::genericRecord();
         $record['description'] = 'UNIT TEST COMMENT';
@@ -471,9 +498,20 @@ class BaseLibsTest extends PHPUnit_Framework_TestCase
 
         lttLib::clear();
 
-        TransRecord::addchange(3.14,'UT');
+        // trim comment to 30 characters
+        TransRecord::addcomment('1234567890123456789012345678901');
         $record = lttLib::genericRecord();
-        $record['description'] = 'Change';
+        $record['description'] = '123456789012345678901234567890';
+        $record['trans_type'] = 'C';
+        $record['trans_subtype'] = 'CM';
+        $record['trans_status'] = 'D';
+        lttLib::verifyRecord(1, $record, $this);
+
+        lttLib::clear();
+
+        TransRecord::addchange(3.14,'UT','MoneyBack');
+        $record = lttLib::genericRecord();
+        $record['description'] = 'MoneyBack';
         $record['trans_type'] = 'T';
         $record['trans_subtype'] = 'UT';
         $record['total'] = 3.14;
@@ -482,20 +520,22 @@ class BaseLibsTest extends PHPUnit_Framework_TestCase
 
         lttLib::clear();
 
-        TransRecord::addfsones(3);
+        TransRecord::addchange(3.14,'','');
         $record = lttLib::genericRecord();
-        $record['description'] = 'FS Change';
+        $record['description'] = 'Change';
         $record['trans_type'] = 'T';
-        $record['trans_subtype'] = 'FS';
-        $record['total'] = 3;
+        $record['trans_subtype'] = 'CA';
+        $record['total'] = 3.14;
         $record['voided'] = 8;
         lttLib::verifyRecord(1, $record, $this);
 
         lttLib::clear();
 
+        CoreLocal::set('itemPD', 5);
         TransRecord::adddiscount(5.45,25);
+        CoreLocal::set('itemPD', 0);
         $record = lttLib::genericRecord();
-        $record['description'] = '** YOU SAVED $5.45 **';
+        $record['description'] = '** YOU SAVED $5.45 (5%) **';
         $record['trans_type'] = 'I';
         $record['trans_status'] = 'D';
         $record['department'] = 25;
@@ -546,17 +586,7 @@ class BaseLibsTest extends PHPUnit_Framework_TestCase
 
         lttLib::clear();
 
-        CoreLocal::set('casediscount',7);
-        TransRecord::addcdnotify();
-        $record = lttLib::genericRecord();
-        $record['description'] = '** 7% Case Discount Applied';
-        $record['trans_status'] = 'D';
-        $record['voided'] = 6;
-        lttLib::verifyRecord(1, $record, $this);
-
-        lttLib::clear();
-
-        TransRecord::addCoupon('0051234512345',123,-1.23,1);
+        TransRecord::addCoupon('0051234512345',123,-1.23,array('foodstamp'=>1));
         $record = lttLib::genericRecord();
         $record['upc'] = '0051234512345';
         $record['description'] = ' * Manufacturers Coupon';
@@ -631,21 +661,6 @@ class BaseLibsTest extends PHPUnit_Framework_TestCase
 
         lttLib::clear();
 
-        TransRecord::addCashDrop('90.78');
-        $record = lttLib::genericRecord();
-        $record['upc'] = 'DROP';
-        $record['description'] = 'Cash Drop';
-        $record['trans_type'] = 'I';
-        $record['trans_status'] = 'X';
-        $record['quantity'] = 1;
-        $record['ItemQtty'] = 1;
-        $record['unitPrice'] = -90.78;
-        $record['total'] = -90.78;
-        $record['charflag'] = 'CD';
-        lttLib::verifyRecord(1, $record, $this);
-
-        lttLib::clear();
-
         $record = lttLib::genericRecord();
         $record['upc'] = 'UNITTEST';
         $record['description'] = 'Unit Test';
@@ -656,7 +671,7 @@ class BaseLibsTest extends PHPUnit_Framework_TestCase
         $record['total'] = 1.23;
         $record['amount2'] = 1.24;
         $record['regPrice'] = 1.24;
-        TransRecord::add_log_record($record);
+        TransRecord::addLogRecord($record);
         unset($record['amount1']); // not real column
         unset($record['amount2']); // not real column
         $record['trans_type'] = 'L';
@@ -675,55 +690,6 @@ class BaseLibsTest extends PHPUnit_Framework_TestCase
         TransRecord::addcomment('peek');
         $peek = PrehLib::peekItem();
         $this->assertEquals('peek',$peek);
-
-        lttLib::clear();
-
-        CoreLocal::set('percentDiscount',5);
-        CoreLocal::set('transDiscount',0.51);
-        CoreLocal::set('taxTotal',1.45);
-        CoreLocal::set('fsTaxExempt',1.11);
-        CoreLocal::set('amtdue',9.55);
-        // should add four records
-        PrehLib::finalttl();
-
-        // verify discount record
-        $record = lttLib::genericRecord();
-        $record['description'] = 'Discount';
-        $record['trans_type'] = 'C';
-        $record['trans_status'] = 'D';
-        $record['unitPrice'] = -0.51;
-        $record['voided'] = 5;
-        lttLib::verifyRecord(1, $record, $this);
-
-        // verify subtotal record
-        $record = lttLib::genericRecord();
-        $record['upc'] = 'Subtotal';
-        $record['description'] = 'Subtotal';
-        $record['trans_type'] = 'C';
-        $record['trans_status'] = 'D';
-        $record['unitPrice'] = 0.34;
-        $record['voided'] = 11;
-        lttLib::verifyRecord(2, $record, $this);
-
-        // verify fs tax exempt record
-        $record = lttLib::genericRecord();
-        $record['upc'] = 'Tax';
-        $record['description'] = 'FS Taxable';
-        $record['trans_type'] = 'C';
-        $record['trans_status'] = 'D';
-        $record['unitPrice'] = 1.11;
-        $record['voided'] = 7;
-        lttLib::verifyRecord(3, $record, $this);
-
-        // verify total record
-        $record = lttLib::genericRecord();
-        $record['upc'] = 'Total';
-        $record['description'] = 'Total';
-        $record['trans_type'] = 'C';
-        $record['trans_status'] = 'D';
-        $record['unitPrice'] = 9.55;
-        $record['voided'] = 11;
-        lttLib::verifyRecord(4, $record, $this);
 
         lttLib::clear();
 
@@ -799,6 +765,25 @@ class BaseLibsTest extends PHPUnit_Framework_TestCase
         DiscountModule::updateDiscount($one, false);
         $this->assertEquals(1, CoreLocal::get('percentDiscount'));
     }
+    
+    public function testNotifier()
+    {
+        $n = new Notifier();
+        $this->assertEquals('', $n->draw());
+        $n->transactionReset();
+    }
 
+    public function testItemNotFound()
+    {
+        $inf = new ItemNotFound();
+        $this->assertNotEquals('', $inf->handle('4011', array()));
+    }
+
+    public function testItemAction()
+    {
+        $act = new ItemAction();
+        // coverage
+        $act->callback(array());
+    }
 }
 

@@ -84,6 +84,13 @@ class SuperDeptEditor extends FanniePage {
             $model->save();
             echo json_encode($ret);
             break;
+        case 'Delete':
+            $id = FormLib::get('id', 0);
+            $model = new SuperDeptNamesModel(FannieDB::get($FANNIE_OP_DB));
+            $model->superID($id);
+            $error = $model->delete() ? false : 'Failed to delete #' . $id;
+            echo json_encode(array('error'=>$error));
+            break;
         default:
             echo 'Bad request';
             break;
@@ -95,14 +102,14 @@ class SuperDeptEditor extends FanniePage {
         global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
 
-        $prep = $dbc->prepare_statement("SELECT 
+        $prep = $dbc->prepare("SELECT 
             superID,dept_ID,dept_name FROM
             superdepts AS s LEFT JOIN
             departments AS d ON s.dept_ID = d.dept_no
             WHERE superID=?
             GROUP BY superID,dept_ID,dept_name
             ORDER BY superID,dept_ID");
-        $result = $dbc->exec_statement($prep,array($id));
+        $result = $dbc->execute($prep,array($id));
         $ret = array();
         while ($row = $dbc->fetch_row($result)) {
             $ret[$row['dept_ID']] = $row['dept_name'];
@@ -116,13 +123,13 @@ class SuperDeptEditor extends FanniePage {
         global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
     
-        $prep = $dbc->prepare_statement('SELECT dept_no,dept_name
+        $prep = $dbc->prepare('SELECT dept_no,dept_name
                 FROM departments WHERE dept_no NOT IN
                 (SELECT dept_ID FROM superdepts WHERE
                 superID=?)
                 GROUP BY dept_no,dept_name
                 ORDER BY dept_no');
-        $result = $dbc->exec_statement($prep,array($id));
+        $result = $dbc->execute($prep,array($id));
         $ret = array();
         $superP = $dbc->prepare('
             SELECT dept_ID
@@ -144,30 +151,30 @@ class SuperDeptEditor extends FanniePage {
         global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
         if ($id == -1) {
-            $p = $dbc->prepare_statement("SELECT max(superID)+1 FROM superdepts");
-            $resp = $dbc->exec_statement($p);
+            $p = $dbc->prepare("SELECT max(superID)+1 FROM superdepts");
+            $resp = $dbc->execute($p);
             $row = $dbc->fetch_row($resp);
             $id = $row[0]; 
             if (empty($id)) {
                 $id = 1;
             }
         } else {
-            $prep = $dbc->prepare_statement("DELETE FROM superdepts WHERE superID=?");
-            $dbc->exec_statement($prep,array($id));
+            $prep = $dbc->prepare("DELETE FROM superdepts WHERE superID=?");
+            $dbc->execute($prep,array($id));
         }
 
-        $deptP = $dbc->prepare_statement('INSERT INTO superdepts VALUES (?,?)');
+        $deptP = $dbc->prepare('INSERT INTO superdepts VALUES (?,?)');
         if (!is_array($depts)) {
             $depts = array();
         }
         foreach ($depts as $d) {
-            $dbc->exec_statement($deptP,array($id,$d));
+            $dbc->execute($deptP,array($id,$d));
         }
 
-        $delP = $dbc->prepare_statement("DELETE FROM superDeptNames WHERE superID=?");
-        $dbc->exec_statement($delP,array($id));
-        $insP = $dbc->prepare_statement("INSERT INTO superDeptNames VALUES (?,?)");
-        $dbc->exec_statement($insP,array($id,$name));
+        $delP = $dbc->prepare("DELETE FROM superDeptNames WHERE superID=?");
+        $dbc->execute($delP,array($id));
+        $insP = $dbc->prepare("INSERT INTO superDeptNames VALUES (?,?)");
+        $dbc->execute($insP,array($id,$name));
 
         return array('id' => $id, 'name' => $name);
     }
@@ -176,11 +183,16 @@ class SuperDeptEditor extends FanniePage {
     {
         global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
-        $superQ = $dbc->prepare_statement("SELECT s.superID,super_name FROM superdepts as s
-            LEFT JOIN superDeptNames AS n ON s.superID=n.superID
-            GROUP BY s.superID,super_name
+        $def = $dbc->tableDefinition('superDeptNames');
+        $superQ = $dbc->prepare("
+            SELECT n.superID,
+                super_name 
+            FROM superDeptNames as n
+                LEFT JOIN superdepts AS s ON s.superID=n.superID
+            " . (isset($def['deleted']) ? ' WHERE deleted=0 ' : '') . "
+            GROUP BY n.superID,super_name
             ORDER BY super_name");
-        $superR = $dbc->exec_statement($superQ);
+        $superR = $dbc->execute($superQ);
         $opts = "";
         $firstID = False;
         $firstName = "";
@@ -202,6 +214,7 @@ class SuperDeptEditor extends FanniePage {
         }
 
         $deptRange = $dbc->getRow('SELECT MIN(dept_no) AS min, MAX(dept_no) AS max FROM departments');
+        $firstDepts = $this->depts_in_super($firstID);
 
         ob_start();
         ?>
@@ -209,7 +222,7 @@ class SuperDeptEditor extends FanniePage {
         <div id="superdeptdiv">
             <div class="form-group">
             <label class="control-label">Select super department</label>
-            <select class="form-control" id="superselect" onchange="superSelected();">
+            <select class="form-control" id="superselect" onchange="superDept.superSelected();">
             <?php echo $opts; ?>
             <option value=-1>Create a new super department</option>
             </select>
@@ -218,7 +231,7 @@ class SuperDeptEditor extends FanniePage {
             <label class="control-label">Name</label>
             <input type="text" id="newname" class="form-control" value="<?php echo $firstName; ?>" />
             </div>
-            <div class="form-group <?php echo ($firstEmail === '') ? 'hidden' : 'shown' ?>">
+            <div class="form-group">
             <label class="control-label">Email Address(es)</label>
             <input class="form-control" type="text" id="sd_email" value="<?php echo $firstEmail; ?>" />
             </div>
@@ -229,7 +242,7 @@ class SuperDeptEditor extends FanniePage {
             <label class="control-label">Members</label>
             <select class="form-control" id="deptselect" multiple size=15>
             <?php 
-            foreach ($this->depts_in_super($firstID) as $id=>$name) {
+            foreach ($firstDepts as $id=>$name) {
                 printf('<option value=%d>%d %s</option>',$id,$id,$name);
             }
             ?>
@@ -241,11 +254,11 @@ class SuperDeptEditor extends FanniePage {
             <br />
             <p>
             <button class="btn btn-default" type="submit" value="<<" 
-                onclick="addDepts(); return false;">&lt;&lt;</button>
+                onclick="superDept.addDepts(); return false;">&lt;&lt;</button>
             </p>
             <p>
             <button class="btn btn-default" type="submit" value=">>" 
-                onclick="remDepts(); return false;">&gt;&gt;</button>
+                onclick="superDept.remDepts(); return false;">&gt;&gt;</button>
             </p>
         </div>
         <div class="form-group col-sm-4">
@@ -260,15 +273,20 @@ class SuperDeptEditor extends FanniePage {
         </div>
         </div>
         <p>
-            <button type="submit" value="Save" onclick="saveData(); return false;"
+            <button type="submit" value="Save" onclick="superDept.saveData(); return false;"
                 class="btn btn-default">Save</button>
+            &nbsp;&nbsp;&nbsp;&nbsp;
+            <button type="button" class="btn btn-default btn-danger" id="deleteBtn" 
+                onclick="superDept.deleteCurrent(); return false;"
+                <?php echo (count($firstDepts) > 0 ? 'disabled' : ''); ?>>
+                Delete Super Department</button>
             &nbsp;&nbsp;&nbsp;&nbsp;
             <a class="btn btn-default"
             href="../../reports/DepartmentSettings/DeptSettingsReport.php?dept1=<?php echo $deptRange['min']; ?>&dept2=<?php echo $deptRange['max']; ?>&submit=by_dr">View All Departments' Primary Super Department</a>
         </p>
         <?php
-        $this->add_script('super.js');
-        $this->addOnloadCommand("\$('#sd_email').keyup(function(e){ if (e.which==13) saveData(); });\n");
+        $this->add_script('super.js?20160106');
+        $this->addOnloadCommand("\$('#sd_email').keyup(function(e){ if (e.which==13) superDept.saveData(); });\n");
 
         return ob_get_clean();
     }
@@ -297,8 +315,18 @@ class SuperDeptEditor extends FanniePage {
             that are not considered sales. Examples of things that may fit
             well in super department #0 are gift cards and member equity.</p>';
     }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->body_content()));
+        ob_start();
+        $this->ajax_response('foobar');
+        $this->ajax_response('deptsInSuper');
+        $this->ajax_response('deptsNotInSuper');
+        $this->ajax_response('superDeptEmail');
+        ob_get_clean();
+    }
 }
 
-FannieDispatch::conditionalExec(false);
+FannieDispatch::conditionalExec();
 
-?>

@@ -22,6 +22,8 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\plugins\Plugin;
+
 class WefcCreditCardTender extends Plugin {
 
     public $plugin_settings = array(

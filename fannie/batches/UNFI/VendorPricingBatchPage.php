@@ -20,6 +20,12 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 *********************************************************************************/
+/*
+ * 12Sep2017 EL There is a lot of commented code from a a git merge resolution
+ * and attempt to keep some upstream features while mostly keeping the WEFC
+ * changes.
+ * If the code survives test on pos probably remove the cruft and push to origin.
+ */
 
 use \COREPOS\Fannie\API\item\Margin;
 use \COREPOS\Fannie\API\item\PriceRounder;
@@ -29,7 +35,7 @@ if (!class_exists('FannieAPI')) {
     include_once($FANNIE_ROOT.'classlib2.0/FannieAPI.php');
 }
 
-class VendorPricingBatchPage extends FannieRESTfulPage 
+class VendorPricingBatchPage extends FannieRESTfulPage
 {
     protected $title = "Fannie - Create Price Change Batch";
     protected $header = "Create Price Change Batch";
@@ -55,7 +61,10 @@ class VendorPricingBatchPage extends FannieRESTfulPage
         tr.white td.sub {
             background:#ffffff;
         }
-        tr.yellow td.sub{
+        th.thead, td.thead {
+            background: #fff4d6;
+        }
+        tr.yellow td.sub {
             background:#ffff96;
         }
         tr.selection td.sub {
@@ -69,18 +78,19 @@ class VendorPricingBatchPage extends FannieRESTfulPage
 
     public function get_id_view()
     {
+        $this->addScript($this->config->get('URL') . 'src/javascript/jquery.floatThead.min.js');
         $this->addScript('pricing-batch.js');
         $dbc = $this->connection;
         $dbc->selectDB($this->config->OP_DB);
 
-        $superID = FormLib::get_form_value('super',99);
+        $superID = FormLib::get('super', -1);
         $queueID = FormLib::get('queueID');
         $vendorID = $this->id;
         $filter = FormLib::get_form_value('filter') == 'Yes' ? True : False;
 
         /* lookup vendor and superdept names to build a batch name */
         $sname = "All";
-        if ($superID != 99) {
+        if ($superID >= 0) {
             $smodel = new SuperDeptNamesModel($dbc);
             $smodel->superID($superID);
             $smodel->load();
@@ -103,10 +113,10 @@ class VendorPricingBatchPage extends FannieRESTfulPage
 
         /* get the ID of the current batch. Create it if needed. */
         $bidQ = $dbc->prepare("
-            SELECT batchID 
-            FROM batches 
-            WHERE batchName=? 
-                AND batchType=? 
+            SELECT batchID
+            FROM batches
+            WHERE batchName=?
+                AND batchType=?
                 AND discounttype=0
             ORDER BY batchID DESC");
         $bidR = $dbc->execute($bidQ,array($batchName,$bType));
@@ -120,11 +130,18 @@ class VendorPricingBatchPage extends FannieRESTfulPage
             $b->discountType(0);
             $b->priority(0);
             $batchID = $b->save();
-        } else { 
+            if ($this->config->get('STORE_MODE') === 'HQ') {
+                StoreBatchMapModel::initBatch($batchID);
+            }
+        } else {
             $bidW = $dbc->fetchRow($bidR);
             $batchID = $bidW['batchID'];
         }
 
+        /* Strategy: Keep all of HEAD until the end of table formatting.
+         * Does it work that way?
+         */
+// <<<<<<< HEAD
         $ret = '';
         $vendorPattern = '<span style="font-size:1.4em;"><b>Vendor:</b> %s </span>' .
             '<b>Discount:</b> %0.2f%% <b>Shipping:</b> %0.2f%%';
@@ -151,9 +168,18 @@ class VendorPricingBatchPage extends FannieRESTfulPage
             $batchUPCs[$obj->upc()] = true;
         }
 
+// <<<<<<< HEAD
         /* From here to the end of displaying the table is different for WEFC_Toronto
          */
+        /* upstream uses p.cost instead of v.cost. Significant?
+         * Which is more likely to be accurate?
+         * Stick with my v.cost for now.
+         */
         $costSQL = Margin::adjustedCostSQL('v.cost', 'b.discountRate', 'b.shippingMarkup');
+/* =======
+        $costSQL = Margin::adjustedCostSQL('p.cost', 'b.discountRate', 'b.shippingMarkup');
+        >>>>>>> upstream/version-2.7
+ */
         $marginSQL = Margin::toMarginSQL($costSQL, 'p.normal_price');
         $p_def = $dbc->tableDefinition('products');
         /* 
@@ -161,7 +187,7 @@ class VendorPricingBatchPage extends FannieRESTfulPage
          * NO:vendor-subcat is highest priority
          */
         $marginCase = '
-            CASE 
+            CASE
                 WHEN g.margin IS NOT NULL AND g.margin <> 0 THEN g.margin
                 WHEN s.margin IS NOT NULL AND s.margin <> 0 THEN s.margin
                 ELSE d.margin
@@ -218,9 +244,45 @@ class VendorPricingBatchPage extends FannieRESTfulPage
             ELSE p.size
             END";
 
-        $query = "SELECT p.upc,
+        /* This is commented out upstream.
+        //  Scan both stores to find a list of items that are inUse.
+        $itemsInUse = array();
+        $query = $dbc->prepare("SELECT upc FROM products WHERE inUse = 1");
+        $result = $dbc->execute($query);
+        while ($row = $dbc->fetchRow($result)) {
+            $itemsInUse[$row['upc']] = 1;
+        }
+        */
+
+        /* $aliasP is new for 2.7
+         */
+        $aliasP = $dbc->prepare("
+            SELECT v.srp,
+                v.vendorDept,
+                a.multiplier
+            FROM VendorAliases AS a
+                INNER JOIN vendorItems AS v ON a.sku=v.sku AND a.vendorID=v.vendorID
+            WHERE a.upc=?");
+
+        /* $query:
+         * HEAD has:
+         * - package and marginsource
+         * - INNER JOIN to vendorItem
+         * HEAD to try:
+         * - LEFT JOIN to vendorItems. Seems OK.
+         * - LEFT JOIN to vendorAliases b/c some later code needs it. Seems OK.
+         * - two booleans alias and likecoded. Seems OK.
+         * upstream has:
+         * - two booleans alias and likecoded
+         * - LEFT JOIN to vendorItem
+         * - LEFT JOIN to vendorAliases
+         * upstream doesn't have:
+         * - brand
+         * - package
+         */
+        $query_head = "SELECT p.upc,
             p.description,
-            v.cost,
+            p.cost,
             b.shippingMarkup,
             b.discountRate,
             p.normal_price,
@@ -235,33 +297,122 @@ class VendorPricingBatchPage extends FannieRESTfulPage
             p.brand,
             " . $packageCase . " AS package,
             p.department,
-            " . $marginSourceCase . " AS marginSource
+            " . $marginSourceCase . " AS marginSource,
+            CASE WHEN a.sku IS NULL THEN 0 ELSE 1 END as alias,
+            CASE WHEN l.upc IS NULL THEN 0 ELSE 1 END AS likecoded
             FROM products AS p 
-                INNER JOIN vendorItems AS v ON p.upc=v.upc AND p.default_vendor_id=v.vendorID
+                LEFT JOIN vendorItems AS v ON p.upc=v.upc AND p.default_vendor_id=v.vendorID
+                LEFT JOIN VendorAliases AS a ON p.upc=a.upc AND p.default_vendor_id=a.vendorID
                 INNER JOIN vendors as b ON v.vendorID=b.vendorID
                 LEFT JOIN departments AS d ON p.department=d.dept_no
                 LEFT JOIN vendorDepartments AS s ON v.vendorDept=s.deptID AND v.vendorID=s.vendorID
                 LEFT JOIN VendorSpecificMargins AS g ON p.department=g.deptID AND v.vendorID=g.vendorID
-                LEFT JOIN prodExtra AS x on p.upc=x.upc ";
+                LEFT JOIN prodExtra AS x ON p.upc=x.upc
+                LEFT JOIN upcLike AS l ON v.upc=l.upc ";
+
+        $query_up = "SELECT p.upc,
+            p.description,
+            p.cost,
+            b.shippingMarkup,
+            b.discountRate,
+            p.normal_price,
+            " . Margin::toMarginSQL($costSQL, 'p.normal_price') . " AS current_margin,
+            " . Margin::toMarginSQL($costSQL, 'v.srp') . " AS desired_margin,
+            " . $costSQL . " AS adjusted_cost,
+            v.srp,
+            " . $srpSQL . " AS rawSRP,
+            v.vendorDept,
+            x.variable_pricing,
+            " . $marginCase . " AS margin,
+            CASE WHEN a.sku IS NULL THEN 0 ELSE 1 END as alias,
+            CASE WHEN l.upc IS NULL THEN 0 ELSE 1 END AS likecoded
+            FROM products AS p
+                LEFT JOIN vendorItems AS v ON p.upc=v.upc AND p.default_vendor_id=v.vendorID
+                LEFT JOIN VendorAliases AS a ON p.upc=a.upc AND p.default_vendor_id=a.vendorID
+                INNER JOIN vendors as b ON v.vendorID=b.vendorID
+                LEFT JOIN departments AS d ON p.department=d.dept_no
+                LEFT JOIN vendorDepartments AS s ON v.vendorDept=s.deptID AND v.vendorID=s.vendorID
+                LEFT JOIN VendorSpecificMargins AS g ON p.department=g.deptID AND v.vendorID=g.vendorID
+                LEFT JOIN prodExtra AS x ON p.upc=x.upc
+                LEFT JOIN upcLike AS l ON v.upc=l.upc ";
+
+        $useHeadQuery = True;
+        $query = ($useHeadQuery) ? $query_head : $query_up;
+        // There are additions to $query below.
+
+        /* CONFLICTED
+        $query = "SELECT p.upc,
+            p.description,
+            p.cost,
+            b.shippingMarkup,
+            b.discountRate,
+            p.normal_price,
+            " . Margin::toMarginSQL($costSQL, 'p.normal_price') . " AS current_margin,
+            " . Margin::toMarginSQL($costSQL, 'v.srp') . " AS desired_margin,
+            " . $costSQL . " AS adjusted_cost,
+            v.srp,
+            " . $srpSQL . " AS rawSRP,
+            v.vendorDept,
+            x.variable_pricing,
+            " . $marginCase . " AS margin,
+<<<<<<< HEAD
+            p.brand,
+            " . $packageCase . " AS package,
+            p.department,
+            " . $marginSourceCase . " AS marginSource
+            FROM products AS p 
+                INNER JOIN vendorItems AS v ON p.upc=v.upc AND p.default_vendor_id=v.vendorID
+=======
+            CASE WHEN a.sku IS NULL THEN 0 ELSE 1 END as alias,
+            CASE WHEN l.upc IS NULL THEN 0 ELSE 1 END AS likecoded
+            FROM products AS p
+                LEFT JOIN vendorItems AS v ON p.upc=v.upc AND p.default_vendor_id=v.vendorID
+                LEFT JOIN VendorAliases AS a ON p.upc=a.upc AND p.default_vendor_id=a.vendorID
+>>>>>>> upstream/version-2.7
+                INNER JOIN vendors as b ON v.vendorID=b.vendorID
+                LEFT JOIN departments AS d ON p.department=d.dept_no
+                LEFT JOIN vendorDepartments AS s ON v.vendorDept=s.deptID AND v.vendorID=s.vendorID
+                LEFT JOIN VendorSpecificMargins AS g ON p.department=g.deptID AND v.vendorID=g.vendorID
+                LEFT JOIN prodExtra AS x ON p.upc=x.upc
+                LEFT JOIN upcLike AS l ON v.upc=l.upc ";
+        end of CONFLICTED */
+
         $args = array($vendorID);
+
+/* upstream tests a different $superID value
+ * and JOINS on a different table.
+ * That may be "better" if it doesn't break something else.
+ * Keep HEAD for the moment.
+ * Might be a good idea to try/compare the upstream technique.
+<<<<<<< HEAD
+        if ($superID != 99){ //}
+            $query .= " LEFT JOIN superdepts AS m
+=======
+        if ($superID != -1){ //}
+            $query .= " LEFT JOIN MasterSuperDepts AS m
+>>>>>>> upstream/version-2.7
+                ON p.department=m.dept_ID ";
+            //{
+        }
+*/
         if ($superID != 99){
             $query .= " LEFT JOIN superdepts AS m
                 ON p.department=m.dept_ID ";
         }
-        $query .= "WHERE v.cost > 0 
-                    AND v.vendorID=?
-                    AND p.inUse=1 ";
-        if ($superID != 99) {
+        $query .= "WHERE v.cost > 0
+                    AND v.vendorID=?";
+        if ($superID == -2) {
+            $query .= " AND m.superID<>0 ";
+        } elseif ($superID != -1) {
             $query .= " AND m.superID=? ";
             $args[] = $superID;
         }
         if ($filter === false) {
             $query .= " AND p.normal_price <> COALESCE(v.srp,0.00) ";
         }
-        if ($this->config->get('STORE_MODE') == 'HQ') {
-            $query .= ' AND p.store_id=? ';
-            $args[] = $this->config->get('STORE_ID');
-        }
+
+        $query .= ' AND p.upc IN (SELECT upc FROM products WHERE inUse = 1) ';
+        $query .= ' GROUP BY p.upc ';
 
         $query .= " ORDER BY p.upc";
         if (isset($p_def['price_rule_id'])) {
@@ -272,42 +423,112 @@ $arg_list = print_r($args,true);
 $dbc->logger("q: $query \n $arg_list");
 */
 
-        $prep = $dbc->prepare_statement($query);
-        $result = $dbc->exec_statement($prep,$args);
-
+        $prep = $dbc->prepare($query);
+        $result = $dbc->execute($prep,$args);
+        /* WEFC table layout
+            <<<<<<< HEAD
+            Use floating head. Needs:
+            - id=mytable
+            - thead, tbody tags
+            - maybe class thead
         $ret .= "<table class=\"table table-bordered small\">";
         $ret .= "<tr><td colspan=7>&nbsp;</td><th colspan=2>Current</th>
-            <th colspan=5>Vendor</th></tr>";
+         */
+
+        $ret .= "<table class=\"table table-bordered small\" id=\"mytable\">";
+        $ret .= "<thead><tr><td colspan=7 class=\"thead\">&nbsp;</td><th colspan=2 class=\"thead\">Current</th>
+            <th colspan=5 class=\"thead\">Vendor</th>
+            <th colspan=2 class=\"thead\">&nbsp;</th></tr>";
         $ret .= "<tr>
-            <th>UPC</th>
-            <th>Brand</th>
-            <th>Our Description</th>
-            <th>Package</th>
-            <th>Dept</th>
-            <th>Base Cost</th>
-            <th>Adj. Cost</th>
-            <th>Price</th><th>Margin</th>
-            <th>SRP</th>
-            <th>SRP Margin</th>
-            <th>Raw Price</th>
-            <th>Raw Margin</th>
-            <th>Sub Cat.</th>
-            <th>Var.</th><th>Batch</th></tr>";
+            <th class=\"thead\">UPC</th>
+            <th class=\"thead\">Brand</th>
+            <th class=\"thead\">Our Description</th>
+            <th class=\"thead\">Package</th>
+            <th class=\"thead\">Dept</th>
+            <th class=\"thead\">Base Cost</th>
+            <th class=\"thead\">Adj. Cost</th>
+            <th class=\"thead\">Price</th><th class=\"thead\">Margin</th>
+            <th class=\"thead\">SRP</th>
+            <th class=\"thead\">SRP Margin</th>
+            <th class=\"thead\">Raw Price</th>
+            <th class=\"thead\">Raw Margin</th>
+            <th class=\"thead\">Sub Cat.</th>
+            <th class=\"thead\">Var.</th><th class=\"thead\">Batch</th></tr></thead></tbody>";
+
         $backgroundCounts=array(
             "white" => 0,
             "red" => 0,
             "green" => 0,
             "yellow" => 0,
             "selection" => 0
-            );
+        );
+
+/* 2.7 table layout.
+=======
+        $ret .= "<table class=\"table table-bordered small\" id=\"mytable\">";
+        $ret .= "<thead><tr><td colspan=6 class=\"thead\">&nbsp;</td><th colspan=2  class=\"thead\">Current</th>
+            <th colspan=3  class=\"thead\">Vendor</th><td colspan=3 class=\"thead\"></td></tr>";
+        $ret .= "<tr><th class=\"thead\">UPC</th><th class=\"thead\">Our Description</th>
+            <th class=\"thead\">Base Cost</th>
+            <th class=\"thead\">Shipping</th>
+            <th class=\"thead\">Discount%</th>
+            <th class=\"thead\">Adj. Cost</th>
+            <th class=\"thead\">Price</th><th class=\"thead\">Margin</th><th class=\"thead\">Raw</th>
+            <th class=\"thead\">SRP</th>
+            <th class=\"thead\">Margin</th><th class=\"thead\">Cat</th><th class=\"thead\">Var</th>
+            <th class=\"thead\">Batch</th></tr></thead><tbody>";
+        >>>>>>> upstream/version-2.7
+*/
+
+        /* $vendorModel is new for 2.7
+         * */
+        $vendorModel = new VendorItemsModel($dbc);
         while ($row = $dbc->fetch_row($result)) {
+            /* Getting $multiplevendors is new in 2.7
+             * See how it works to try to keep it.
+             */
+            $vendorModel->reset();
+            $vendorModel->upc($row['upc']);
+            $vendorModel->vendorID($vendorID);
+            $vendorModel->load();
+            $numRows = $vendorModel->find();
+            $multipleVendors = '';
+            if (count($numRows) > 1) {
+                $multipleVendors = '<span class="glyphicon glyphicon-exclamation-sign"
+                    title="Multiple SKUs For This Product">
+                    </span> ';
+            }
+            /* alias is new in 2.7, don't know what to do
+             * Does it ever apply at WEFC? I doubt it.
+             * Is used to change the value of srp.
+             */
+            if ($row['alias']) {
+                $alias = $dbc->getRow($aliasP, array($row['upc']));
+                $row['vendorDept'] = $alias['vendorDept'];
+                $row['srp'] = $alias['srp'] * $alias['multiplier'];
+            }
             $background = "white";
-            if (isset($batchUPCs[$row['upc']])) {
+            if (isset($batchUPCs[$row['upc']]) && !$row['likecoded']) {
                 $background = 'selection';
-            } elseif ($row['variable_pricing'] == 0) {
-                $background = ($row['normal_price']+0.10<$row['rawSRP'])?'red':'green';
-                if ($row['normal_price']-.10>$row['rawSRP']) {
-                    $background = ($row['normal_price']-.10>$row['rawSRP'])?'yellow':'green';
+            } elseif ($row['variable_pricing'] == 0 && $row['normal_price'] < 10.00) {
+                $background = (
+                    ($row['normal_price']+0.10 < $row['rawSRP'])
+                    && ($row['srp']-.14 > $row['normal_price'])
+                ) ?'red':'green';
+                if ($row['normal_price']-.10 > $row['rawSRP']) {
+                    $background = (
+                        ($row['normal_price']-.10 > $row['rawSRP'])
+                        && ($row['normal_price']-.14 > $row['srp'])
+                        && ($row['rawSRP'] < $row['srp']+.10)
+                    )?'yellow':'green';
+                }
+            } elseif ($row['variable_pricing'] == 0 && $row['normal_price'] >= 10.00) {
+                $background = ($row['normal_price'] < $row['rawSRP']
+                    && $row['srp'] > $row['normal_price']) ?'red':'green';
+                if ($row['normal_price']-0.49 > $row['rawSRP']) {
+                    $background = ($row['normal_price']-0.49 > $row['rawSRP']
+                        && ($row['normal_price'] > $row['srp'])
+                        && ($row['rawSRP'] < $row['srp']+.10) )?'yellow':'green';
                 }
             }
             if (isset($batchUPCs[$row['upc']])) {
@@ -319,12 +540,37 @@ $dbc->logger("q: $query \n $arg_list");
                     title="Add to batch">
                     </span>';
             }
-            /*
+            /* WEFC change, no cols for shipping, discount
                 <td class=\"sub shipping\">%.2f%%</td>
                 <td class=\"sub discount\">%.2f%%</td>
                 $row['shippingMarkup']*100,
                 $row['discountRate']*100,
              */
+/* CONFLICTED
+                Un-CONFLICTED begins:
+            $ret .= sprintf("<tr id=row%s class=%s>
+                <td class=\"sub\"><a href=\"%sitem/ItemEditorPage.php?searchupc=%s\">%s</a></td>
+                <td class=\"sub\">%s</td> // brand
+<<<<<<< HEAD 6 cols
+                <td class=\"sub\">%s</td>
+                <td class=\"sub\">%s</td>
+                <td class=\"sub\">%d</td>
+                <td class=\"sub cost\">%.2f</td> // change from %.2f to %.3f
+                <td class=\"sub adj-cost\">%.2f</td> // change from %.2f to %.3f
+                <td class=\"sub price\"><b>%.2f</b></td>
+======= 5 cols
+                Seems to be missing description.
+                <td class=\"sub cost\">%.3f</td>
+                <td class=\"sub shipping\">%.2f%%</td>
+                <td class=\"sub discount\">%.2f%%</td>
+                <td class=\"sub adj-cost\">%.3f</td>
+                <td class=\"sub price\">%.2f</td>
+                >>>>>>> upstream/version-2.7
+                CONFLICTED
+                Un-CONFLICTED begins:
+                <td class=\"sub cmargin\">%.2f%%</td>
+                <td onclick=\"reprice('%s');\" class=\"sub srp\">%.2f</td>
+ */
             $ret .= sprintf("<tr id=row%s class=%s>
                 <td class=\"sub\"><a href=\"%sitem/ItemEditorPage.php?searchupc=%s\">%s</a></td>
                 <td class=\"sub\">%s</td>
@@ -342,12 +588,12 @@ $dbc->logger("q: $query \n $arg_list");
                 <td class=\"sub\">%d</td>
                 <td><input class=varp type=checkbox onclick=\"toggleV('%s');\" %s /></td>
                 <td class=white>
-                    <a class=\"add-button %s\" href=\"\" 
+                    <a class=\"add-button %s\" href=\"\"
                         onclick=\"addToBatch('%s'); return false;\">
                         <span class=\"glyphicon glyphicon-plus-sign\"
                             title=\"Add item to batch\"></span>
                     </a>
-                    <a class=\"remove-button %s\" href=\"\" 
+                    <a class=\"remove-button %s\" href=\"\"
                         onclick=\"removeFromBatch('%s'); return false;\">
                         <span class=\"glyphicon glyphicon-minus-sign\"
                             title=\"Remove item from batch\"></span>
@@ -358,7 +604,9 @@ $dbc->logger("q: $query \n $arg_list");
                 $background,
                 $this->config->URL, $row['upc'], $row['upc'],
                 $row['brand'],
-                $row['description'],
+                /* try to keep the new $multipleVendors. So far so good.
+                 */
+                $row['description'] . ' ' . $multipleVendors,
                 $row['package'],
                 $row['department'],
                 $row['cost'],
@@ -396,13 +644,20 @@ $dbc->logger("q: $query \n $arg_list");
                 <td class="sub text-right">%0.2f%%</td></tr>',
                 $type, $type, $count, (($count/$btotal)*100));
         }
+//<<<<<<< HEAD Totals row is new by WEFC.
         $ret .= sprintf('<tr><td>%s</td><td class="text-right">%d</td>
             <td class="text-right">%0.2f%%</td></tr>',
                 "Total", $btotal, (($btotal/$btotal)*100));
-        $ret .= "</table>";
+        $ret .= "</tbody></table>";
         $ret .= "</p>";
+/* =======
+        $ret .= "</tbody></table>";
+        >>>>>>> upstream/version-2.7
+ */
 
+        // #'c id
         return $ret;
+    // get_id_view()
     }
 
     public function get_view()
@@ -410,14 +665,30 @@ $dbc->logger("q: $query \n $arg_list");
         $dbc = $this->connection;
         $dbc->selectDB($this->config->OP_DB);
 
+        /* upstream 2.7 uses MasterSuperDepts instead of superDeptNames.
+         * Keep upstream. cruft.
+         */
+/* <<<<<<< HEAD
         $prep = $dbc->prepare("SELECT superID,super_name
             FROM superDeptNames
+=======
+        $prep = $dbc->prepare("
+            SELECT superID,
+                super_name
+            FROM MasterSuperDepts
+            >>>>>>> upstream/version-2.7
+ */
+        $prep = $dbc->prepare("
+            SELECT DISTINCT superID,
+                super_name
+            FROM MasterSuperDepts
             WHERE superID > 0
             ORDER BY super_name");
         $res = $dbc->execute($prep);
-        $opts = "<option value=99 selected>All</option>";
+        $opts = "<option value=\"-1\" selected>All</option>";
+        $opts .= "<option value=\"-2\" selected>All Retail</option>";
         while ($row = $dbc->fetch_row($res)) {
-            $opts .= "<option value=$row[0]>$row[1]</option>";
+            $opts .= "<option value={$row['superID']}>{$row['super_name']}</option>";
         }
 
         $vmodel = new VendorsModel($dbc);
@@ -457,6 +728,18 @@ $dbc->logger("q: $query \n $arg_list");
         </form>
         <?php
 
+        return ob_get_clean();
+
+    // get_view()
+    }
+
+    public function javascript_content()
+    {
+        ob_start();
+        ?>
+        var $table = $('#mytable');
+        $table.floatThead();
+        <?php
         return ob_get_clean();
     }
 
@@ -644,7 +927,12 @@ $dbc->logger("q: $query \n $arg_list");
         return $ret;
     }
 
-
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->get_view()));
+        $this->id = 1;
+        $phpunit->assertNotEquals(0, strlen($this->get_id_view()));
+    }
 }
 
 FannieDispatch::conditionalExec();

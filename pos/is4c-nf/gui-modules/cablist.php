@@ -21,6 +21,10 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\gui\NoInputCorePage;
+use COREPOS\pos\lib\Authenticate;
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\DisplayLib;
 include_once(dirname(__FILE__).'/../lib/AutoLoader.php');
 
 class cablist extends NoInputCorePage 
@@ -30,35 +34,15 @@ class cablist extends NoInputCorePage
     {
         ?>
         <script type="text/javascript" src="../js/selectSubmit.js"></script>
-        <script type="text/javascript">
-        function submitWrapper(){
-            var ref = $('#selectlist').val();
-            if (ref != ""){
-                $.ajax({
-                    url: '<?php echo $this->page_url; ?>ajax-callbacks/AjaxCabReceipt.php',
-                    type: 'get',
-                    cache: false,
-                    data: 'input='+ref,
-                    success: function(data){
-                        location='<?php echo $this->page_url; ?>gui-modules/pos2.php';
-                    }
-                });
-            }
-            else {
-                location='<?php echo $this->page_url; ?>gui-modules/pos2.php';
-            }
-
-            return false;
-        }
-        </script> 
+        <script type="text/javascript" src="js/cablist.js"></script>
         <?php
-        $this->add_onload_command("selectSubmit('#selectlist', '#selectform', false, true)\n");
-        $this->add_onload_command("\$('#selectlist').focus();\n");
+        $this->addOnloadCommand("selectSubmit('#selectlist', '#selectform', false, true)\n");
+        $this->addOnloadCommand("\$('#selectlist').focus();\n");
     }
-    
-    function body_content()
+
+    private function getTransactions()
     {
-        $fes = Authenticate::getPermission(CoreLocal::get('CashierNo'));
+        $fes = Authenticate::getPermission($this->session->get('CashierNo'));
         /* if front end security >= 25, pull all
          * available receipts; other wise, just
          * current cashier's receipt */
@@ -70,15 +54,15 @@ class cablist extends NoInputCorePage
             ." group by register_no, emp_no, trans_no
             having sum((case when trans_type='T' THEN -1*total ELSE 0 end)) >= 30
             order by register_no,emp_no,trans_no desc";
-            $db = Database::tDataConnect();
-            if (CoreLocal::get("standalone") == 0) {
+            $dbc = Database::tDataConnect();
+            if ($this->session->get("standalone") == 0) {
                 $query = str_replace("localtranstoday","dtransactions",$query);
-                $db = Database::mDataConnect();
+                $dbc = Database::mDataConnect();
             }
-            $result = $db->query($query);
+            $result = $dbc->query($query);
 
         } else {
-            $db = Database::tDataConnect();
+            $dbc = Database::tDataConnect();
 
             $query = "
                 SELECT emp_no, 
@@ -88,30 +72,41 @@ class cablist extends NoInputCorePage
                 FROM localtranstoday 
                 WHERE register_no = ?
                     AND emp_no = ?
-                    AND datetime >= " . $db->curdate() . "
+                    AND datetime >= " . $dbc->curdate() . "
                 GROUP BY register_no, 
                     emp_no, 
                     trans_no
                 HAVING SUM((CASE WHEN trans_type='T' THEN -1*total ELSE 0 END)) >= 30
                 ORDER BY trans_no desc";
-            $args = array(CoreLocal::get('laneno'), CoreLocal::get('CashierNo'));
-            $prep = $db->prepare($query);
-            $result = $db->execute($prep, $args);
+            $args = array($this->session->get('laneno'), $this->session->get('CashierNo'));
+            $prep = $dbc->prepare($query);
+            $result = $dbc->execute($prep, $args);
         }
 
-        $num_rows = $db->num_rows($result);
+        $ret = array();
+        while ($row = $dbc->fetchRow($result)) {
+            $ret[] = $row;
+        }
+
+        return $ret;
+    }
+    
+    function body_content()
+    {
+        $trans = $this->getTransactions();
+        $num_rows = count($trans);
         ?>
 
         <div class="baseHeight">
         <div class="listbox">
-        <form id="selectform" name="selectform" onsubmit="return submitWrapper();">
+        <form id="selectform" name="selectform" 
+            onsubmit="return cablist.submitWrapper('<?php echo $this->page_url; ?>');">
         <select name="selectlist" size="15" onblur="$('#selectlist').focus()"
             id="selectlist">
 
         <?php
         $selected = "selected";
-        for ($i = 0; $i < $num_rows; $i++) {
-            $row = $db->fetch_array($result);
+        foreach ($trans as $row) {
             echo "<option value='".$row["emp_no"]."-".$row["register_no"]."-".$row["trans_no"]."'";
             echo $selected;
             echo ">lane ".substr(100 + $row["register_no"], -2)." Cashier ".$row["emp_no"]
@@ -126,7 +121,7 @@ class cablist extends NoInputCorePage
         </select>
         </div>
         <?php
-        if (CoreLocal::get('touchscreen')) {
+        if ($this->session->get('touchscreen')) {
             echo '<div class="listbox listboxText">'
                 . DisplayLib::touchScreenScrollButtons('#selectlist')
                 . '</div>';
@@ -136,13 +131,13 @@ class cablist extends NoInputCorePage
         <?php echo _("use arrow keys to navigate"); ?><br />
         <p>
             <button type="submit" class="pos-button wide-button coloredArea">
-            Reprint <span class="smaller">[enter]</span>
+            <?php echo _('Reprint'); ?> <span class="smaller"><?php echo _('[enter]'); ?></span>
             </button>
         </p>
         <p>
             <button type="submit" class="pos-button wide-button errorColoredArea"
             onclick="$('#selectlist').append($('<option>').val(''));$('#selectlist').val('');">
-            Cancel <span class="smaller">[clear]</span>
+            <?php echo _('Cancel'); ?> <span class="smaller"><?php echo _('[clear]'); ?></span>
         </button></p>
         </div>
         </form>
@@ -153,7 +148,5 @@ class cablist extends NoInputCorePage
     } // END body_content() FUNCTION
 }
 
-if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
-    new cablist();
+AutoLoader::dispatch();
 
-?>

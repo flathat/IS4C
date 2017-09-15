@@ -32,7 +32,7 @@ namespace COREPOS\common;
   Child classes should at minimum override 
   the getLogLocation method to specify a proper
   output file. They may also override the
-  verboseDebugging method and program_name property
+  verboseDebugging method and programName property
   if needed.
 */
 class BaseLogger
@@ -41,7 +41,7 @@ class BaseLogger
       Map log level integers to
       text level names
     */
-    protected $log_level_map  = array(
+    protected $logLevelMap  = array(
         0 => 'emergency',
         1 => 'alert',
         2 => 'critical',
@@ -55,14 +55,14 @@ class BaseLogger
     /** 
       Remote syslog settings
     */
-    protected $syslog_host = false;
-    protected $syslog_port = 514;
-    protected $syslog_protocol = 'udp';
+    protected $syslogHost = false;
+    protected $syslogPort = 514;
+    protected $syslogProtocol = 'udp';
 
     /**
       Name of program in log lines
     */
-    protected $program_name = 'corepos';
+    protected $programName = 'corepos';
 
     /**
       Log level constants
@@ -84,11 +84,10 @@ class BaseLogger
     */
     protected function normalizeLevel($level)
     {
-        if (isset($this->log_level_map[$level])) {
-            return $this->log_level_map[$level];
-        } else {
-            return strtolower($level);
+        if (isset($this->logLevelMap[$level])) {
+            return $this->logLevelMap[$level];
         }
+        return strtolower($level);
     }
 
     /**
@@ -100,9 +99,28 @@ class BaseLogger
     */
     public function setRemoteSyslog($host, $port=514, $protocol='udp')
     {
-        $this->syslog_host = $host;
-        $this->syslog_port = $port;
-        $this->syslog_protocol = $protocol;
+        $this->syslogHost = $host;
+        $this->syslogPort = $port;
+        $this->syslogProtocol = $protocol;
+    }
+
+    protected function getSyslogSocket()
+    {
+        if (!function_exists('socket_create')) {
+            throw new \Exception('Sockets extension required for remote logging');
+        }
+
+        $socket = false;
+        if (strtolower($this->syslogProtocol) === 'udp') {
+            $socket = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
+        } elseif (strtolower($this->syslogProtocol) === 'tcp') {
+            $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
+        }
+        if ($socket === false) {
+            throw new \Exception('Remote logging socket error: ' . socket_last_error());
+        }
+
+        return $socket;
     }
 
     /**
@@ -113,32 +131,22 @@ class BaseLogger
     protected function syslogRemote($message)
     {
         $context = array('skip_remote' => true);
-        if (!function_exists('socket_create')) {
-            $this->debug('Sockets extension required for remote logging', $context);
-
-            return false;
-        } 
         
-        $socket = false;
-        if (strtolower($this->syslog_protocol) === 'udp') {
-            $socket = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
-        } elseif (strtolower($this->syslog_protocol) === 'tcp') {
+        try {
+            $socket = $this->getSyslogSocket();
             $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
-        }
-        if ($socket === false) {
-            $this->debug('Remote logging socket error: ' . socket_last_error(), $context);
 
-            return false;
-        }
+            socket_set_option($socket, SOL_SOCKET, SO_SNDTIMEO, array('sec' => 5, 'usec' => 0)); 
+            if (!socket_connect($socket, $this->syslogHost, $this->syslogPort)) {
+                $this->debug('Unable to connect to ' . $this->syslogHost . ':' . $this->syslogPort
+                    . ' for remote logging. Error: ' . socket_last_error(), $context);
+            }
 
-        socket_set_option($socket, SOL_SOCKET, SO_SNDTIMEO, array('sec' => 5, 'usec' => 0)); 
-        if (!socket_connect($socket, $this->syslog_host, $this->syslog_port)) {
-            $this->debug('Unable to connect to ' . $this->syslog_host . ':' . $this->syslog_port
-                . ' for remote logging. Error: ' . socket_last_error(), $context);
+            socket_write($socket, $message);
+            socket_close($socket);
+        } catch (\Exception $ex) {
+            $this->debug($ex->getMessage(), $context);
         }
-
-        socket_write($socket, $message);
-        socket_close($socket);
 
         return true;
     }
@@ -218,12 +226,12 @@ class BaseLogger
       Write a message to log(s)
       @param $message [string] log message
       @param $context [array] optional contextual info
-      @param $int_level [int] log level
+      @param $intLevel [int] log level
     */
-    private function writeLog($message, array $context, $int_level)
+    private function writeLog($message, array $context, $intLevel)
     {
-        $file = $this->getLogLocation($int_level);
-        $verbose_debug = $this->verboseDebugging();
+        $file = $this->getLogLocation($intLevel);
+        $verboseDebug = $this->verboseDebugging();
 
         /**
           The 'logfile' context value just exists for testing
@@ -234,44 +242,38 @@ class BaseLogger
             $file = $context['logfile'];
         }
         if (isset($context['verbose'])) {
-            $verbose_debug = true;
+            $verboseDebug = true;
         }
         if ($file) {
             $fptr = fopen($file, 'a');
-            fwrite($fptr, $this->rfcLogLine($message, $int_level) . "\n");
-            if ($this->syslog_host && !isset($context['skip_remote'])) {
-                $this->syslogRemote($log_line);
+            fwrite($fptr, $this->rfcLogLine($message, $intLevel) . "\n");
+            if ($this->syslogHost && !isset($context['skip_remote'])) {
+                $this->syslogRemote($message);
             }
-            if ($int_level === self::DEBUG && $verbose_debug) {
+            if ($intLevel === self::DEBUG && $verboseDebug) {
                 $stack = array();
-                if (isset($context['exception']) && $context['exception'] instanceof Exception) {
+                if (isset($context['exception']) && $context['exception'] instanceof \Exception) {
                     $stack = $this->stackTrace($context['exception']->getTrace());
                 } else {
                     $stack = $this->stackTrace(debug_backtrace());
                 }
                 foreach ($stack as $frame) {
-                    fwrite($fptr, $this->rfcLogLine($frame, $int_level) . "\n");
+                    fwrite($fptr, $this->rfcLogLine($frame, $intLevel) . "\n");
                 }
             }
             fclose($fptr);
         }
     }
 
-    private function rfcLogLine($line, $int_level)
+    private function rfcLogLine($line, $intLevel)
     {
         $date = date('M j H:i:s');
-        $host = gethostname();
-        if ($host === false) {
-            $host = 'localhost';
-        }
-        $pid = getmypid();
-        if ($pid === false) {
-            $pid = 0;
-        }
+        $host = gethostname() ? gethostname() : 'localhost';
+        $pid = getmypid() ? getmypid() : 0;
 
         return sprintf('%s %s %s[%d]: (%s) %s',
-            $date, $host, $this->program_name, $pid,
-            $this->log_level_map[$int_level],
+            $date, $host, $this->programName, $pid,
+            $this->logLevelMap[$intLevel],
             $line);
     }
 
@@ -313,9 +315,9 @@ class BaseLogger
       @param [integer] log level constant
       @return [string] filename or [boolean] false
     */
-    public function getLogLocation($int_level)
+    public function getLogLocation($intLevel)
     {
-        return '/dev/null';
+        return stristr(PHP_OS, 'WIN') ? 'nul' : '/dev/null';
     }
 
     /**

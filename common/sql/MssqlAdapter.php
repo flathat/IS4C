@@ -25,6 +25,16 @@ namespace COREPOS\common\sql;
 
 class MssqlAdapter implements DialectAdapter
 {
+    public function createNamedDB($name)
+    {
+        return 'CREATE DATABASE ' . $this->identifierEscape($name);
+    }
+
+    public function useNamedDB($name)
+    {
+        return 'USE ' . $this->identifierEscape($name);
+    }
+
     public function identifierEscape($str)
     {
         return '[' . $str . ']';
@@ -36,9 +46,9 @@ class MssqlAdapter implements DialectAdapter
         if ($dbc->numRows($result) > 0) {
             $row = $dbc->fetchRow($result);
             return $row[0];
-        } else {
-            return false;
         }
+
+        return false;
     }
 
     public function defaultDatabase()
@@ -48,14 +58,13 @@ class MssqlAdapter implements DialectAdapter
 
     public function temporaryTable($name, $source_table)
     {
+        $tname = '#' . $name;
         if (strstr($name, '.dbo.')) {
-            list($schema, $table) = explode('.dbo.', $name, 2);
-            $name = $schema . '.dbo.#' . $name;
-        } else {
-            $name = '#' . $name;
+            list($schema, ) = explode('.dbo.', $name, 2);
+            $tname = $schema . '.dbo.#' . $name;
         }
         return '
-            CREATE TABLE ' . $name . '
+            CREATE TABLE ' . $tname . '
             LIKE ' . $source_table;
     }
 
@@ -91,7 +100,7 @@ class MssqlAdapter implements DialectAdapter
 
     public function yeardiff($date1, $date2)
     {
-        return "extract(year from age($date1,$date))";
+        return "extract(year from age($date1,$date2))";
     }
 
     public function weekdiff($date1, $date2)
@@ -129,6 +138,16 @@ class MssqlAdapter implements DialectAdapter
         $ret = array_reduce($expressions, function($carry, $e) { return $carry . $e . '+'; }, '');
         
         return substr($ret, 0, strlen($ret)-1);
+    }
+
+    public function setLockTimeout($seconds)
+    {
+        return sprintf('SET LOCK_TIMEOUT %d', 1000*$seconds);
+    }
+
+    public function setCharSet($charset)
+    {
+        return 'SELECT 1';
     }
 }
 

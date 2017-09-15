@@ -241,11 +241,11 @@ class ProgramEventsReport extends FannieReportPage {
         $args[] = $date1 . ' 00:00:00';
         $args[] = $date2 . ' 23:59:59';
 
-        $prep = $dbc->prepare_statement($query);
+        $prep = $dbc->prepare($query);
         if ($prep === False) {
             $dbc->logger("\nprep failed:\n$query");
         }
-        $result = $dbc->exec_statement($prep,$args);
+        $result = $dbc->execute($prep,$args);
         if ($result === False) {
             $dbc->logger("\nexec failed:\n$query\nargs:",implode(" : ",$args));
         }
@@ -257,7 +257,7 @@ class ProgramEventsReport extends FannieReportPage {
         $this->transferOut = 0;
         $this->otherOut = 0;
         $rowCount = 0;
-        while ($row = $dbc->fetch_array($result)){
+        while ($row = $dbc->fetchRow($result)){
             $memberNumber = $row['card_no'];
             $suffix = "";
             if ($row['trans_status'] == 'V') {
@@ -559,6 +559,5 @@ title="Tick to display with sorting from column heads; un-tick for a plain formt
     // class programReport
 }
 
-FannieDispatch::conditionalExec(false);
+FannieDispatch::conditionalExec();
 
-?>

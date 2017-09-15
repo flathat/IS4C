@@ -33,7 +33,6 @@ class MemNameNumImportPage extends \COREPOS\Fannie\API\FannieUploadPage
 {
     protected $title = "Fannie :: Member Tools";
     protected $header = "Import Member Names &amp; Numbers";
-    public $themed = true;
 
     public $description = '[Member Names and Numbers] loads member names and numbers. This is the
     starting point for importing existing member information. Member numbers need to be established
@@ -68,25 +67,20 @@ class MemNameNumImportPage extends \COREPOS\Fannie\API\FannieUploadPage
 
     private $stats = array('imported'=>0, 'errors'=>array());
     
-    function process_file($linedata)
+    public function process_file($linedata, $indexes)
     {
-        global $FANNIE_OP_DB, $FANNIE_NAMES_PER_MEM;
+        global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
-
-        $mn_index = $this->get_column_index('memnum');
-        $fn_index = $this->get_column_index('fn');
-        $ln_index = $this->get_column_index('ln');
-        $t_index = $this->get_column_index('memtype');
 
         $defaults_table = array();
         // get defaults directly from the memtype table if possible
         $mt = $dbc->tableDefinition('memtype');
-        $defQ = $dbc->prepare_statement("SELECT memtype,custdataType,discount,staff,ssi from memtype");
+        $defQ = $dbc->prepare("SELECT memtype,custdataType,discount,staff,ssi from memtype");
         if ($dbc->tableExists('memdefaults') && (!isset($mt['custdataType']) || !isset($mt['discount']) || !isset($mt['staff']) || !isset($mt['ssi']))) {
-            $defQ = $dbc->prepare_statement("SELECT memtype,cd_type as custdataType,discount,staff,SSI as ssi from memdefaults");
+            $defQ = $dbc->prepare("SELECT memtype,cd_type as custdataType,discount,staff,SSI as ssi from memdefaults");
         }
-        $defR = $dbc->exec_statement($defQ);
-        while($defW = $dbc->fetch_row($defR)) {
+        $defR = $dbc->execute($defQ);
+        while ($defW = $dbc->fetchRow($defR)) {
             $defaults_table[$defW['memtype']] = array(
                 'type' => $defW['custdataType'],
                 'discount' => $defW['discount'],
@@ -98,14 +92,14 @@ class MemNameNumImportPage extends \COREPOS\Fannie\API\FannieUploadPage
         foreach ($linedata as $line) {
             // get info from file and member-type default settings
             // if applicable
-            $cardno = $line[$mn_index];
+            $cardno = $line[$indexes['memnum']];
             if (!is_numeric($cardno)) {
                 continue; // skip bad record
             }
 
             $json = array(
                 'cardNo' => $cardno,
-                'customerTypeID' => ($t_index !== false ? $line[$t_index] : 0),
+                'customerTypeID' => ($indexes['mtype'] !== false ? $line[$indexes['mtype']] : 0),
                 'contactAllowed' => 1,
                 'chargeBalance' => 0,
                 'chargeLimit' => 0,
@@ -113,14 +107,15 @@ class MemNameNumImportPage extends \COREPOS\Fannie\API\FannieUploadPage
             );
             $customer = array();
 
-            $customer['firstName'] = $line[$fn_index];
-            $customer['lastName'] = $line[$ln_index];
+            $customer['firstName'] = $line[$indexes['fn']];
+            $customer['lastName'] = $line[$indexes['ln']];
 
             $type = "PC";
             $discount = 0;
             $staff = 0;
             $SSI = 0;
-            if ($t_index !== false) {
+            if ($indexes['mtype'] !== false) {
+                $mtype = $line[$indexes['mtype']];
                 if (isset($defaults_table[$mtype]['type'])) {
                     $type = $defaults_table[$mtype]['type'];
                 }
@@ -141,11 +136,11 @@ class MemNameNumImportPage extends \COREPOS\Fannie\API\FannieUploadPage
             $customer['lowIncomeBenefits'] = $SSI;
 
             // determine person number
-            if ($FANNIE_NAMES_PER_MEM == 1) {
+            if ($this->config->get('NAMES_PER_MEM') == 1) {
                 $customer['accountHolder'] = 1;
             } else {
-                $account = \COREPOS\Fannie\API\member\MemberREST::get($cardno);
-                if ($account) {
+                $account = COREPOS\Fannie\API\member\MemberREST::search(array('cardNo'=>$cardno, 'customers'=>array()), 1, true);
+                if (count($account) > 0) {
                     $customer['accountHolder'] = 0;
                 } else {
                     $customer['accountHolder'] = 1;
@@ -154,9 +149,9 @@ class MemNameNumImportPage extends \COREPOS\Fannie\API\FannieUploadPage
 
             $json['customers'][] = $customer;
         
-            $resp = \COREPOS\Fannie\API\member\MemberREST::post($cardno, $json);
+            $resp = COREPOS\Fannie\API\member\MemberREST::post($cardno, $json);
             if ($resp['errors'] > 0) {
-                $this->stats['errors'][] = "Error importing member $cardno ({$line[$fn_index]} {$line[$ln_index]})";
+                $this->stats['errors'][] = "Error importing member $cardno ({$line[$indexes['fn']]} {$line[$indexes['ln']]})";
             } else {
                 $this->stats['imported']++;
             }
@@ -177,20 +172,17 @@ class MemNameNumImportPage extends \COREPOS\Fannie\API\FannieUploadPage
 
     function results_content()
     {
-        $ret = '
-            <p>Import Complete</p>
-            <div class="alert alert-success">' . $this->stats['imported'] . ' records imported</div>';
-        if ($this->stats['errors']) {
-            $ret .= '<div class="alert alert-error"><ul>';
-            foreach ($this->stats['errors'] as $error) {
-                $ret .= '<li>' . $error . '</li>';
-            }
-            $ret .= '</ul></div>';
-        }
+        return $this->simpleStats($this->stats);
+    }
 
-        return $ret;
+    public function unitTest($phpunit)
+    {
+        $data = array(1, 'Joe', 'Bob', 1);
+        $indexes = array('memnum'=>0, 'fn'=>1, 'ln'=>2, 'mtype'=>3);
+        $this->config->set('NAMES_PER_MEM', 1);
+        $phpunit->assertEquals(true, $this->process_file(array($data), $indexes));
     }
 }
 
-FannieDispatch::conditionalExec(false);
+FannieDispatch::conditionalExec();
 

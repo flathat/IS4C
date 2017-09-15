@@ -29,6 +29,8 @@ class SameDayReportingTask extends FannieTask
 day\'s transactions into dlog_15. Can be run
 repeatedly throughout the day.';
 
+    public $log_start_stop = false;
+
     public $default_schedule = array(
         'min' => '*/5',
         'hour' => '7-22',
@@ -41,16 +43,17 @@ repeatedly throughout the day.';
     {
         $dbc = FannieDB::get($this->config->get('TRANS_DB'));
         $lookup = $dbc->prepare('
-            SELECT MAX(store_row_id) FROM dlog_15
+            SELECT MAX(store_row_id), store_id FROM dlog_15 GROUP BY store_id
         ');
-        $max = $dbc->getValue($lookup);
-        if ($max) {
+        $res = $dbc->execute($lookup);
+        while ($row = $dbc->fetchRow($res)) {
             $rotate = $dbc->prepare('
                 INSERT INTO dlog_15
                 SELECT * FROM dlog
                 WHERE store_row_id > ?
+                    AND store_id=?
             ');
-            $dbc->execute($rotate, array($max));
+            $dbc->execute($rotate, array($row[0], $row[1]));
         }
     }
 }

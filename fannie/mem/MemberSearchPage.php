@@ -30,7 +30,6 @@ class MemberSearchPage extends FanniePage {
     protected $header = "Find Members";
 
     public $description = '[Member Search] finds a member account by name, number, or contact info.';
-    public $themed = true;
 
     protected $must_authenticate = true;
     protected $auth_classes = array('editmembers');
@@ -45,9 +44,9 @@ class MemberSearchPage extends FanniePage {
         $this->country = (isset($FANNIE_COUNTRY)&&!empty($FANNIE_COUNTRY))?$FANNIE_COUNTRY:"US";
 
         /* do search */
-        if (FormLib::get_form_value('doSearch',False) !== False){
+        if (FormLib::get('doSearch',False) !== False){
             $dbc = FannieDB::get($FANNIE_OP_DB);
-            $num = FormLib::get_form_value('memNum','');
+            $num = FormLib::get('memNum','');
 
             /* if member number is provided and exists, go
                directly to the result */
@@ -61,7 +60,7 @@ class MemberSearchPage extends FanniePage {
 
             /* process each available search and merge the
                results */
-            FannieAPI::listModules('MemberModule');
+            FannieAPI::listModules('COREPOS\Fannie\API\member\MemberModule');
             foreach($FANNIE_MEMBER_MODULES as $mm){
                 if (class_exists($mm)) {
                     $instance = new $mm();
@@ -79,8 +78,8 @@ class MemberSearchPage extends FanniePage {
             /* if modules find exactly one member, go directly to
                the result */
             if (count($this->results) == 1){
-                $num = array_pop(array_keys($this->results));
-                header("Location: MemberEditor.php?memNum=".$num);
+                $mem = array_pop($this->results);
+                header("Location: MemberEditor.php?memNum=".$mem['cardNo']);
                 return False;
             }
 
@@ -106,13 +105,12 @@ class MemberSearchPage extends FanniePage {
 
     function form_content()
     {
-        global $FANNIE_MEMBER_MODULES, $FANNIE_OP_DB;
         $ret = '';
 
-        $review = FormLib::get_form_value('review',False);
+        $review = FormLib::get('review',False);
         if ($review !== false) {
             $ret .= '<fieldset><legend>Review</legend>';
-            $dbc = FannieDB::get($FANNIE_OP_DB);
+            $dbc = FannieDB::get($this->config->get('OP_DB'));
             $account = \COREPOS\Fannie\API\member\MemberREST::get($review);
             $ret .= 'Saved Member #'.$review.' (';
             if ($account) {
@@ -149,8 +147,8 @@ class MemberSearchPage extends FanniePage {
             </div>';
         $searchJS = '';
         $load = array();
-        FannieAPI::listModules('MemberModule');
-        foreach ($FANNIE_MEMBER_MODULES as $mm) {
+        FannieAPI::listModules('COREPOS\Fannie\API\member\MemberModule');
+        foreach ($this->config->get('MEMBER_MODULES') as $mm) {
             if (class_exists($mm)) {
                 $instance = new $mm();
                 if ($instance->hasSearch()) {
@@ -185,17 +183,44 @@ class MemberSearchPage extends FanniePage {
         if (empty($this->results)) {
             $ret .= "<div class=\"alert alert-danger\">Error: No matching member found</div>";
         } else {
-            $ret .= '<div class="well"><h3>Multiple Results</h3>';
             $list = '';
             foreach ($this->results as $cn => $name) {
                 if (strlen($list) > 1900) break; // avoid excessively long URLs
                 $list .= '&l[]='.$cn;
             }
-            $ret .= "<ul>";
-            foreach ($this->results as $cn => $name) {
-                $ret .= "<li><a href=\"MemberEditor.php?memNum=$cn$list\">$cn $name</a></li>";
+            $ret .= '<div class="panel panel-default">
+                <div class="panel-heading">Multiple Results</div>
+                <div class="panel-body">';
+            $ret .= '<table class="tablesorter"><thead>';
+            $ret .= '<tr><th>Mem#</th><th>Last Name</th><th>First Name</th>
+                <th>Address</th><th>City</th><th>State</th><th>Zip</th></tr>
+                </thead><tbody>';
+            foreach ($this->results as $account) {
+                foreach ($account['customers'] as $name) {
+                    $ret .= sprintf('<tr>
+                            <td><a href="MemberEditor.php?memNum=%s%s">%d</a></td>
+                            <td>%s</td>
+                            <td>%s</td>
+                            <td>%s</td>
+                            <td>%s</td>
+                            <td>%s</td>
+                            <td>%s</td>
+                            </tr>',
+                            $account['cardNo'], $list, $account['cardNo'],
+                            $name['lastName'],
+                            $name['firstName'],
+                            $account['addressFirstLine'],
+                            $account['city'],
+                            $account['state'],
+                            $account['zip']
+                        );
+                }
             }
-            $ret .= "</ul></div>";
+            $ret .= "</tbody></table>";
+            $ret .= "</div></div>";
+            $this->add_css_file('../src/javascript/tablesorter/themes/blue/style.css');
+            $this->addScript('../src/javascript/tablesorter/jquery.tablesorter.js');
+            $this->add_onload_command('$(\'.tablesorter\').tablesorter();');
         }
 
         return $ret;
@@ -208,9 +233,13 @@ class MemberSearchPage extends FanniePage {
             return multiple members. If there are multiple results, click
             the one you want to view.</p>';
     }
+
+    public function unitTest($phpunit)
+    {
+        $this->config->set('FANNIE_MEMBER_MODULES', array('ContactInfo', 'MemCard'));
+        $phpunit->assertNotEquals(0, strlen($this->body_content()));
+    }
 }
 
-FannieDispatch::conditionalExec(false);
-
-?>
+FannieDispatch::conditionalExec();
 

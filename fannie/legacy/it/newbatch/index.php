@@ -14,7 +14,7 @@ if (!function_exists('unsale')) {
 $batchtypes = array();
 $typesQ = "select batchTypeID,typeDesc from batchType order by batchTypeID";
 $typesR = $sql->query($typesQ);
-while ($typesW = $sql->fetch_array($typesR))
+while ($typesW = $sql->fetchRow($typesR))
     $batchtypes[$typesW[0]] = $typesW[1];
     
 $owners = array('','Cool','Deli','Meat','HBC','Bulk','Grocery','Produce','Gen Merch','IT');
@@ -41,12 +41,12 @@ if (isset($_GET['action'])){
         
         $infoQ = $sql->prepare("select discType from batchType where batchTypeID=?");
         $infoR = $sql->execute($infoQ, array($type));
-        $discounttype = array_pop($sql->fetch_array($infoR));
+        $discounttype = array_pop($sql->fetchRow($infoR));
         
         $insQ = $sql->prepare("insert into batches (startDate, endDate, batchName, batchType, discountType,
             priority,owner) values (?,?,?,?,?,0,?)");
         $insR = $sql->execute($insQ, array($startdate, $enddate, $name, $type, $discounttype, $owner));
-        $id = $sql->insert_id();
+        $id = $sql->insertID();
         
         if ($sql->tableExists('batchowner')) {
             $insQ = $sql->prepare("insert batchowner values (?,?)");
@@ -79,7 +79,7 @@ if (isset($_GET['action'])){
         
         $infoQ = $sql->prepare("select discType from batchType where batchTypeID=?");
         $infoR = $sql->execute($infoQ, array($type));
-        $discounttype = array_pop($sql->fetch_array($infoR));
+        $discounttype = array_pop($sql->fetchRow($infoR));
         
         $upQ = $sql->prepare("update batches set batchname=?,batchtype=?,discounttype=?,startdate=?,enddate=?,owner=? where batchID=?");
         $upR = $sql->execute($upQ, array($name, $type, $discounttype, $startdate, $enddate, $owner, $id));
@@ -476,7 +476,7 @@ function addItemLCInput($newtags=false){
     $ret .= "<select id=lcselect onchange=lcselect_util();>";
     $lcQ = "select likeCode,likeCodeDesc from likeCodes order by likeCode";
     $lcR = $sql->query($lcQ);
-    while ($lcW = $sql->fetch_array($lcR))
+    while ($lcW = $sql->fetchRow($lcR))
         $ret .= "<option value=$lcW[0]>$lcW[0] $lcW[1]</option>";
     $ret .= "</select>";
     $ret .= "<input type=submit value=Add />";
@@ -494,7 +494,7 @@ function addItemPriceInput($upc,$newtags=false){
     global $sql;
     $fetchQ = $sql->prepare("select description,normal_price from products where upc=?");
     $fetchR = $sql->execute($fetchQ, array($upc));
-    $fetchW = $sql->fetch_array($fetchR);
+    $fetchW = $sql->fetchRow($fetchR);
     
     $ret = "<form onsubmit=\"addItemFinish('$upc'); return false;\">";
     $ret .= "<b>UPC</b>: $upc <b>Description</b>: $fetchW[0] <b>Normal price</b>: $fetchW[1] ";
@@ -513,7 +513,7 @@ function addItemPriceLCInput($lc){
     global $sql;
     $fetchQ = $sql->prepare("select likeCodeDesc from likeCodes where likeCode=?");
     $fetchR = $sql->execute($fetchQ, array($lc));
-    $desc = array_pop($sql->fetch_array($fetchR));
+    $desc = array_pop($sql->fetchRow($fetchR));
     
     /* get the most common price for items in a given
      * like code
@@ -523,10 +523,10 @@ function addItemPriceLCInput($lc){
             where u.upc is not null
             group by p.normal_price
             order by count(*) desc";
-    $fetchQ = $sql->add_select_limit($fetchQ,1);
+    $fetchQ = $sql->addSelectLimit($fetchQ,1);
     $fetchP = $sql->prepare($fetchQ);
     $fetchR = $sql->execute($fetchP, array($lc));
-    $normal_price = array_pop($sql->fetch_array($fetchR));
+    $normal_price = array_pop($sql->fetchRow($fetchR));
     
     $ret = "<form onsubmit=\"addItemLCFinish('$lc'); return false;\">";
     $ret .= "<b>Like code</b>: $lc <b>Description</b>: $desc <b>Normal price</b>: $normal_price ";
@@ -552,7 +552,7 @@ function newTagInput($upc,$price,$id){
     $vendor = '';
     // grab info from the UNFI table if possible.
     if ($unfiN == 1){
-        $unfiW = $sql->fetch_array($unfiR);
+        $unfiW = $sql->fetchRow($unfiR);
         $size = $unfiW['size'];
         $brand = strtoupper($unfiW['brand']);
         $brand = preg_replace("/\'/","",$brand);
@@ -566,7 +566,7 @@ function newTagInput($upc,$price,$id){
     else {
         $descQ = $sql->prepare("select description from products where upc=?");
         $descR = $sql->execute($descQ, array($upc));
-        $desc = strtoupper(array_pop($sql->fetch_array($descR)));
+        $desc = strtoupper(array_pop($sql->fetchRow($descR)));
     }
     
     $ret = "<form onsubmit=\"newTag(); return false;\">";
@@ -672,7 +672,7 @@ function batchListDisplay($filter='',$mode='all'){
     $fetchR = $sql->execute($fetchP, $args);
     
     $count = 0;
-    while($fetchW = $sql->fetch_array($fetchR)){
+    while($fetchW = $sql->fetchRow($fetchR)){
         $c = ($c + 1) % 2;
         $count += 1;
         //if ($count > 100) break;
@@ -788,7 +788,7 @@ function showBatchDisplay($id,$orderby='ORDER BY b.listID DESC'){
     $colors = array('#ffffff','#ffffcc');
     $c = 0;
     $row = 1;
-    while($fetchW = $sql->fetch_array($fetchR)){
+    while($fetchW = $sql->fetchRow($fetchR)){
         $c = ($c + 1) % 2;
         $ret .= "<tr>";
         $fetchW[0] = rtrim($fetchW[0]);
@@ -851,6 +851,9 @@ $(document).ready(function(){ setupDatePickers(); });
 </script>
 </head>
 <body onload="document.getElementById('newBatchName').focus();">
+<div style="text-align:center; background-color:#5cb85c; color:#fff; width:100%; padding: 10px;">
+The BatchMobile is unaware of our second store. Please use the <a style="color:#fff; text-decoration: underline;" href="/git/fannie/newbatch/BatchListPage.php">New Batch Editor</a>. This page will remain available until IT has verified the newer one is working correctly for everyone.
+</div>
 <div style="text-align:center;" id="batchmobile">
 <a href="batchmobile-large.png"><img src="batchmobile-small.png" border=0 /></a>
 <br />

@@ -38,7 +38,7 @@ if (isset($_POST["MAX_FILE_SIZE"])){
             echo "<i>Error - unknown like code #".$data[$LC_COL]."</i><br />";
             continue;
         }
-        $row = $sql->fetch_array($r);
+        $row = $sql->fetchRow($r);
 
         echo "<tr>";
         echo "<td>".$data[$LC_COL]."</td><input type=hidden name=likecode[] value=\"".$data[$LC_COL]."\" />";
@@ -72,7 +72,7 @@ else if (isset($_POST['likecode'])){
     $createQ = $sql->prepare("insert into batches (startDate, endDate, batchName, batchType, discountType, priority, owner) 
         values (?,?,?,?,?,0,'Produce')");
     $sql->execute($createQ, array($startDate, $endDate, $batchName, $batchType, $discount));
-    $batchID = $sql->insert_id();
+    $batchID = $sql->insertID();
 
     if ($sql->tableExists('batchowner')) {
         $ownerQ = $sql->prepare("insert into batchowner values (?,'Produce')");
@@ -121,7 +121,7 @@ $(document).ready(function(){
     <?php
         $typesQ = "select batchTypeID,typeDesc from batchType where batchTypeID < 7 order by batchTypeID";
         $typesR = $sql->query($typesQ);
-        while ($typesW = $sql->fetch_array($typesR))
+        while ($typesW = $sql->fetchRow($typesR))
             echo "<option value=".$typesW[0].">".$typesW[1]."</option>";
     ?>
     </select></td>
@@ -148,4 +148,4 @@ $(document).ready(function(){
 </html>
 <?php
 }
-?>
+

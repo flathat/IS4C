@@ -21,7 +21,7 @@
 
 *********************************************************************************/
 
-class ExtraInfoModule extends ItemModule 
+class ExtraInfoModule extends \COREPOS\Fannie\API\item\ItemModule 
 {
 
     public function showEditForm($upc, $display_mode=1, $expand_mode=1)
@@ -38,8 +38,8 @@ class ExtraInfoModule extends ItemModule
 
         $info = array('cost'=>0.00,'deposit'=>0,'local'=>0,'inUse'=>1,'modified'=>'Unknown','idEnforced'=>0);
         $dbc = $this->db();
-        $p = $dbc->prepare_statement('SELECT cost,deposit,local,inUse,modified,idEnforced FROM products WHERE upc=?');
-        $r = $dbc->exec_statement($p,array($upc));
+        $p = $dbc->prepare('SELECT cost,deposit,local,inUse,modified,idEnforced FROM products WHERE upc=?');
+        $r = $dbc->execute($p,array($upc));
         if ($dbc->num_rows($r) > 0) {
             $info = $dbc->fetch_row($r);
         }
@@ -97,26 +97,22 @@ class ExtraInfoModule extends ItemModule
     function SaveFormData($upc)
     {
         $upc = BarcodeLib::padUPC($upc);
-        $deposit = FormLib::get_form_value('deposit',0);
-        $inUse = FormLib::get_form_value('inUse',0);
-        $local = FormLib::get_form_value('local',0);
-        $idReq = FormLib::get_form_value('idReq',0);
+        try {
+            $dbc = $this->db();
 
-        $dbc = $this->db();
+            $pm = new ProductsModel($dbc);
+            $pm->upc($upc);
+            $pm->store_id(1);
+            $pm->deposit($this->form->deposit);
+            $pm->local($this->form->local);
+            $pm->inUse($this->form->inUse);
+            $pm->idEnforced($this->form->idReq);
+            $pm->enableLogging(false);
+            $r1 = $pm->save();
 
-        $pm = new ProductsModel($dbc);
-        $pm->upc($upc);
-        $pm->store_id(1);
-        $pm->deposit($deposit);
-        $pm->local($local);
-        $pm->inUse($inUse);
-        $pm->idEnforced($idReq);
-        $r1 = $pm->save();
-
-        if ($r1 === false) {
+            return $r1 === false ? false : true;
+        } catch (Exception $ex) {
             return false;
-        } else {
-            return true;    
         }
     }
 }

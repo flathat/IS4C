@@ -41,34 +41,33 @@ Replaces nightly.tablecache.php';
 
     public function run()
     {
-        global $FANNIE_OP_DB, $FANNIE_TRANS_DB, $FANNIE_ARCHIVE_DB;
+        global $FANNIE_OP_DB, $FANNIE_ARCHIVE_DB;
         $sql = FannieDB::get($FANNIE_OP_DB);
 
-        $chk = $sql->query("TRUNCATE TABLE batchMergeTable");
-        if ($chk === false) {
-            $this->cronMsg("Could not truncate batchMergeTable", FannieLogger::WARNING);
-        }
-        $chk = $sql->query("INSERT INTO batchMergeTable
-                        SELECT b.startDate,b.endDate,p.upc,p.description,b.batchID
-                        FROM batches AS b LEFT JOIN batchList AS l
-                        ON b.batchID=l.batchID 
-                            " . DTrans::joinProducts('l', 'p', 'INNER')
-                        );
-        if ($chk === false) {
-            $this->cronMsg("Could not load batch reporting data for UPCs", FannieLogger::WARNING);
-        }
-        $chk = $sql->query("INSERT INTO batchMergeTable 
-                        SELECT b.startDate, b.endDate, p.upc, p.description, b.batchID
-                        FROM batchList AS l LEFT JOIN batches AS b
-                        ON b.batchID=l.batchID INNER JOIN upcLike AS u
-                        ON l.upc = " . $sql->concat("'LC'", $sql->convert('u.likeCode', 'CHAR'), '') . "
-                        " . DTrans::joinProducts('u', 'p', 'INNER') . "
-                        WHERE p.upc IS NOT NULL");
-        if ($chk === false) {
-            $this->cronMsg("Could not load batch reporting data for likecodes", FannieLogger::WARNING);
+        $chk = $sql->query('DELETE FROM shelftags WHERE id < 0');
+
+        $this->recacheCashierPerformance();
+
+        $sql = FannieDB::get($FANNIE_ARCHIVE_DB);
+
+        if ($sql->table_exists("reportDataCache")){
+            $sql->query("DELETE FROM reportDataCache WHERE expires < ".$sql->now());
         }
 
-        $sql = FannieDB::get($FANNIE_TRANS_DB);
+        $daily = \COREPOS\Fannie\API\data\DataCache::fileCacheDir('daily');
+        if ($daily) {
+            $this->clearFileCache($daily);
+        }
+
+        $monthly = \COREPOS\Fannie\API\data\DataCache::fileCacheDir('monthly');
+        if ($monthly && date('j') == 1) {
+            $this->clearFileCache($monthly);
+        }
+    }
+
+    private function recacheCashierPerformance()
+    {
+        $sql = FannieDB::get(FannieConfig::config('TRANS_DB'));
 
         $cashierPerformanceSQL = "
             SELECT
@@ -109,34 +108,17 @@ Replaces nightly.tablecache.php';
                 $this->cronMsg("Could not load data for CashPerformDay_cache", FannieLogger::WARNING);
             }
         }
+    }
 
-        $sql = FannieDB::get($FANNIE_ARCHIVE_DB);
-
-        if ($sql->table_exists("reportDataCache")){
-            $sql->query("DELETE FROM reportDataCache WHERE expires < ".$sql->now());
-        }
-
-        $daily = \COREPOS\Fannie\API\data\DataCache::fileCacheDir('daily');
-        if ($daily) {
-            $dh = opendir($daily);
-            while ( ($file = readdir($dh)) !== false) {
-                if (is_file($daily . '/' . $file)) {
-                    unlink($daily . '/' . $file);
-                }
+    private function clearFileCache($path)
+    {
+        $dir = opendir($path);
+        while ( ($file = readdir($dir)) !== false) {
+            if (is_file($path . '/' . $file)) {
+                unlink($path . '/' . $file);
             }
-            closedir($dh);
         }
-
-        $monthly = \COREPOS\Fannie\API\data\DataCache::fileCacheDir('monthly');
-        if ($monthly && date('j') == 1) {
-            $dh = opendir($monthly);
-            while ( ($file = readdir($dh)) !== false) {
-                if (is_file($monthly . '/' . $file)) {
-                    unlink($monthly . '/' . $file);
-                }
-            }
-            closedir($dh);
-        }
+        closedir($dir);
     }
 }
 

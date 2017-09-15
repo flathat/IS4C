@@ -28,6 +28,7 @@ if (!class_exists('CoreWarehouseModel')) {
 class SumDeptSalesByDayModel extends CoreWarehouseModel {
 
     protected $name = 'sumDeptSalesByDay';
+    protected $preferred_db = 'plugin:WarehouseDatabase';
     
     protected $columns = array(
     'date_id' => array('type'=>'INT','primary_key'=>True,'default'=>0),
@@ -37,23 +38,15 @@ class SumDeptSalesByDayModel extends CoreWarehouseModel {
     );
 
     public function refresh_data($trans_db, $month, $year, $day=False){
-        $start_id = date('Ymd',mktime(0,0,0,$month,1,$year));
-        $start_date = date('Y-m-d',mktime(0,0,0,$month,1,$year));
-        $end_id = date('Ymt',mktime(0,0,0,$month,1,$year));
-        $end_date = date('Y-m-t',mktime(0,0,0,$month,1,$year));
-        if ($day !== False){
-            $start_id = date('Ymd',mktime(0,0,0,$month,$day,$year));
-            $start_date = date('Y-m-d',mktime(0,0,0,$month,$day,$year));
-            $end_id = $start_id;
-            $end_date = $start_date;
-        }
+        list($start_id, $start_date, $end_id, $end_date) = $this->dates($month, $year, $day);
+
+        $config = FannieConfig::factory();
+        $settings = $config->get('PLUGIN_SETTINGS');
+        $sql = FannieDB::get($settings['WarehouseDatabase']);
 
         $target_table = DTransactionsModel::selectDlog($start_date, $end_date);
 
-        /* clear old entries */
-        $sql = 'DELETE FROM '.$this->name.' WHERE date_id BETWEEN ? AND ?';
-        $prep = $this->connection->prepare_statement($sql);
-        $result = $this->connection->exec_statement($prep, array($start_id, $end_id));
+        $this->clearDates($sql, $start_id, $end_id);
 
         /* reload table from transarction archives */
         $sql = "INSERT INTO ".$this->name."
@@ -66,8 +59,8 @@ class SumDeptSalesByDayModel extends CoreWarehouseModel {
             tdate BETWEEN ? AND ? AND
             trans_type IN ('I','D') AND upc <> '0'
             GROUP BY DATE_FORMAT(tdate,'%Y%m%d'), department";
-        $prep = $this->connection->prepare_statement($sql);
-        $result = $this->connection->exec_statement($prep, array($start_date.' 00:00:00',$end_date.' 23:59:59'));
+        $prep = $this->connection->prepare($sql);
+        $result = $this->connection->execute($prep, array($start_date.' 00:00:00',$end_date.' 23:59:59'));
     }
 }
 

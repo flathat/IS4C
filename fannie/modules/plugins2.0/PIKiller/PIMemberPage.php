@@ -86,12 +86,20 @@ class PIMemberPage extends PIKillerPage {
         $susp = $this->get_model($dbc,'SuspensionsModel',array('cardno'=>$this->card_no));
         if ($susp->load()) $this->__models['suspended'] = $susp;
 
-        $noteP = $dbc->prepare_statement('SELECT note FROM memberNotes WHERE cardno=? ORDER BY stamp DESC');
-        $noteR = $dbc->exec_statement($noteP, array($this->card_no));
+        $noteP = $dbc->prepare('SELECT note FROM memberNotes WHERE cardno=? ORDER BY stamp DESC');
+        $noteR = $dbc->execute($noteP, array($this->card_no));
         $this->__models['note'] = '';
         if ($dbc->num_rows($noteR) > 0){
             $tmp = $dbc->fetch_row($noteR);
             $this->__models['note'] = $tmp['note'];
+        }
+
+        $comP = $dbc->prepare("SELECT empNo FROM Commissions WHERE cardNo=? AND type='OWNERSHIP'");
+        $this->commissioned = $dbc->getValue($comP, array($this->id));
+        $empR = $dbc->query('SELECT emp_no, FirstName FROM employees WHERE EmpActive=1 AND emp_no > 0 ORDER BY FirstName');
+        $this->emps = array();
+        while ($empW = $dbc->fetchRow($empR)) {
+            $this->emps[] = $empW;
         }
 
         $dbc = FannieDB::get($FANNIE_TRANS_DB);
@@ -116,10 +124,10 @@ class PIMemberPage extends PIKillerPage {
         $note = FormLib::get_form_value('notetext');
         $hash = FormLib::get_form_value('_notetext');
         if (base64_decode($hash) != $note){
-            $noteP = $dbc->prepare_statement('INSERT INTO memberNotes
+            $noteP = $dbc->prepare('INSERT INTO memberNotes
                     (cardno, note, stamp, username) VALUES
                     (?, ?, '.$dbc->now().', ?)');   
-            $noteR = $dbc->exec_statement($noteP,array($this->card_no,
+            $noteR = $dbc->execute($noteP,array($this->card_no,
                     str_replace("\n",'<br />',$note),
                     $this->current_user));
         }
@@ -155,6 +163,9 @@ class PIMemberPage extends PIKillerPage {
             $default = new MemtypeModel($dbc);
             $default->memtype($json['customerTypeID']);
             $default->load();
+            if (FormLib::get('suspended') == 0) {
+                $json['memberStatus'] = $default->custdataType();
+            }
             $account_holder['discount'] = $default->discount();
             $account_holder['staff'] = $default->staff();
             $account_holder['chargeAllowed'] = $json['chargeLimit'] == 0 ? 0 : 1;
@@ -208,6 +219,16 @@ class PIMemberPage extends PIKillerPage {
         }
         $resp = \COREPOS\Fannie\API\member\MemberREST::post($this->card_no, $json);
 
+        $comm = new CommissionsModel($dbc);
+        $comm->cardNo($this->id);
+        $comm->type('OWNERSHIP');
+        $exists = $comm->find();
+        if (count($exists) > 0) {
+            $comm = $exists[0];
+        }
+        $comm->empNo(FormLib::get('commissioned'));
+        $comm->save();
+
         $custdata = new CustdataModel($dbc);
         $custdata->CardNo($this->card_no);
         foreach ($custdata->find() as $c) {
@@ -218,6 +239,18 @@ class PIMemberPage extends PIKillerPage {
         $cards->card_no($this->card_no);
         $cards->load();
         $cards->pushToLanes();
+
+
+        $prep = $dbc->prepare('
+            SELECT webServiceUrl FROM Stores WHERE hasOwnItems=1 AND storeID<>?
+            ');
+        $res = $dbc->execute($prep, array(\FannieConfig::config('STORE_ID')));
+        while ($row = $dbc->fetchRow($res)) {
+            $client = new \Datto\JsonRpc\Http\Client($row['webServiceUrl']);
+            $client->query(time(), 'COREPOS\\Fannie\\API\\webservices\\FannieMemberLaneSync', array('id'=>$this->card_no));
+            $client->send();
+        }
+
         header('Location: PIMemberPage.php?id='.$this->card_no);
 
         return false;
@@ -269,9 +302,11 @@ class PIMemberPage extends PIKillerPage {
                     }
                 }
             }
+            echo '<input type="hidden" name="suspended" value="1" />';
             echo '</td>';
         }
         else {
+            echo '<input type="hidden" name="suspended" value="0" />';
             echo "<td>$status</td>";
         }
         echo "<td colspan=2><a href=PISuspensionPage.php?id=".$this->card_no.">History</a>";
@@ -368,6 +403,14 @@ class PIMemberPage extends PIKillerPage {
                 array(),$limitedEdit).'</td>';
         echo "<td class=\"yellowbg\">Current Balance: </td>";
         echo '<td>'.sprintf('%.2f',$this->__models['ar']->balance()).'</td>';
+        echo "<td class=\"yellowbg\">Referral:</td>";
+        $opts = array(0);
+        $labels = array('n/a');
+        foreach ($this->emps as $e) {
+            $opts[] = $e['emp_no'];
+            $labels[] = $e['emp_no'] . ' ' . $e['FirstName'];
+        }
+        echo '<td>' . $this->text_or_select('commissioned', $this->commissioned, $opts, $labels) . '</td>';
         echo "</tr>";
 
         echo "<tr class=\"yellowbg\"><td colspan=6></td></tr>";
@@ -434,6 +477,11 @@ class PIMemberPage extends PIKillerPage {
         echo '</tr>';
 
         echo "</table>";
+        if (FormLib::get('edit', false) !== false) {
+            $this->addScript('edit.js');
+            $this->addOnloadCommand("\$('input').keydown(piJS.nosubmit);\n");
+            $this->addOnloadCommand("\$('input[name=FirstName]').focus();\n");
+        }
         return ob_get_clean();
     }
 

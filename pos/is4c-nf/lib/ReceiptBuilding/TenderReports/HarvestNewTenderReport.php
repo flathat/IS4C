@@ -21,11 +21,16 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\lib\ReceiptBuilding\TenderReports;
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\ReceiptLib;
+
 /**
   @class HarvestNewTenderReport
   Generate a tender report using the NEW methods (no TTG)
 */
-class HarvestNewTenderReport extends TenderReport {
+class HarvestNewTenderReport extends TenderReport 
+{
 
 /** 
  Print a tender report
@@ -37,81 +42,66 @@ class HarvestNewTenderReport extends TenderReport {
  special handling in the tender tape view (e.g., three
  tender types are actually compined under EBT)
  */
-static public function get()
+static public function get($session)
 {
-    $DESIRED_TENDERS = CoreLocal::get("TRDesiredTenders");
+    $DESIRED_TENDERS = is_array($session->get("TRDesiredTenders")) ? $session->get('TRDesiredTenders') : array();
 
-    // $DESIRED_TENDERS = array(
-    //              "CK"=>"CHECK TENDERS",
-    //              "GD"=>"GIFT CARD TENDERS",
-    //              "TC"=>"GIFT CERT TENDERS",
-    //              "MI"=>"STORE CHARGE TENDERS",
-    //              "EF"=>"EBT CARD TENDERS",
-    //              "CP"=>"COUPONS TENDERED",
-    //              "IC"=>"INSTORE COUPONS TENDERED",
-    //              "AR"=>"AR PAYMENTS",
-    //              "EQ"=>"EQUITY SALES"
-    //          );
-    $DESIRED_TENDERS += array(
+    $DESIRED_TENDERS = array_merge($DESIRED_TENDERS, array(
         "CP"=>"COUPONS TENDERED", 
         "FS"=>"EBT CARD TENDERS", 
         "CK"=>"CHECK TENDERS", 
         "AR"=>"ACCOUNTANT ONLY", 
         "EQ"=>"EQUITY"
-    );
+    ));
 
-    $db_a = Database::mDataConnect();
+    $dba = Database::mDataConnect();
 
-    $blank = "             ";
-    $fieldNames = "  ".substr("Time".$blank, 0, 13)
-            .substr("Lane".$blank, 0, 9)
-            .substr("Trans #".$blank, 0, 12)
-            .substr("Change".$blank, 0, 14)
-            .substr("Amount".$blank, 0, 14)."\n";
-    $ref = ReceiptLib::centerString(trim(CoreLocal::get("CashierNo"))." ".trim(CoreLocal::get("cashier"))." ".ReceiptLib::build_time(time()))."\n\n";
+    $blank = self::standardBlank();
+    $fieldNames = self::standardFieldNames();
+    $ref = ReceiptLib::centerString(trim($session->get("CashierNo"))." ".trim($session->get("cashier"))." ".ReceiptLib::build_time(time()))."\n\n";
     $receipt = "";
 
     $itemize = 0;
-    foreach($DESIRED_TENDERS as $tender_code => $header){ 
+    foreach ($DESIRED_TENDERS as $tenderCode => $header) { 
         $query = "select tdate,register_no,trans_no,-total AS tender
-                   from dlog where emp_no=".CoreLocal::get("CashierNo").
-            " and trans_type='T' AND trans_subtype='".$tender_code."'
+                   from dlog where emp_no=".$session->get("CashierNo").
+            " and trans_type='T' AND trans_subtype='".$tenderCode."'
              AND total <> 0 ORDER BY tdate";
-        switch($tender_code){
+        switch($tenderCode){
         case 'FS':
             $query = "select tdate,register_no,trans_no,-total AS tender
-                from dlog where emp_no=".CoreLocal::get("CashierNo").
+                from dlog where emp_no=".$session->get("CashierNo").
                 " and trans_type='T' AND trans_subtype IN ('EF','EC','EB','EK')
                   AND total <> 0 ORDER BY tdate";
             break;
         case 'CK':
             $query = "select tdate,register_no,trans_no,-total AS tender
-                from dlog where emp_no=".CoreLocal::get("CashierNo").
+                from dlog where emp_no=".$session->get("CashierNo").
                 " and trans_type='T' AND trans_subtype IN ('PE','BU','EL','PY','TV')
                   AND total <> 0 ORDER BY tdate";
             break;
         case 'MC':
             $query = "select tdate,register_no,trans_no,-total AS tender
-                from dlog where emp_no=".CoreLocal::get("CashierNo").
+                from dlog where emp_no=".$session->get("CashierNo").
                 " and trans_type='T' AND trans_subtype  IN ('CP','MC') AND
                   upc NOT LIKE '%MAD%' AND total <> 0 ORDER BY tdate";
             break;
         case 'AR':
             $query = "select tdate,register_no,trans_no,total AS tender
-                from dlog where emp_no=".CoreLocal::get("CashierNo").
+                from dlog where emp_no=".$session->get("CashierNo").
                 " and trans_type='D' AND total <> 0 AND department = 98
                   ORDER BY tdate";
             break;
         case 'EQ':
             $query = "select tdate,register_no,trans_no,total AS tender
-                from dlog where emp_no=".CoreLocal::get("CashierNo").
+                from dlog where emp_no=".$session->get("CashierNo").
                 " and trans_type='D' AND department IN (70,71)
                   AND total <> 0 ORDER BY tdate";
             break;
         }
-        $result = $db_a->query($query);
-        $num_rows = $db_a->num_rows($result);
-        if ($num_rows <= 0) continue;
+        $result = $dba->query($query);
+        $numRows = $dba->numRows($result);
+        if ($numRows <= 0) continue;
 
         //$receipt .= chr(27).chr(33).chr(5);
 
@@ -123,31 +113,20 @@ static public function get()
 
         $receipt .= $ref;
         if ($itemize == 1) $receipt .=    ReceiptLib::centerString("------------------------------------------------------");
-
-//        $itemize = 1;
-        
         if ($itemize == 1) $receipt .= $fieldNames;
         $sum = 0;
 
-        for ($i = 0; $i < $num_rows; $i++) {
-            $row = $db_a->fetch_array($result);
-            $timeStamp = self::timeStamp($row["tdate"]);
+        while ($row = $dba->fetchRow($result)) {
             if ($itemize == 1) {
-                $receipt .= "  ".substr($timeStamp.$blank, 0, 13)
-                .substr($row["register_no"].$blank, 0, 9)
-                .substr($row["trans_no"].$blank, 0, 8)
-                .substr($blank.number_format("0", 2), -10)
-                .substr($blank.number_format($row["tender"], 2), -14)."\n";
+                $receipt .= self::standardLine($row['tdate'], $row['register_no'], $row['trans_no'], $row['tender']);
             }
             $sum += $row["tender"];
         }
         
         $receipt.= ReceiptLib::centerString("------------------------------------------------------");
 
-        $receipt .= substr($blank.$blank.$blank."Count: ".$num_rows."  Total: ".number_format($sum,2), -56)."\n";
+        $receipt .= substr($blank.$blank.$blank."Count: ".$numRows."  Total: ".number_format($sum,2), -56)."\n";
         $receipt .= str_repeat("\n", 4);
-
-        // $receipt .= chr(27).chr(105);
     }
 
     return $receipt.chr(27).chr(105);
@@ -155,4 +134,3 @@ static public function get()
 
 }
 
-?>

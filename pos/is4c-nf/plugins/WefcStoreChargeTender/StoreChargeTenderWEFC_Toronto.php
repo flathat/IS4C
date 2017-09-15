@@ -21,6 +21,8 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\Tenders\StoreChargeTender;
+
 /**
   @class StoreChargeTender
   Tender module for charge accounts

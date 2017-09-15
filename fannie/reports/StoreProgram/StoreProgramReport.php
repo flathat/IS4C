@@ -154,11 +154,11 @@ from core_trans.dlog";
         $args[] = $date1 . ' 00:00:00';
         $args[] = $date2 . ' 23:59:59';
 	
-		$prep = $dbc->prepare_statement($query);
+		$prep = $dbc->prepare($query);
         if ($prep === False) {
             $dbc->logger("\nprep failed:\n$query");
         }
-		$result = $dbc->exec_statement($prep,$args);
+		$result = $dbc->execute($prep,$args);
         if ($result === False) {
             $dbc->logger("\nexec failed:\n$query\nargs:",implode(" : ",$args));
         }
@@ -172,7 +172,7 @@ from core_trans.dlog";
         $transferOut = 0;
         $otherOut = 0;
         $rowCount = 0;
-		while ($row = $dbc->fetch_array($result)){
+		while ($row = $dbc->fetchArray($result)){
 			$memberNumber = $row['card_no'];
             $suffix = "";
             if ($row['trans_status'] == 'V') {

@@ -26,7 +26,7 @@ else {
 }
 echo "Mem#,Lastname,Firstname,Address1,Address2,City,State,Zip,Equity Bal.".$NL;
 $result = $sql->query($query);
-while ($row = $sql->fetch_array($result)){
+while ($row = $sql->fetchRow($result)){
     echo $row[0].",";
     echo "\"".$row[1]."\",";
     echo "\"".$row[2]."\",";
@@ -42,4 +42,4 @@ while ($row = $sql->fetch_array($result)){
     echo "\"".$row[6]."\",";
     echo "\"".$row[7]."\"".$NL;
 }
-?>
+

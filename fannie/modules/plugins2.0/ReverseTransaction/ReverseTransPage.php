@@ -53,15 +53,15 @@ class ReverseTransPage extends FannieRESTfulPage
 
         $query = "select d.upc,d.trans_type,d.trans_subtype,d.trans_status,
               d.total,d.card_no,p.description,t.TenderName 
-              from $dlog as d left join
-              products as p on d.upc = p.upc 
+              from $dlog as d 
+              " . DTrans::joinProducts('d', 'p') . "
               left join tenders AS t ON d.trans_subtype=t.TenderCode
               where tdate BETWEEN ? AND ?
               and trans_num=?
               order by d.trans_id";
-        $prep = $dbc->prepare_statement($query);
+        $prep = $dbc->prepare($query);
         $args = array($this->date.' 00:00:00', $this->date.' 23:59:59', $this->trans);
-        $result = $dbc->exec_statement($prep, $args);
+        $result = $dbc->execute($prep, $args);
 
         if ($dbc->num_rows($result) == 0){
             echo "Error: Transaction {$this->trans} not found on date {$this->date}";
@@ -72,7 +72,7 @@ class ReverseTransPage extends FannieRESTfulPage
         $ret .= "<th>Type</th><th>Status</th><th>UPC</th><th>Description</th><th>Total</th>";
         $ret .= "<tr>";
         $cardno = "";
-        while ($row = $dbc->fetch_array($result)){
+        while ($row = $dbc->fetchRow($result)){
             $cardno = $row['card_no'];
             $ret .= "<tr>";
             $ret .= "<td>";
@@ -128,10 +128,10 @@ class ReverseTransPage extends FannieRESTfulPage
         $register_no = $FANNIE_PLUGIN_SETTINGS['ReversalLane'];
         $trans_no = 1;
 
-        $transP = $dbc->prepare_statement('SELECT MAX(trans_no) FROM
+        $transP = $dbc->prepare('SELECT MAX(trans_no) FROM
             '.$FANNIE_TRANS_DB.$dbc->sep().'dlog WHERE
             emp_no=? AND register_no=?');
-        $transR = $dbc->exec_statement($transP, array($emp_no, $register_no));
+        $transR = $dbc->execute($transP, array($emp_no, $register_no));
         while($transW = $dbc->fetch_row($transR))
             $trans_no = $transW[0] + 1;
         
@@ -150,11 +150,11 @@ class ReverseTransPage extends FannieRESTfulPage
             order by trans_id";
         $args = array($old_reg, $old_emp, $old_trans,
                 $this->date.' 00:00:00', $this->date.' 23:59:59');
-        $prep = $dbc->prepare_statement($query);
-        $result = $dbc->exec_statement($prep, $args);
+        $prep = $dbc->prepare($query);
+        $result = $dbc->execute($prep, $args);
 
         $trans_id = 1;
-        $record = DTrans::$DEFAULTS;
+        $record = DTrans::defaults();
         $record['emp_no'] = $emp_no;
         $record['register_no'] = $register_no;
         $record['trans_no'] = $trans_no;
@@ -168,9 +168,9 @@ class ReverseTransPage extends FannieRESTfulPage
 
         $params = DTrans::parameterize($comment, 'datetime', $dbc->now());
         $table = $FANNIE_TRANS_DB.$dbc->sep().'dtransactions';
-        $prep = $dbc->prepare_statement("INSERT INTO $table ({$params['columnString']})
+        $prep = $dbc->prepare("INSERT INTO $table ({$params['columnString']})
                     VALUES ({$params['valueString']})");
-        $dbc->exec_statement($prep, $params['arguments']);
+        $dbc->execute($prep, $params['arguments']);
         $record['trans_id'] += 1;
 
         while($w = $dbc->fetch_row($result)){
@@ -208,9 +208,9 @@ class ReverseTransPage extends FannieRESTfulPage
             $next['card_no'] = $w['card_no'];
 
             $params = DTrans::parameterize($next, 'datetime', $dbc->now());
-            $prep = $dbc->prepare_statement("INSERT INTO $table ({$params['columnString']})
+            $prep = $dbc->prepare("INSERT INTO $table ({$params['columnString']})
                         VALUES ({$params['valueString']})");
-            $dbc->exec_statement($prep, $params['arguments']);
+            $dbc->execute($prep, $params['arguments']);
             $record['trans_id'] += 1;
         }
 
@@ -253,4 +253,3 @@ class ReverseTransPage extends FannieRESTfulPage
 
 FannieDispatch::conditionalExec();
 
-?>

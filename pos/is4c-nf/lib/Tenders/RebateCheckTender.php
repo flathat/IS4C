@@ -21,6 +21,11 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\lib\Tenders;
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\TransRecord;
+use \CoreLocal;
+
 /**
   @class RebateCheckTender
   Tender module for checks
@@ -49,7 +54,7 @@ class RebateCheckTender extends TenderModule
 
         // check endorsing
         if (CoreLocal::get("msgrepeat") == 0) {
-            return $this->DefaultPrompt();
+            return $this->defaultPrompt();
         }
 
         return true;
@@ -58,6 +63,7 @@ class RebateCheckTender extends TenderModule
     public function add()
     {
         /* Discount disabled Jan01
+        */
         $db = Database::tDataConnect();
         $query = 'SELECT SUM(total) as ttl FROM localtemptrans
                 WHERE department IN (992, 991, 902)';
@@ -67,10 +73,9 @@ class RebateCheckTender extends TenderModule
             $row = $db->fetch_row($result);
             $ignore = (float)$row['ttl'];
         }
-        if ( (CoreLocal::get('runningTotal') - $ignore) >= 50) {
-            TransRecord::addhousecoupon('PATREBDISC', 703, -5.00);
+        if ( (CoreLocal::get('runningTotal') - $ignore) >= 150) {
+            TransRecord::addhousecoupon('PATREBDISC', 703, -25.00);
         }
-        */
 
         parent::add();
     }
@@ -82,35 +87,7 @@ class RebateCheckTender extends TenderModule
 
     public function defaultPrompt()
     {
-        if (CoreLocal::get("enableFranking") != 1) {
-            return parent::defaultPrompt();
-        }
-
-        if ($this->amount === False) {
-            return parent::disabledPrompt();
-        }
-
-        $ref = trim(CoreLocal::get("CashierNo"))."-"
-            .trim(CoreLocal::get("laneno"))."-"
-            .trim(CoreLocal::get("transno"));
-
-        $msg = "<br />"._("insert")." ".$this->name_string.
-            ' for $'.sprintf('%.2f',$this->amount). '<br />';
-        if (CoreLocal::get("LastEquityReference") == $ref) {
-            $msg .= "<div style=\"background:#993300;color:#ffffff;
-                margin:3px;padding: 3px;\">
-                There was an equity sale on this transaction. Did it get
-                endorsed yet?</div>";
-        }
-
-        CoreLocal::set("boxMsg",$msg);
-        CoreLocal::set('strEntered', (100*$this->amount).$this->tender_code);
-        CoreLocal::set('boxMsgButtons', array(
-            'Endorse [enter]' => '$(\'#reginput\').val(\'\');submitWrapper();',
-            'Cancel [clear]' => '$(\'#reginput\').val(\'CL\');submitWrapper();',
-        ));
-
-        return MiscLib::base_url().'gui-modules/boxMsg2.php?endorse=check&endorseAmt='.$this->amount;
+        return parent::frankingPrompt();
     }
 
 }

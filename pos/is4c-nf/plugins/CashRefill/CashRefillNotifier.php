@@ -21,6 +21,8 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\Notifier;
+
 /**
   @class CashRefillNotifier
   Alert cashier a refill is needed

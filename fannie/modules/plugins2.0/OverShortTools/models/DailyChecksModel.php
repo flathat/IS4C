@@ -24,14 +24,16 @@
 class DailyChecksModel extends BasicModel {
 
     protected $name = 'dailyChecks';
+    protected $preferred_db = 'plugin:OverShortDatabase';
 
     protected $columns = array(
     'date' => array('type'=>'VARCHAR(10)'),
     'emp_no' => array('type'=>'SMALLINT'),
     'checks' => array('type'=>'TEXT'),
-    'id' => array('type'=>'INT','primary_key'=>True,'increment'=>True)
+    'id' => array('type'=>'INT','primary_key'=>True,'increment'=>True),
+    'storeID' => array('type'=>'INT'),
     );
 
-    protected $unique = array('date','emp_no');
+    protected $unique = array('date','emp_no', 'storeID');
 }
 

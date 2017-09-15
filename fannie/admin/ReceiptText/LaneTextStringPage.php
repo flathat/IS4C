@@ -54,7 +54,7 @@ class LaneTextStringPage extends FannieRESTfulPage
     {
         $this->addRoute('get<type>');
         $this->addRoute('post<id><line><type>');
-        $this->addRoute('post<newLine>');
+        $this->addRoute('post<type><newLine>');
         return parent::preprocess();
     }
 
@@ -94,7 +94,7 @@ class LaneTextStringPage extends FannieRESTfulPage
     }
 
     // with a blank set of lines there will be no ID yet
-    protected function post_newLine_handler()
+    protected function post_type_newLine_handler()
     {
         $this->id = array();
         return $this->post_id_line_type_handler();
@@ -148,7 +148,7 @@ class LaneTextStringPage extends FannieRESTfulPage
         $this->addScript('lane-text.js');
         ob_start();
 ?>
-<form action=LaneTextStringPage.php onsubmit="saveString(this); return false;">
+<form action=LaneTextStringPage.php onsubmit="laneText.saveString(this); return false;">
 
 <p class="ichunk">Use this utility to enter and edit the lines of text that appear on
 receipts, the lane Welcome screen, and elsewhere.
@@ -160,7 +160,7 @@ receipts, the lane Welcome screen, and elsewhere.
 </p>
 <div class="form-group">
     <select class="form-control" name="type" class="form-control" 
-        onchange="loadStrings(this.value);">
+        onchange="laneText.loadStrings(this.value);">
     <option value="">Choose...</option>
 <?php
 foreach ($this->TRANSLATE as $short=>$long) {

@@ -26,6 +26,10 @@
  *  transaction against Balance.
  */
 
+use COREPOS\pos\lib\Scanning\SpecialDept;
+use COREPOS\pos\lib\MiscLib;
+use COREPOS\pos\lib\MemberLib;
+
 class WefcStoreChargeDepartmentHandler extends SpecialDept 
 {
 
@@ -37,7 +41,7 @@ class WefcStoreChargeDepartmentHandler extends SpecialDept
     {
     
         if (CoreLocal::get('msgrepeat') == 0) {
-            $charge_ok = PrehLib::chargeOk();
+            $charge_ok = MemberLib::chargeOk();
             if ($charge_ok == 0) {
                 /* I'd prefer xboxMsg for errors. How to do that? */
                 CoreLocal::set("boxMsg",

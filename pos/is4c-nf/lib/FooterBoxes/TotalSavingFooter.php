@@ -21,6 +21,8 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\lib\FooterBoxes;
+
 class TotalSavingFooter extends FooterBox 
 {
     public $display_css = "font-weight:bold;font-size:150%;";
@@ -33,10 +35,10 @@ class TotalSavingFooter extends FooterBox
 
     public function display_content()
     {
-        $saleTTL = (is_numeric(CoreLocal::get("discounttotal"))) ? number_format(CoreLocal::get("discounttotal"),2) : "0.00";
-        $memSaleTTL = is_numeric(CoreLocal::get("memSpecial")) ? number_format(CoreLocal::get("memSpecial"),2) : "0.00";
+        $saleTTL = (is_numeric($this->session->get("discounttotal"))) ? number_format($this->session->get("discounttotal"),2) : "0.00";
+        $memSaleTTL = is_numeric($this->session->get("memSpecial")) ? number_format($this->session->get("memSpecial"),2) : "0.00";
 
-        return number_format(CoreLocal::get("transDiscount") + $saleTTL + $memSaleTTL, 2);    
+        return number_format($this->session->get("transDiscount") + $saleTTL + $memSaleTTL, 2);    
     }
 }
 

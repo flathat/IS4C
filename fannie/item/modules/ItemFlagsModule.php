@@ -21,12 +21,45 @@
 
 *********************************************************************************/
 
-class ItemFlagsModule extends ItemModule 
+class ItemFlagsModule extends \COREPOS\Fannie\API\item\ItemModule 
 {
 
     public function width()
     {
         return self::META_WIDTH_FULL;
+    }
+
+    private function getFlags($upc)
+    {
+        $dbc = $this->db();
+        $query = "
+            SELECT f.description,
+                f.bit_number,
+                (1<<(f.bit_number-1)) & p.numflag AS flagIsSet
+            FROM products AS p, 
+                prodFlags AS f
+            WHERE p.upc=?
+                " . (FannieConfig::config('STORE_MODE') == 'HQ' ? ' AND p.store_id=? ' : '') . "
+                AND f.active=1";
+        $args = array($upc);
+        if (FannieConfig::config('STORE_MODE') == 'HQ') {
+            $args[] = FannieConfig::config('STORE_ID');
+        }
+        $prep = $dbc->prepare($query);
+        $res = $dbc->execute($prep,$args);
+        
+        if ($dbc->numRows($res) == 0){
+            // item does not exist
+            $prep = $dbc->prepare('
+                SELECT f.description,
+                    f.bit_number,
+                    0 AS flagIsSet
+                FROM prodFlags AS f
+                WHERE f.active=1');
+            $res = $dbc->execute($prep);
+        }
+
+        return $res;
     }
 
     public function showEditForm($upc, $display_mode=1, $expand_mode=1)
@@ -45,40 +78,24 @@ class ItemFlagsModule extends ItemModule
         $ret .= '<div id="ItemFlagsTable" class="col-sm-5">';
 
         $dbc = $this->db();
-        $q = "
-            SELECT f.description,
-                f.bit_number,
-                (1<<(f.bit_number-1)) & p.numflag AS flagIsSet
-            FROM products AS p, 
-                prodFlags AS f
-            WHERE p.upc=?
-                AND f.active=1";
-        $p = $dbc->prepare_statement($q);
-        $r = $dbc->exec_statement($p,array($upc));
-        
-        if ($dbc->num_rows($r) == 0){
-            // item does not exist
-            $p = $dbc->prepare_statement('
-                SELECT f.description,
-                    f.bit_number,
-                    0 AS flagIsSet
-                FROM prodFlags AS f
-                WHERE f.active=1');
-            $r = $dbc->exec_statement($p);
-        }
+        $res = $this->getFlags($upc);
 
         $tableStyle = " style='border-spacing:5px; border-collapse: separate;'";
         $ret .= "<table{$tableStyle}>";
         $i=0;
-        while($w = $dbc->fetch_row($r)){
+        while($row = $dbc->fetchRow($res)){
             if ($i==0) $ret .= '<tr>';
             if ($i != 0 && $i % 2 == 0) $ret .= '</tr><tr>';
             $ret .= sprintf('<td><input type="checkbox" id="item-flag-%d" name="flags[]" value="%d" %s /></td>
-                <td><label for="item-flag-%d">%s</label></td>',$i, $w['bit_number'],
-                ($w['flagIsSet']==0 ? '' : 'checked'),
+                <td><label for="item-flag-%d">%s</label></td>',$i, $row['bit_number'],
+                ($row['flagIsSet']==0 ? '' : 'checked'),
                 $i,
-                $w['description']
+                $row['description']
             );
+            // embed flag info to avoid re-querying it on save
+            $ret .= sprintf('<input type="hidden" name="pf_attrs[]" value="%s" />
+                            <input type="hidden" name="pf_bits[]" value="%d" />',
+                            $row['description'], $row['bit_number']);
             $i++;
         }
         $ret .= '</tr></table>';
@@ -94,25 +111,71 @@ class ItemFlagsModule extends ItemModule
     {
         try {
             $flags = $this->form->flags;
+            $attrs = $this->form->pf_attrs;
+            $bits = $this->form->pf_bits;
         } catch (Exception $ex) {
             $flags = array();
+            $attrs = array();
+            $bits = array();
         }
         if (!is_array($flags)) {
             return false;
         }
+
+        $dbc = $this->connection;
+
+        /**
+          Collect known flags and initialize
+          JSON object with all flags false
+        */
+        $json = array();
+        $flagMap = array();
+        for ($i=0; $i<count($attrs); $i++) {
+            $json[$attrs[$i]] = false;
+            $flagMap[$bits[$i]] = $attrs[$i];
+        }
+
         $numflag = 0;   
         foreach ($flags as $f) {
             if ($f != (int)$f) {
                 continue;
             }
             $numflag = $numflag | (1 << ($f-1));
+
+            // set flag in JSON representation
+            $attr = $flagMap[$f];
+            $json[$attr] = true;
         }
-        $dbc = $this->connection;
+
         $model = new ProductsModel($dbc);
         $model->upc($upc);
-        $model->store_id(1);
         $model->numflag($numflag);
-        $saved = $model->save();
+        $model->enableLogging(false);
+        if (FannieConfig::config('STORE_MODE') === 'HQ') {
+            $stores = FormLib::get('store_id');
+            foreach ($stores as $s) {
+                $model->store_id($s);
+                $saved = $model->save();
+            }
+        } else {
+            $saved = $model->save();
+        }
+
+        /**
+          Only add attributes entry if it changed
+        */
+        $curQ = 'SELECT attributes FROM ProductAttributes WHERE upc=? ORDER BY modified DESC';
+        $curQ = $dbc->addSelectLimit($curQ, 1);
+        $curP = $dbc->prepare($curQ);
+        $current = $dbc->getValue($curP, array($upc));
+        $curJSON = json_decode($current, true);
+        if ($current === false || $curJSON != $json) {
+            $model = new ProductAttributesModel($dbc);
+            $model->upc($upc);
+            $model->modified(date('Y-m-d H:i:s'));
+            $model->attributes(json_encode($json));
+            $model->save();
+        }
 
         return $saved ? true : false;
     }

@@ -27,6 +27,47 @@
 */
 class BarcodeLib
 {
+    public static $CODES = array(
+        'A'=>array(
+            '0001101','0011001','0010011','0111101','0100011',
+            '0110001','0101111','0111011','0110111','0001011',
+        ),
+        'B'=>array(
+            '0100111','0110011','0011011','0100001','0011101',
+            '0111001','0000101','0010001','0001001','0010111',
+        ),
+        'C'=>array(
+            '1110010','1100110','1101100','1000010','1011100',
+            '1001110','1010000','1000100','1001000','1110100',
+        ),
+    );
+
+    public static $PARITIES = array(
+        '0'=>array('A','A','A','A','A','A'),
+        '1'=>array('A','A','B','A','B','B'),
+        '2'=>array('A','A','B','B','A','B'),
+        '3'=>array('A','A','B','B','B','A'),
+        '4'=>array('A','B','A','A','B','B'),
+        '5'=>array('A','B','B','A','A','B'),
+        '6'=>array('A','B','B','B','A','A'),
+        '7'=>array('A','B','A','B','A','B'),
+        '8'=>array('A','B','A','B','B','A'),
+        '9'=>array('A','B','B','A','B','A')
+    );
+
+    public static function expandUPCE($entered)
+    {
+        $par6 = substr($entered, -1);
+        if ($par6 == 0) $entered = substr($entered, 0, 3)."00000".substr($entered, 3, 3);
+        elseif ($par6 == 1) $entered = substr($entered, 0, 3)."10000".substr($entered, 3, 3);
+        elseif ($par6 == 2) $entered = substr($entered, 0, 3)."20000".substr($entered, 3, 3);
+        elseif ($par6 == 3) $entered = substr($entered, 0, 4)."00000".substr($entered, 4, 2);
+        elseif ($par6 == 4) $entered = substr($entered, 0, 5)."00000".substr($entered, 5, 1);
+        else $entered = substr($entered, 0, 6)."0000".$par6;
+
+        return $entered;
+    }
+
     /**
       Zero-padd a UPC to standard length
       @param $upc string upc
@@ -34,8 +75,10 @@ class BarcodeLib
     */
     static public function padUPC($upc)
     {
-        $padded = str_pad(trim($upc), 13, '0', STR_PAD_LEFT);
-        return substr($padded, -13);
+        if (substr($upc, 0, 1) == 0 && strlen($upc) == 7) {
+            $upc = self::expandUPCE($upc);
+        }
+        return str_pad(trim($upc), 13, '0', STR_PAD_LEFT);
     }
 
     static public function trimCheckDigit($upc)

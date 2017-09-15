@@ -327,12 +327,12 @@ class PrepayStatusReport extends FannieReportPage
         // summary
         }
 
-        $statement = $dbc->prepare_statement("$query");
+        $statement = $dbc->prepare("$query");
         if ($statement === False) {
             $ret[] = "***Error preparing: $query";
             return $ret;
         }
-        $results = $dbc->exec_statement($statement,$args);
+        $results = $dbc->execute($statement,$args);
         if ($results === False) {
             $allArgs = implode(' : ',$args);
             $ret[] = "***Error executing: $query with: $allArgs";
@@ -349,7 +349,7 @@ class PrepayStatusReport extends FannieReportPage
             $subtotalCharges = 0;
             $subtotalNet = 0;
             $rowCount = 0;
-            while ($row = $dbc->fetch_array($results)) {
+            while ($row = $dbc->fetchArray($results)) {
                 // If member has changed and a per-member subtotal is wanted
                 //  put that out.
                 if ($this->subTotals == True && $row['CardNo'] != $lastCardNo && $lastCardNo != 0) {
@@ -418,7 +418,7 @@ class PrepayStatusReport extends FannieReportPage
             $lastCardNo = 0;
             $record = array();
             $rowCount = 0;
-            while ($row = $dbc->fetch_array($results)) {
+            while ($row = $dbc->fetchArray($results)) {
                 if ($row['CardNo'] != $lastCardNo && $lastCardNo != 0) {
                     $record[2] = number_format($record[2],2);
                     $record[3] = number_format($record[3],2);

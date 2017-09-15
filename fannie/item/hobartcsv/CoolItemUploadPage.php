@@ -35,55 +35,52 @@ class CoolItemUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
 
     protected $preview_opts = array(
         'upc' => array(
-            'name' => 'upc',
             'display_name' => 'UPC*',
             'default' => 0,
             'required' => true
         ),
         'price' => array(
-            'name' => 'price',
             'display_name' => 'Price*',
             'default' => 1,
             'required' => true
         ),
         'cool' => array(
-            'name' => 'cool',
             'display_name' => 'COOL*',
             'default' => 2,
             'required' => true
         ),
     );
 
-    function process_file($linedata)
+    function process_file($linedata, $indexes)
     {
         $dbc = $this->connection;
         $dbc->selectDB($this->config->get('OP_DB'));
-        $upc_index = $this->get_column_index('upc');
-        $price_index = $this->get_column_index('price');
-        $cool_index = $this->get_column_index('cool');
 
         $itemP = $dbc->prepare('
-            SELECT itemdesc,
-                description,
-                weight
+            SELECT s.itemdesc,
+                p.description,
+                s.weight,
+                s.text,
+                s.mosaStatement,
+                s.originText
             FROM scaleItems AS s
                 LEFT JOIN products AS p ON s.plu=p.upc
             WHERE plu=?');
         $saveP = $dbc->prepare('
             UPDATE scaleItems
             SET price=?,
-                itemdesc=?,
+                originText=?,
                 modified=' . $dbc->now() . '
             WHERE plu=?');
         $product = new ProductsModel($dbc);
         $prodPricing = FormLib::get('prodPricing') === '' ? false : true;
         $scale_items = array();
         foreach ($linedata as $line) {
-            $upc = trim($line[$upc_index]);
+            $upc = trim($line[$indexes['upc']]);
             $upc = BarcodeLib::padUPC($upc);
-            $price = str_replace('$', '', $line[$price_index]);
+            $price = str_replace('$', '', $line[$indexes['price']]);
             $price = trim($price);
-            $cool = $line[$cool_index];
+            $cool = $line[$indexes['cool']];
             if (!is_numeric($upc) || !is_numeric($price)) {
                 continue;
             }
@@ -92,13 +89,7 @@ class CoolItemUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
                 continue;
             }
             $itemdesc = !empty($item['itemdesc']) ? $item['itemdesc'] : $item['description'];
-            if (strstr($itemdesc, "\n")) {
-                list($line1, $line2) = explode("\n", $itemdesc);
-                $itemdesc = $line1 . "\n" . $cool;
-            } else {
-                $itemdesc .= "\n" . $cool;
-            }
-            $dbc->execute($saveP, array($price, $itemdesc, $upc));
+            $dbc->execute($saveP, array($price, $cool, $upc));
             if ($prodPricing) {
                 $product->upc($upc);
                 foreach ($product->find() as $obj) {
@@ -114,13 +105,16 @@ class CoolItemUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
                 'Price' => $price,
                 'Type' => $item['weight'] == 0 ? 'Random Weight' : 'Fixed Weight',
                 'ReportingClass' => 1,
+                'ExpandedText' => $text,
+                'MOSA' => $item['mosaStatement'],
+                'OriginText' => $cool,
             );
             $scale_items[] = $scale_info;
         }
 
-        $scales = $this->getScales(FormLib::get('scales'));
-        HobartDgwLib::writeItemsToScales($scale_items, $scales);
-        EpScaleLib::writeItemsToScales($scale_items, $scales);
+        $scales = $this->getScales(FormLib::get('scales', array()));
+        \COREPOS\Fannie\API\item\HobartDgwLib::writeItemsToScales($scale_items, $scales);
+        \COREPOS\Fannie\API\item\EpScaleLib::writeItemsToScales($scale_items, $scales);
 
         return true;
     }
@@ -169,6 +163,14 @@ class CoolItemUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
         }
 
         return $scales;
+    }
+    
+    public function unitTest($phpunit)
+    {
+        $data = array('4011', '0.99', 'Testlandia');
+        $indexes = array('upc'=>0, 'price'=>1, 'cool'=>2);
+        $phpunit->assertEquals(true, $this->process_file(array($data), $indexes));
+        $phpunit->assertNotEquals(0, strlen($this->results_content()));
     }
 }
 

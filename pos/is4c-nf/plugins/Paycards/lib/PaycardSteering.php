@@ -21,6 +21,8 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\parser\Parser;
+
 class PaycardSteering extends Parser {
 
     function check($str)
@@ -39,11 +41,11 @@ class PaycardSteering extends Parser {
         if ($str == 'PCLOOKUP') {
             $info = new Paycards();
             $ret['main_frame'] = $info->pluginUrl() . '/gui/PaycardTransListPage.php';
-            CoreLocal::set('strEntered', '');
+            $pconf = new PaycardConf();
+            $pconf->set('strEntered', '');
         }
 
         return $ret;
     }
 }
 
-?>

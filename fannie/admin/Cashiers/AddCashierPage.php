@@ -103,7 +103,7 @@ class AddCashierPage extends FannieRESTfulPage
         $checkP = $dbc->prepare("SELECT * FROM employees WHERE CashierPassword=?");
         while ($passwd === '') {
             $newpass = rand(1000,9999);
-            $checkR = $dbc->exec_statement($checkP,array($newpass));
+            $checkR = $dbc->execute($checkP,array($newpass));
             if ($dbc->num_rows($checkR) == 0) {
                 $passwd = $newpass;
             }
@@ -170,16 +170,13 @@ class AddCashierPage extends FannieRESTfulPage
             echo '<div class="form-group">';
             $dbc = $this->connection;
             $stores = new StoresModel($dbc);
-            $mapP = $dbc->prepare('SELECT storeID FROM StoreEmployeeMap WHERE storeID=? AND empNo=?');
             foreach ($stores->find('storeID') as $s) {
-                $mapR = $dbc->execute($mapP, array($s->storeID(), $emp_no));
-                $checked = ($mapR && $dbc->numRows($mapR)) ? 'checked' : '';
                 printf('<label>
-                    <input type="checkbox" name="store[]" value="%d" %s />
+                    <input type="checkbox" name="store[]" value="%d" />
                     %s
                     </label> | ',
                     $s->storeID(),
-                    $checked, $s->description());
+                    $s->description());
             }
             echo '</div>';
         }
@@ -209,6 +206,7 @@ class AddCashierPage extends FannieRESTfulPage
         if (!class_exists('CashierTests', false)) {
             include(dirname(__FILE__) . '/CashierTests.php');
         }
+        $this->config->set('FANNIE_STORE_MODE', 'HQ');
         $tester = new CashierTests($this->connection, $this->config, $this->logger);
         $tester->testAddCashier($this, $phpunit);
 
@@ -221,6 +219,7 @@ class AddCashierPage extends FannieRESTfulPage
         // unmap
         $this->saveStoreMapping($this->connection, 35, array());
         $phpunit->assertEquals(false, $map->load());
+        $this->config->set('FANNIE_STORE_MODE', 'STORE');
     }
 }
 

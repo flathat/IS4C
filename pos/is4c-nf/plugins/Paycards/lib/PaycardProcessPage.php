@@ -21,6 +21,11 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\gui\BasicCorePage;
+use COREPOS\pos\lib\DisplayLib;
+use COREPOS\pos\lib\MiscLib;
+use COREPOS\pos\lib\ReceiptLib;
+
 /** @class PaycardProcessPage
 
     This class automatically includes the header and footer
@@ -43,11 +48,18 @@ class PaycardProcessPage extends BasicCorePage
        for format information
     */
     protected $action = '';
+    protected $conf;
+
+    public function __construct($session, $form)
+    {
+        $this->conf = new PaycardConf();
+        parent::__construct($session, $form);
+    }
 
     public function getHeader()
     {
         ob_start();
-        $my_url = $this->page_url;
+        $myUrl = $this->page_url;
         ?>
         <!DOCTYPE html>
         <html>
@@ -57,15 +69,11 @@ class PaycardProcessPage extends BasicCorePage
         // 18Aug12 EL Add content/charset.
         echo "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\" />\n";
         echo "<link rel=\"stylesheet\" type=\"text/css\"
-            href=\"{$my_url}css/pos.css\">";
-        if (MiscLib::win32()) {
-            echo "<script type=\"text/javascript\"
-                src=\"{$my_url}js/jquery-1.8.3.min.js\"></script>";
-        } else {
-            echo "<script type=\"text/javascript\"
-                src=\"{$my_url}js/jquery.js\"></script>";
-        }
-        $this->paycard_jscript_functions();
+            href=\"{$myUrl}css/pos.css\">";
+        $jquery = MiscLib::win32() ? 'jquery-1.8.3.min.js' : 'jquery.js';
+        echo "<script type=\"text/javascript\"
+            src=\"{$myUrl}js/{$jquery}\"></script>";
+        $this->paycardJscriptFunctions();
         $this->head_content();
         echo "</head>";
         echo '<body class="'.$this->body_class.'">';
@@ -93,37 +101,31 @@ class PaycardProcessPage extends BasicCorePage
        Include some paycard submission javascript functions.
        Automatically called during page print.
     */
-    protected function paycard_jscript_functions()
+    protected function paycardJscriptFunctions()
     {
-        $plugin_info = new Paycards();
+        $pluginInfo = new Paycards();
         ?>
         <script type="text/javascript">
         function paycard_submitWrapper(){
-            $.ajax({url: '<?php echo $plugin_info->pluginUrl(); ?>/ajax/ajax-paycard-auth.php',
+            $.ajax({url: '<?php echo $pluginInfo->pluginUrl(); ?>/ajax/AjaxPaycardAuth.php',
                 cache: false,
                 type: 'post',
-                dataType: 'json',
-                success: function(data){
-                    var destination = data.main_frame;
-                    if (data.receipt){
-                        $.ajax({url: '<?php echo $this->page_url; ?>ajax-callbacks/ajax-end.php',
-                            cache: false,
-                            type: 'post',
-                            data: 'receiptType='+data.receipt+'&ref=<?php echo ReceiptLib::receiptNumber(); ?>',
-                            error: function(){
-                                location = destination;
-                            },
-                            success: function(data){
-                                location = destination;
-                            }
-                        });
-                    }
-                    else
-                        location = destination;
-                },
-                error: function(){
-                    location = '<?php echo $plugin_info->pluginUrl(); ?>/gui/paycardboxMsgAuth.php';
+                dataType: 'json'
+            }).done(function(data) {
+                var destination = data.main_frame;
+                if (data.receipt){
+                    $.ajax({url: '<?php echo $this->page_url; ?>ajax-callbacks/AjaxEnd.php',
+                        cache: false,
+                        type: 'post',
+                        data: 'receiptType='+data.receipt+'&ref=<?php echo ReceiptLib::receiptNumber(); ?>'
+                    }).always(function() {
+                        window.location = destination;
+                    });
+                } else {
+                    window.location = destination;
                 }
+            }).fail(function(){
+                window.location = '<?php echo $this->page_url; ?>gui-modules/pos2.php';
             });
             paycard_processingDisplay();
             return false;
@@ -140,6 +142,28 @@ class PaycardProcessPage extends BasicCorePage
         </script>
         <?php
     }
+
+    protected function emvResponseHandler($xml, $balance=false)
+    {
+        $e2e = new MercuryDC();
+        $json = array();
+        $pluginInfo = new Paycards();
+        $json['main_frame'] = $pluginInfo->pluginUrl().'/gui/PaycardEmvSuccess.php';
+        $json['receipt'] = false;
+        $func = $balance ? 'handleResponseDataCapBalance' : 'handleResponseDataCap';
+        $success = $e2e->$func($xml);
+        $this->conf->set("msgrepeat",0);
+        if ($success === PaycardLib::PAYCARD_ERR_OK) {
+            $json = $e2e->cleanup($json);
+            $this->conf->set("strEntered","");
+            $this->conf->set("strRemembered","");
+            if ($json['receipt']) {
+                $json['main_frame'] .= '?receipt=' . $json['receipt'];
+            }
+        } else {
+            $json['main_frame'] = MiscLib::base_url().'gui-modules/boxMsg2.php';
+        }
+        $this->change_page($json['main_frame']);
+    }
 }
 
-?>

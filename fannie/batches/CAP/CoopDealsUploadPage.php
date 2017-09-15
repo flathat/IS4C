@@ -37,124 +37,152 @@ class CoopDealsUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
 
     protected $preview_opts = array(
         'upc' => array(
-            'name' => 'upc',
             'display_name' => 'UPC',
-            'default' => 7,
-            'required' => True
+            'default' => 8,
+            'required' => true
         ),
         'price' => array(
-            'name' => 'price',
             'display_name' => 'Sale Price',
-            'default' => 24,
-            'required' => True
+            'default' => 26,
+            'required' => true
         ),
         'abt' => array(
-            'name' => 'abt',
             'display_name' => 'A/B/TPR',
-            'default' => 5,
-            'required' => True
+            'default' => 6,
+            'required' => true
         ),
         'sku' => array(
-            'name' => 'sku',
             'display_name' => 'SKU',
-            'default' => 8,
-            'required' => False
-        ),
-        'sub' => array(
-            'name' => 'sub',
-            'display_name' => 'Sub',
-            'default' => 6,
-            'required' => False
+            'default' => 9,
         ),
         'mult' => array(
-            'name' => 'mult',
             'display_name' => 'Line Notes',
-            'default' => 13,
-            'required' => false,
+            'default' => 15,
         ),
     );
 
-    function process_file($linedata)
+    private function setupTables($dbc)
     {
-        $dbc = $this->connection;
-        $dbc->selectDB($this->config->get('OP_DB'));
         if ($dbc->tableExists('tempCapPrices')){
-            $drop = $dbc->prepare_statement("DROP TABLE tempCapPrices");
-            $dbc->exec_statement($drop);
+            $drop = $dbc->prepare("DROP TABLE tempCapPrices");
+            $dbc->execute($drop);
         }
         if (!$dbc->tableExists('CoopDealsItems')) {
             $cdi = new CoopDealsItemsModel($dbc);
             $cdi->create();
         }
+    }
 
-        $SUB = $this->get_column_index('sub');
-        $UPC = $this->get_column_index('upc');
-        $SKU = $this->get_column_index('sku');
-        $PRICE = $this->get_column_index('price');
-        $ABT = $this->get_column_index('abt');
-        $MULT = $this->get_column_index('mult');
-
-        $month = FormLib::get('deal-month', 'not specified');
-        $delP = $dbc->prepare('DELETE FROM CoopDealsItems WHERE dealSet=?');
-        $dbc->execute($delP, array($month));
-
-        $rm_checks = (FormLib::get_form_value('rm_cds') != '') ? True : False;
-        $upcP = $dbc->prepare_statement('SELECT upc FROM products WHERE upc=? AND inUse=1');
-        $skuP = $dbc->prepare_statement('
+    private function prepStatements($dbc)
+    {
+        $upcP = $dbc->prepare('SELECT upc FROM products WHERE upc=? AND inUse=1');
+        $skuP = $dbc->prepare('
             SELECT s.upc 
-            FROM vendorSKUtoPLU AS s
+            FROM VendorAliases AS s
                 INNER JOIN products AS p ON s.vendorID=p.default_vendor_id AND s.upc=p.upc
             WHERE s.sku=?'
         );
-        $insP = $dbc->prepare_statement('
+        $insP = $dbc->prepare('
             INSERT INTO CoopDealsItems 
                 (dealSet, upc, price, abtpr, multiplier)
             VALUES
                 (?, ?, ?, ?, ?)');
+
+        return array($upcP, $skuP, $insP);
+    }
+
+    private function checkSku($dbc, $upc, $sku, $skuP)
+    {
+        $look2 = $dbc->execute($skuP, array($sku));
+        if ($dbc->num_rows($look2)) {
+            $row = $dbc->fetch_row($look2);
+            return $row['upc'];
+        }
+        $sku = str_pad($sku, 7, '0', STR_PAD_LEFT);
+        $look3 = $dbc->execute($skuP, array($sku));
+        if ($dbc->num_rows($look3)) {
+            $row = $dbc->fetch_row($look3);
+            return $row['upc'];
+        }
+
+        return $upc;
+    }
+
+    private $scaleLinkedItems = null;
+    private function checkScaleItem($dbc, $upc)
+    {
+        if ($this->scaleLinkedItems === null) {
+            $res = $dbc->query("SELECT plu, linkedPLU from scaleItems WHERE linkedPLU IS NOT NULL AND linkedPLU <> ''");
+            $items = array();
+            while ($row = $dbc->fetchRow($res)) {
+                $items[$row['plu']] = $row['linkedPLU'];
+            }
+            $this->scaleLinkedItems = $items;
+        }
+
+        return isset($this->scaleLinkedItems[$upc]) ? $this->scaleLinkedItems[$upc] : false;
+    }
+
+    private function dealTypes($type)
+    {
+        $abt = array();
+        if (strstr($type,"A")) {
+            $abt[] = "A";
+        }
+        if (strstr($type,"B")) {
+            $abt[] = "B";
+        }
+        if (strstr($type,"TPR")) {
+            $abt[] = "TPR";
+        }
+
+        return $abt;
+    }
+
+    function process_file($linedata, $indexes)
+    {
+        $dbc = $this->connection;
+        $dbc->selectDB($this->config->get('OP_DB'));
+        $this->setupTables($dbc);
+
+        $month = FormLib::get('deal-month', 'not specified');
+        $delP = $dbc->prepare('DELETE FROM CoopDealsItems WHERE dealSet=?');
+        $dbc->execute($delP, array($month));
+        list($upcP, $skuP, $insP) = $this->prepStatements($dbc);
+
+        $rm_checks = (FormLib::get_form_value('rm_cds') != '') ? True : False;
+        $col_max = max($indexes);
         foreach ($linedata as $data) {
             if (!is_array($data)) continue;
-            if (count($data) < 14) continue;
+            if (count($data) < $col_max) continue;
 
-            $upc = str_replace("-","",$data[$UPC]);
+            $upc = str_replace("-","",$data[$indexes['upc']]);
             $upc = str_replace(" ","",$upc);
             if ($rm_checks)
                 $upc = substr($upc,0,strlen($upc)-1);
             $upc = BarcodeLib::padUPC($upc);
 
-            $lookup = $dbc->exec_statement($upcP, array($upc));
+            $lookup = $dbc->execute($upcP, array($upc));
             if ($dbc->num_rows($lookup) == 0) {
-                $sku = $data[$SKU];
-                $look2 = $dbc->exec_statement($skuP, array($sku));
-                if ($dbc->num_rows($look2)) {
-                    $w = $dbc->fetch_row($look2);
-                    $upc = $w['upc'];
-                } else {
-                    $sku = str_pad($sku, 7, '0', STR_PAD_LEFT);
-                    $look3 = $dbc->exec_statement($skuP, array($sku));
-                    if ($dbc->num_rows($look3)) {
-                        $w = $dbc->fetch_row($look3);
-                        $upc = $w['upc'];
-                    }
-                }
+                $upc = $this->checkSku($dbc, $upc, $data[$indexes['sku']], $skuP);
             }
             $mult = 1;
-            if ($MULT !== false) {
-                $line_notes = $data[$MULT];
+            if ($indexes['mult'] !== false) {
+                $line_notes = $data[$indexes['mult']];
                 if (preg_match('/(\d+)\/\$(\d+)/', $line_notes, $matches)) {
                     $mult = $matches[1];
                 }
             }
 
-            $price = trim($data[$PRICE],"\$");
-            $abt = array();
-            if (strstr($data[$ABT],"A"))
-                $abt[] = "A";
-            if (strstr($data[$ABT],"B"))
-                $abt[] = "B";
-            if (strstr($data[$ABT],"TPR"))
-                $abt[] = "TPR";
-            foreach($abt as $type){
-                $dbc->exec_statement($insP,array($month,$upc,$price,$type,$mult));
+            $price = trim($data[$indexes['price']],"\$");
+            foreach ($this->dealTypes($data[$indexes['abt']]) as $type){
+                $dbc->execute($insP,array($month,$upc,$price,$type,$mult));
+            }
+            $linked = $this->checkScaleItem($dbc, $upc);
+            if ($linked) {
+                foreach ($this->dealTypes($data[$indexes['abt']]) as $type){
+                    $dbc->execute($insP,array($month,$linked,$price,$type,$mult));
+                }
             }
         }
 
@@ -189,6 +217,17 @@ class CoopDealsUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
         return '<p>Default column selections correspond to the
             tab/worksheet that lists all A, B, and TPR items</p>'
             . parent::helpContent();
+    }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->results_content()));
+        $indexes = array('upc'=>0, 'price'=>1, 'abt'=>2, 'sku'=>3, 'mult'=>4);
+        $data = array('4011', 0.99, 'ABTPR', '4011', '2/$2');
+        for ($i=0; $i<14; $i++) {
+            $data[] = 0;
+        }
+        $phpunit->assertEquals(true, $this->process_file(array($data), $indexes));
     }
 }
 

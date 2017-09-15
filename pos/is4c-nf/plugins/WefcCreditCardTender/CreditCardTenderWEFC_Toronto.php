@@ -22,6 +22,10 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\Tenders\CreditCardTender;
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\DisplayLib;
+
 /**
   @class CreditCardTenderWEFC_Toronto
   Tender module for credit cards
@@ -65,8 +69,8 @@ class CreditCardTenderWEFC_Toronto extends CreditCardTender
                     "WHERE t.department IN ({$placeholders}) " .
                     "AND t.trans_status NOT IN ('X','V','R') " .
                     "";
-                $statement = $db->prepare_statement($query);
-                $results = $db->exec_statement($statement, $args);
+                $statement = $db->prepare($query);
+                $results = $db->execute($statement, $args);
                 if ($db->numRows($results) > 0 ) {
                     $clearButton = array('[clear]' => 'parseWrapper(\'CL\');');
                     $msg = _('Store Charge accounts may not be paid by Credit Card.');

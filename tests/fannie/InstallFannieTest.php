@@ -7,6 +7,7 @@ class InstallFannieTest extends PHPUnit_Framework_TestCase
 {
     public function testInstallOpDB()
     {
+        $dbc = FannieDB::forceReconnect(FannieConfig::config('OP_DB'));
         $op_db = FannieConfig::config('OP_DB');
         $con = FannieDB::get($op_db);
         if (!class_exists('InstallIndexPage')) {
@@ -137,5 +138,10 @@ class InstallFannieTest extends PHPUnit_Framework_TestCase
 
             $this->assertEquals(true, $loaded, 'Error loading ' . $sample . ' (' . $output . ')');
         }
+
+        $con->query('DELETE FROM departments WHERE dept_no > 10');
+        $con->query('DELETE FROM originCountry WHERE countryID > 5');
+        $con->query('DELETE FROM originStateProv WHERE stateProvID > 5');
+        $con->query('DELETE FROM custdata WHERE CardNo > 1000');
     }
 }

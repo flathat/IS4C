@@ -66,6 +66,7 @@ class CloneItemPage extends FannieRESTfulPage
         $description = substr('CLONE ' . $model->description(), 0, 30);
         $model->description($description);
         $model->store_id(1);
+        $model->created(date('Y-m-d H:i:s'));
         $model->save();
 
         if ($dbc->tableExists('prodExtra')) {
@@ -132,6 +133,15 @@ class CloneItemPage extends FannieRESTfulPage
             description for distinctive search results. Editing
             the cloned item description is recommended.
             </p>';
+    }
+
+    public function unitTest($phpunit)
+    {
+        $this->id = '4011';
+        $phpunit->assertNotEquals(0, strlen($this->post_id_view()));
+        $this->id = 'not-an-item';
+        $phpunit->assertNotEquals(0, strlen($this->get_id_view()));
+        $phpunit->assertEquals(true, $this->post_id_handler());
     }
 }
 

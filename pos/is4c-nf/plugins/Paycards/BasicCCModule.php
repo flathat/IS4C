@@ -21,6 +21,9 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\DisplayLib;
+use COREPOS\pos\lib\MiscLib;
+
 /**
   @class BasicCCModule
   Generic Credit Card processing module
@@ -35,7 +38,7 @@
   omitted in the subclass, it is strongly 
   recommended that module implement its own:
    - entered()
-   - paycard_void()
+   - paycardVoid()
 
   The rest is utility methods that are often helpful.
  */
@@ -46,7 +49,6 @@ define("LOCAL_CERT_PATH",realpath(dirname(__FILE__)).'/cacert.pem');
 
 class BasicCCModule 
 {
-
     public $last_ref_num = '';
     public $last_req_id = 0;
     public $last_paycard_transaction_id = 0;
@@ -63,13 +65,16 @@ class BasicCCModule
         "xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\""
     );
 
+    protected $sendByType = array();
+    protected $respondByType = array();
+
     /** 
       Constructor
       takes no arguments
       otherwise, do whatever you want here
      */
-    function __construct(){
-        
+    public function __construct(){
+        $this->conf = new PaycardConf();        
     }
 
     // BEGIN INTERFACE METHODS
@@ -124,16 +129,18 @@ class BasicCCModule
        session variable "boxMsg".
 
      This function should submit a request to the
-     gateway and process the result. By convention
-     credit card request and response info is stored
-     in the efsnet* tables and gift card request and
-     response info is stored in the valutec* tables.
+     gateway and process the result. 
     
      <b>Do not store full card number when logging
      request and response info</b>.
      */
     public function doSend($type)
     {
+        if (isset($this->sendByType[$type])) {
+            $method = $this->sendByType[$type];
+            return $this->$method();
+        }
+
         return $this->setErrorMsg(0);
     }
 
@@ -165,7 +172,7 @@ class BasicCCModule
      check the status of the original transaction before
      proceeding.
     */
-    public function paycard_void($transID, $laneNo=-1, $transNo=-1, $json=array())
+    public function paycardVoid($transID, $laneNo=-1, $transNo=-1, $json=array())
     {
         if (!isset($json['output'])) {
             $json['output'] = '';
@@ -178,9 +185,9 @@ class BasicCCModule
     }
 
     /**
-      The given efsnetRequest.refNum value corresponds to the
+      The given PaycardTransactions.refNum value corresponds to the
       format used by this class
-      @param $ref [string] efsnetRequest.refNum
+      @param $ref [string] PaycardTransactions.refNum
       @return [boolean]
     */
     public function myRefNum($ref)
@@ -190,13 +197,13 @@ class BasicCCModule
 
     /**
       Lookup transaction status
-      @param $ref [string] efsnetRequest.refNum
+      @param $ref [string] PaycardTransactions.refNum
       @param $local [int]
-        1 => transaction is in local efsnetRequest table
-        0 => transaction is in server's efsnetRequest table
+        1 => transaction is in local PaycardTransactions table
+        0 => transaction is in server's PaycardTransactions table
       @param $mode [string]
         lookup => just fetch information from the processor
-        verify => update efsnetResponse with retreived information
+        verify => update PaycardTransactions with retreived information
       @return [keyed array]
         output => HTML msg to display for the user
         confirm_dest => URL destination if the user presses enter
@@ -205,9 +212,9 @@ class BasicCCModule
     public function lookupTransaction($ref, $local, $mode)
     {
         return array(
-            'output' => DisplayLib::boxMsg('Lookup not available for<br />this processor', '', true),
-            'confirm_dest' => MiscLib::base_url() . 'gui-modules/pos2.php',
-            'cancel_dest' => MiscLib::base_url() . 'gui-modules/pos2.php',
+            'output' => DisplayLib::boxMsg('Lookup not available for<br />this processor', '', true, array()),
+            'confirm_dest' => MiscLib::baseURL() . 'gui-modules/pos2.php',
+            'cancel_dest' => MiscLib::baseURL() . 'gui-modules/pos2.php',
         );
     }
 
@@ -240,74 +247,91 @@ class BasicCCModule
      This function calls the handleResponse method
      and returns the result of that call.
      */
-    function curlSend($data=False,$type='POST',$xml=False, $extraOpts=array(), $auto_handle=true)
+    protected function curlSend($data=False,$type='POST',$xml=False, $extraOpts=array(), $autoHandle=true)
     {
         if($data && $type == 'GET') {
             $this->GATEWAY .= $data;
         }
 
-        $curl_handle = curl_init($this->GATEWAY);
+        $curlObj = curl_init($this->GATEWAY);
 
-        curl_setopt($curl_handle, CURLOPT_HEADER, 0);
-        curl_setopt($curl_handle, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($curl_handle, CURLOPT_CONNECTTIMEOUT,15);
-        curl_setopt($curl_handle, CURLOPT_FAILONERROR,false);
-        curl_setopt($curl_handle, CURLOPT_FOLLOWLOCATION,false);
-        curl_setopt($curl_handle, CURLOPT_FRESH_CONNECT,true);
-        curl_setopt($curl_handle, CURLOPT_TIMEOUT,30);
-        curl_setopt($curl_handle, CURLOPT_SSL_VERIFYPEER, 0);
+        curl_setopt($curlObj, CURLOPT_HEADER, 0);
+        curl_setopt($curlObj, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($curlObj, CURLOPT_CONNECTTIMEOUT,15);
+        curl_setopt($curlObj, CURLOPT_FAILONERROR,false);
+        curl_setopt($curlObj, CURLOPT_FOLLOWLOCATION,false);
+        curl_setopt($curlObj, CURLOPT_FRESH_CONNECT,true);
+        curl_setopt($curlObj, CURLOPT_TIMEOUT,30);
+        curl_setopt($curlObj, CURLOPT_SSL_VERIFYPEER, 0);
         if (MiscLib::win32()) {
-            curl_setopt($curl_handle, CURLOPT_CAINFO, LOCAL_CERT_PATH);
+            curl_setopt($curlObj, CURLOPT_CAINFO, LOCAL_CERT_PATH);
         }
+
         if ($type == 'SOAP') {
             $headers = array();
             if (!empty($this->SOAPACTION)) {
                 $headers[] = "SOAPAction: ".$this->SOAPACTION;
             }
             $headers[] = "Content-type: text/xml";
-            curl_setopt($curl_handle, CURLOPT_HTTPHEADER, $headers);
-        } else if ($xml) {
-            curl_setopt($curl_handle, CURLOPT_HTTPHEADER,
+            curl_setopt($curlObj, CURLOPT_HTTPHEADER, $headers);
+        } elseif ($xml) {
+            curl_setopt($curlObj, CURLOPT_HTTPHEADER,
                 array("Content-type: text/xml"));
         }
 
         foreach ($extraOpts as $opt => $value) {
-            curl_setopt($curl_handle, $opt, $value);
+            curl_setopt($curlObj, $opt, $value);
         }
 
         if ($data && ($type == 'POST' || $type == 'SOAP')) {
-            curl_setopt($curl_handle, CURLOPT_POSTFIELDS, $data);
+            curl_setopt($curlObj, CURLOPT_POSTFIELDS, $data);
         }
 
         set_time_limit(60);
 
-        $response = curl_exec($curl_handle);
+        if (!defined('MOCK_ALL_REQUESTS')) {
+            $response = curl_exec($curlObj);
+
+            if ($type == "SOAP") {
+                $response = str_replace("&lt;","<",$response);
+                $response = str_replace("&gt;",">",$response);
+            }
+
+            $funcReturn = array(
+                'curlErr' => curl_errno($curlObj),
+                'curlErrText' => curl_error($curlObj),
+                'curlTime' => curl_getinfo($curlObj,
+                        CURLINFO_TOTAL_TIME),
+                'curlHTTP' => curl_getinfo($curlObj,
+                        CURLINFO_HTTP_CODE),
+                'response' => $response
+            );
+        } else {
+            $funcReturn = array(
+                'curlErr' => 0,
+                'curlErrText' => '',
+                'curlTime' => 0,
+                'curlHTTP' => 200,
+                'response' => self::$mockResponse,
+            );
+        }
 
         // request sent; get rid of PAN info
         $this->setPAN(array());
 
-        if ($type == "SOAP") {
-            $response = str_replace("&lt;","<",$response);
-            $response = str_replace("&gt;",">",$response);
-        }
+        curl_close($curlObj);
 
-        $funcReturn = array(
-            'curlErr' => curl_errno($curl_handle),
-            'curlErrText' => curl_error($curl_handle),
-            'curlTime' => curl_getinfo($curl_handle,
-                    CURLINFO_TOTAL_TIME),
-            'curlHTTP' => curl_getinfo($curl_handle,
-                    CURLINFO_HTTP_CODE),
-            'response' => $response
-        );
-
-        curl_close($curl_handle);
-
-        if ($auto_handle) {
+        if ($autoHandle) {
             return $this->handleResponse($funcReturn);
-        } else {
-            return $funcReturn;
         }
+
+        return $funcReturn;
+    }
+
+    private static $mockResponse = '';
+    public static function mockResponse($mock)
+    {
+        self::$mockResponse = $mock;
     }
 
     /** 
@@ -324,6 +348,12 @@ class BasicCCModule
      */
     public function handleResponse($response)
     {
+        $mode = $this->conf->get('paycard_mode');
+        if (isset($this->respondByType[$mode])) {
+            $method = $this->respondByType[$mode];
+            return $this->$method($response);
+        }
+
         return false;
     }
 
@@ -339,9 +369,9 @@ class BasicCCModule
      */
     public function refnum($transID)
     {
-        $transNo   = (int)CoreLocal::get("transno");
-        $cashierNo = (int)CoreLocal::get("CashierNo");
-        $laneNo    = (int)CoreLocal::get("laneno");
+        $transNo   = (int)$this->conf->get("transno");
+        $cashierNo = (int)$this->conf->get("CashierNo");
+        $laneNo    = (int)$this->conf->get("laneno");
         // fail if any field is too long (we don't want to truncate, since that might produce a non-unique refnum and cause bigger problems)
         if ($transID > 999 || $transNo > 999 || $laneNo > 99 || $cashierNo > 9999) {
             return "";
@@ -361,7 +391,7 @@ class BasicCCModule
       @param $parray keyed array
       @return formatted string
      */
-    public function array2post($parray)
+    protected function array2post($parray)
     {
         $postData = "";
         foreach ($parray as $k=>$v) {
@@ -378,7 +408,7 @@ class BasicCCModule
       @param $namespace include an xmlns attribute
       @return soap string
     */
-    public function soapify($action,$objs,$namespace="",$encode_tags=true)
+    protected function soapify($action,$objs,$namespace="",$encode_tags=true)
     {
         $ret = "<?xml version=\"1.0\"?>
             <soap:Envelope";
@@ -413,7 +443,7 @@ class BasicCCModule
       @param $action is the top level tag in the soap body
       @param $soaptext is the full soap response
     */
-    public function desoapify($action,$soaptext)
+    protected function desoapify($action,$soaptext)
     {
         preg_match("/<$action.*?>(.*?)<\/$action>/s",
             $soaptext,$groups);
@@ -424,7 +454,7 @@ class BasicCCModule
     /** 
       @param $errorCode error code contstant from paycardLib.php
 
-      Set CoreLocal::["boxMsg"] appropriately for
+      Set $this->conf->["boxMsg"] appropriately for
       the given error code. I find this easier
       than manually setting an appropriate message
       every time I return a common error like
@@ -434,80 +464,58 @@ class BasicCCModule
      */
     public function setErrorMsg($errorCode)
     {
+        $flags = array('retry'=>true, 'standalone'=>true, 'carbon'=>false, 'tellIT'=>true);
+        $type = $this->conf->get('paycard_type');
         switch ($errorCode) {
-            case PaycardLib::PAYCARD_ERR_NOSEND:
-                CoreLocal::set("boxMsg",
-                                 PaycardLib::paycard_errorText("Internal Error",
-                                                               $errorCode,
-                                                               "",
-                                                               1,
-                                                               1,
-                                                               0,
-                                                               0,
-                                                               1,
-                                                               CoreLocal::get("paycard_type")
-                                 )
-                );
-                break;
             case PaycardLib::PAYCARD_ERR_COMM:
-                CoreLocal::set("boxMsg",
-                                 PaycardLib::paycard_errorText("Communication Error",
-                                                               $errorCode,
-                                                               "",
-                                                               1,
-                                                               1,
-                                                               0,
-                                                               0,
-                                                               0,
-                                                               CoreLocal::get("paycard_type")
-                                 )
-                );
+                $flags['tellIT'] = false;
+                $this->conf->set("boxMsg", $this->getErrorText("Communication Error",$errorCode,$flags,$type));
                 break;
             case PaycardLib::PAYCARD_ERR_TIMEOUT:
-                CoreLocal::set("boxMsg",
-                                 PaycardLib::paycard_errorText("Timeout Error",
-                                                               $errorCode,
-                                                               "",
-                                                               0,
-                                                               0,
-                                                               0,
-                                                               1,
-                                                               0,
-                                                               CoreLocal::get("paycard_type")
-                                 )
-                );
+                $flags = array('retry'=>false, 'standalone'=>false, 'carbon'=>true, 'tellIT'=>false);
+                $this->conf->set("boxMsg", $this->getErrorText("Timeout Error",$errorCode,$flags,$type));
                 break;
             case PaycardLib::PAYCARD_ERR_DATA:
-                CoreLocal::set("boxMsg",
-                                 PaycardLib::paycard_errorText("System Error",
-                                                               $errorCode,
-                                                               "",
-                                                               0,
-                                                               0,
-                                                               0,
-                                                               1,
-                                                               1,
-                                                               CoreLocal::get("paycard_type")
-                                 )
-                );
+                $flags = array('retry'=>false, 'standalone'=>false, 'carbon'=>true, 'tellIT'=>true);
+                $this->conf->set("boxMsg", $this->getErrorText("System Error",$errorCode,$flags,$type));
                 break;
+            case PaycardLib::PAYCARD_ERR_NOSEND:
             default:
-                CoreLocal::set("boxMsg",
-                                 PaycardLib::paycard_errorText("Internal Error",
-                                                               $errorCode,
-                                                               "",
-                                                               1,
-                                                               1,
-                                                               0,
-                                                               0,
-                                                               1,
-                                                               CoreLocal::get("paycard_type")
-                                 )
-                );
+                $this->conf->set("boxMsg", $this->getErrorText("Internal Error",$errorCode,$flags,$type));
                 break;
         }
 
         return $errorCode;
+    }
+
+    // helper static public function to build error messages
+    private function getErrorText($title, $code, $flags, $type) 
+    {
+        $opts = array();
+        if ($flags['retry']) $opts[] = "<b>retry</b>"; 
+        if ($flags['standalone']) $opts[] = "process in <b>standalone</b>"; 
+        if ($flags['carbon'] && $type == PaycardLib::PAYCARD_TYPE_CREDIT) {
+            $opts[] = "take a <b>carbon</b>";
+        } elseif ($flags['carbon']) {
+            $opts[] = "process <b>manually</b>";
+        }
+        $opts = 'Please ' . implode(', or ', $opts);
+        $tellIT = $flags['tellIT'] ? '<i>(Notify IT)</i>' : '';
+        $msg = "<img src='graphics/" . ($flags['carbon'] ? 'blacksquare' : 'redsquare') . ".gif'> "
+                . "<b>".trim($title)."</b>"
+                . "<br><font size=-2>(#R.".$code.")</font>"
+                . "<font size=-1><br><br>"
+                . $opts . ' ' . $tellIT
+                . '<br><br>';
+        // retry option?
+        if ($flags['retry']) {
+            $msg .= "[enter] to retry<br>";
+        } else {
+            $this->conf->set("strEntered","");
+            $this->conf->set("strRemembered","");
+        }
+        $msg .= "[clear] to cancel</font>";
+        return $msg;
     }
 
     protected $trans_pan;
@@ -524,9 +532,9 @@ class BasicCCModule
       before calling doSend and expunged again once
       the request has been submitted to the gateway.
     */
-    public function setPAN($in)
+    public function setPAN($input)
     {
-        $this->trans_pan = $in;
+        $this->trans_pan = $input;
     }
 }
 

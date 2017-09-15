@@ -58,6 +58,7 @@ class ProductsModel extends BasicModel
     'scale'=>array('type'=>'TINYINT'),
     'scaleprice'=>array('type'=>'MONEY'),
     'mixmatchcode'=>array('type'=>'VARCHAR(13)'),
+    'created'=>array('type'=>'DATETIME','ignore_updates'=>true),
     'modified'=>array('type'=>'DATETIME','ignore_updates'=>true),
     'batchID'=>array('type'=>'INT', 'default'=>0, 'replaces'=>'advertised'),
     'tareweight'=>array('type'=>'DOUBLE'),
@@ -68,7 +69,9 @@ class ProductsModel extends BasicModel
     'wicable'=>array('type'=>'SMALLINT', 'default'=>0),
     'qttyEnforced'=>array('type'=>'TINYINT'),
     'idEnforced'=>array('type'=>'TINYINT'),
-    'cost'=>array('type'=>'MONEY', 'default'=>0),
+    'cost'=>array('type'=>'DECIMAL(10,3)', 'default'=>0),
+    'special_cost'=>array('type'=>'DECIMAL(10,3)', 'default'=>0),
+    'received_cost'=>array('type'=>'DECIMAL(10,3)', 'default'=>0),
     'inUse'=>array('type'=>'TINYINT'),
     'numflag'=>array('type'=>'INT','default'=>0),
     'subdept'=>array('type'=>'SMALLINT'),
@@ -292,7 +295,12 @@ date of birth. This flag should be set to the age
 required to purchase the product - e.g., 21 for 
 alcohol in the US.
 
-cost is the item\'s cost
+Cost:
+cost is the item\'s normal cost as used for calculating retail price. 
+special_cost is a temporary, promotional cost. received_cost is filled in
+via purchase orders. Most pricing tools  use normal cost to generate retail 
+prices. special_cost or received_cost is recorded in transaction logs to more 
+closely reflect actual cost at the time of sale.
 
 isUse indicates whether the item is currently
 available for sale. Whether cashiers can bypass this
@@ -334,6 +342,12 @@ it won\'t *do* anything.
         return parent::load();
     }
 
+    private $log_updates = true;
+    public function enableLogging($e)
+    {
+        $this->log_updates = $e;
+    }
+
     public function save()
     {
         // using save() to update lane-side product records
@@ -355,9 +369,10 @@ it won\'t *do* anything.
         // call parent method to save the product record,
         // then add a corresponding prodUpdate record
         $try = parent::save();
-        if ($try && !$lane_push && $this->connection->tableExists('prodUpdate')) {
+        if ($try && !$lane_push && $this->log_updates && $this->connection->tableExists('prodUpdate')) {
             $update = new ProdUpdateModel($this->connection);
             $update->upc($this->upc());
+            $update->storeID($this->store_id());
             $update->logUpdate(ProdUpdateModel::UPDATE_EDIT);
         }
 

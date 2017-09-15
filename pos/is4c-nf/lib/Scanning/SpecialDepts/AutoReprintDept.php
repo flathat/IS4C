@@ -21,6 +21,9 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\lib\Scanning\SpecialDepts;
+use COREPOS\pos\lib\Scanning\SpecialDept;
+
 class AutoReprintDept extends SpecialDept 
 {
 
@@ -28,7 +31,7 @@ class AutoReprintDept extends SpecialDept
     
     public function handle($deptID,$amount,$json)
     {
-        CoreLocal::set('autoReprint',1);
+        $this->session->set('autoReprint',1);
 
         return $json;
     }

@@ -35,62 +35,44 @@ class MemContactImportPage extends \COREPOS\Fannie\API\FannieUploadPage {
 
     public $description = '[Member Contact Info] uploads members\' address, phone number, and
     email. Member numbers must already exist.';
-    public $themed = true;
 
     protected $preview_opts = array(
         'memnum' => array(
-            'name' => 'memnum',
             'display_name' => 'Member Number',
             'default' => 0,
-            'required' => True
+            'required' => true
         ),
         'street' => array(
-            'name' => 'street',
             'display_name' => 'Street Address',
             'default' => 1,
-            'required' => False
         ),
         'street2' => array(
-            'name' => 'street2',
             'display_name' => '2nd Address Line',
             'default' => 2,
-            'required' => False
         ),
         'city' => array(
-            'name' => 'city',
             'display_name' => 'City',
             'default' => 3,
-            'required' => False
         ),
         'state' => array(
-            'name' => 'state',
             'display_name' => 'State',
             'default' => 4,
-            'required' => False,
         ),
         'zip' => array(
-            'name' => 'zip',
             'display_name' => 'Zip Code',
             'default' => 5,
-            'required' => False,
         ),
         'ph1' => array(
-            'name' => 'ph1',
             'display_name' => 'Phone #',
             'default' => 6,
-            'required' => False,
         ),
         'ph2' => array(
-            'name' => 'ph2',
             'display_name' => 'Alt. Phone #',
             'default' => 7,
-            'required' => False,
         ),
         'email' => array(
-            'name' => 'email',
             'display_name' => 'Email',
             'default' => 8,
-            'required' => False,
         )
     );
 
@@ -98,56 +80,49 @@ class MemContactImportPage extends \COREPOS\Fannie\API\FannieUploadPage {
 
     function __construct()
     {
-        global $FANNIE_COUNTRY;
-        $country = (isset($FANNIE_COUNTRY)&&!empty($FANNIE_COUNTRY))?$FANNIE_COUNTRY:"US";
+        parent::__construct();
+        $country = FannieConfig::config('COUNTRY', 'US');
         if ($country == 'CA') {
             $this->preview_opts['state']['display_name'] = 'Province';
             $this->preview_opts['zip']['display_name'] = 'Postal Code';
         }
     }
     
-    function process_file($linedata)
+    public function process_file($linedata, $indexes)
     {
-        $mn_index = $this->get_column_index('memnum');
-        $st_index = $this->get_column_index('street');
-        $st2_index = $this->get_column_index('street2');
-        $city_index = $this->get_column_index('city');
-        $state_index = $this->get_column_index('state');
-        $zip_index = $this->get_column_index('zip');
-        $ph_index = $this->get_column_index('ph1');
-        $ph2_index = $this->get_column_index('ph2');
-        $email_index = $this->get_column_index('email');
-
         foreach ($linedata as $line) {
             // get info from file and member-type default settings
             // if applicable
-            $cardno = $line[$mn_index];
+            $cardno = $line[$indexes['memnum']];
             if (!is_numeric($cardno)) continue; // skip bad record
-            $street = ($st_index !== False) ? $line[$st_index] : "";
-            $street2 = ($st2_index !== False) ? $line[$st2_index] : "";
-            $city = ($city_index !== False) ? $line[$city_index] : "";
-            $state = ($state_index !== False) ? $line[$state_index] : "";
-            $zip = ($zip_index !== False) ? $line[$zip_index] : "";
-            $ph1 = ($ph_index !== False) ? $line[$ph_index] : "";
-            $ph2 = ($ph2_index !== False) ? $line[$ph2_index] : "";
-            $email = ($email_index !== False) ? $line[$email_index] : "";
-
-            $json = array(
-                'cardNo' => $cardno,
-                'addressFirstLine' => $street,
-                'addressSecondLine' => $street2,
-                'city' => $city,
-                'state' => $state,
-                'zip' => $zip,
-                'customers' => array(
-                    array(
-                        'phone' => $ph1,
-                        'altPhone' => $ph2,
-                        'email' => $email,
-                        'accountHolder' => 1,
-                    ),
-                ),
-            );
+            $json = array('cardNo' => $cardno);
+            if ($indexes['street'] !== false) {
+                $json['addressFirstLine'] = $line[$indexes['street']];
+            }
+            if ($indexes['street2'] !== false) {
+                $json['addressSecondLine'] = $line[$indexes['street2']];
+            }
+            if ($indexes['city'] !== false) {
+                $json['city'] = $line[$indexes['city']];
+            }
+            if ($indexes['state'] !== false) {
+                $json['state'] = $line[$indexes['state']];
+            }
+            if ($indexes['zip'] !== false) {
+                $json['zip'] = $line[$indexes['zip']];
+            }
+            if ($indexes['ph1'] !== false || $indexes['ph2'] !== false || $indexes['email'] !== false) {
+                $json['customers'] = array(array('accountHolder' => 1));
+                if ($indexes['ph1'] !== false) {
+                    $json['customers'][0]['phone'] = $line[$indexes['ph1']];
+                }
+                if ($indexes['ph2'] !== false) {
+                    $json['customers'][0]['altPhone'] = $line[$indexes['ph2']];
+                }
+                if ($indexes['email'] !== false) {
+                    $json['customers'][0]['email'] = $line[$indexes['email']];
+                }
+            }
 
             $resp = \COREPOS\Fannie\API\member\MemberREST::post($cardno, $json);
 
@@ -173,19 +148,16 @@ class MemContactImportPage extends \COREPOS\Fannie\API\FannieUploadPage {
 
     function results_content()
     {
-        $ret = '
-            <p>Import Complete</p>
-            <div class="alert alert-success">' . $this->stats['imported'] . ' records imported</div>';
-        if ($this->stats['errors']) {
-            $ret .= '<div class="alert alert-error"><ul>';
-            foreach ($this->stats['errors'] as $error) {
-                $ret .= '<li>' . $error . '</li>';
-            }
-            $ret .= '</ul></div>';
-        }
+        return $this->simpleStats($this->stats);
+    }
 
-        return $ret;
+    public function unitTest($phpunit)
+    {
+        $data = array(1, '123 4th st', 'apt1', 'city', 'st', 12345, '867-5309', '', 'not@email');
+        $indexes = array('memnum'=>0, 'street'=>1, 'street2'=>2, 'city'=>3, 'state'=>4,
+            'zip'=>5, 'ph1'=>6, 'ph2'=>7, 'email'=>8);
+        $phpunit->assertEquals(true, $this->process_file(array($data), $indexes));
     }
 }
 
-FannieDispatch::conditionalExec(false);
+FannieDispatch::conditionalExec();

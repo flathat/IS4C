@@ -38,8 +38,8 @@ class VendorItemsModel extends BasicModel
     'description' => array('type'=>'VARCHAR(50)'),
     'size' => array('type'=>'VARCHAR(25)'),
     'units' => array('type'=>'DOUBLE', 'default'=>1),
-    'cost' => array('type'=>'MONEY'),
-    'saleCost' => array('type'=>'MONEY', 'default'=>0),
+    'cost' => array('type'=>'DECIMAL(10,3)'),
+    'saleCost' => array('type'=>'DECIMAL(10,3)', 'default'=>0),
     'vendorDept' => array('type'=>'INT', 'default'=>0),
     'vendorID' => array('type'=>'INT','index'=>true,'primary_key'=>true),
     'srp' => array('type'=>'MONEY'),
@@ -86,14 +86,17 @@ SKUs.
     */
     public function createIfMissing($upc, $vendorID)
     {
-        // look for entry directly by UPC or via SKU mapping
+        $aliasP = $this->connection->prepare("SELECT upc FROM VendorAliases WHERE vendorID=? AND upc=?");
+        $aliased = $this->connection->getValue($aliasP, array($vendorID, $upc));
+        if ($aliased) {
+            return true;
+        }
         $findP = $this->connection->prepare('
             SELECT v.upc
             FROM vendorItems AS v
-                LEFT JOIN vendorSKUtoPLU AS m ON v.vendorID=m.vendorID AND v.sku=m.sku
             WHERE v.vendorID=?
-                AND (v.upc=? OR m.upc=?)');
-        $findR = $this->connection->execute($findP, array($vendorID, $upc, $upc));
+                AND v.upc=?');
+        $findR = $this->connection->execute($findP, array($vendorID, $upc));
         if ($this->connection->num_rows($findR) == 0) {
             // create item from product
             $prod = new ProductsModel($this->connection);
@@ -126,7 +129,7 @@ SKUs.
                 modified=' . $this->connection->now() . '
             WHERE vendorID=?
                 AND sku=?'); 
-        $skuModel = new VendorSKUtoPLUModel($this->connection);
+        $skuModel = new VendorAliasesModel($this->connection);
         $skuModel->vendorID($vendorID);
         $skuModel->upc($upc);
         foreach ($skuModel->find() as $obj) {

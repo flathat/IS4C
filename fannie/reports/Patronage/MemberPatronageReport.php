@@ -30,7 +30,7 @@ class MemberPatronageReport extends FannieReportPage
 {
     public $description = '[Member Patronage] shows a member\'s patronage information each fiscal year. Note this is
     calculated and entered annually, not assembled on the fly from transaction information.';
-    public $report_set = 'Membership';
+    public $report_set = 'Membership :: Patronage';
     public $themed = true;
 
     protected $header = "Patronage Report";
@@ -76,7 +76,7 @@ HTML;
             return array();
         }
 
-        $pQ = $dbc->prepare_statement("
+        $pQ = $dbc->prepare("
             SELECT cardno,
                 purchase,
                 discounts,
@@ -91,7 +91,7 @@ HTML;
             FROM patronage as p
             WHERE p.cardno=? 
             ORDER BY FY");
-        $pR = $dbc->exec_statement($pQ,array($id));
+        $pR = $dbc->execute($pQ,array($id));
 
         $data = array();
         while ($row = $dbc->fetch_row($pR)) {

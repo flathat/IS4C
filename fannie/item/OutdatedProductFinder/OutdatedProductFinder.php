@@ -30,7 +30,6 @@ class OutdatedProductFinder extends FanniePage
 {
     public $description = '[Outdated Products] Finds products not sold in over 12 months, marks them as not-in-use';
     public $report_set = 'Scan Tools';
-    public $themed = true;
 
     protected $report_headers = array('Items');
     protected $sort_direction = 1;
@@ -55,6 +54,7 @@ class OutdatedProductFinder extends FanniePage
         while ($row = $dbc->fetch_row($result)) {
             $upc[] = $row['upc'];
         }
+        ob_start();
         print count($upc) . " items found that are in use and have not been sold in over 1 year.<br><br>";
 
         // CORE shortand for isset($_GET['apply']) || isset($_POST['apply'])
@@ -86,6 +86,20 @@ class OutdatedProductFinder extends FanniePage
                     class="btn btn-default">Mark ' . count($upc) . ' Items Not In Use</a>
                 </p>';
         }
+
+        return ob_get_clean();
+    }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->body_content()));
+    }
+
+    public function helpContent()
+    {
+        return '<p>Any items that have not sold in a year or more can be marked no longer in use.
+This is a very blunt instrument. The <em>Product Last-Sold Maintenance</em> task must be enabled
+for this to work.</p>';
     }
 }
 

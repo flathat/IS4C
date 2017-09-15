@@ -21,43 +21,62 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\gui\BasicCorePage;
+use COREPOS\pos\lib\Authenticate;
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\DisplayLib;
+use COREPOS\pos\lib\UdpComm;
 include_once(dirname(__FILE__).'/../lib/AutoLoader.php');
 
 class login3 extends BasicCorePage 
 {
-
-    var $color;
-    var $img;
-    var $msg;
+    private $color;
+    private $img;
+    private $msg;
 
     protected $mask_input = True;
 
-    function preprocess(){
+    private function getPassword()
+    {
+        $passwd = $this->form->tryGet('reginput');
+        if ($passwd === '') {
+            $passwd = $this->form->tryGet('scannerInput');
+            if ($passwd !== '') {
+                UdpComm::udpSend('goodBeep');
+            }
+        }
+
+        return $passwd;
+    }
+
+    function preprocess()
+    {
         $this->color = "coloredArea";
         $this->img = $this->page_url."graphics/key-icon.png";
         $this->msg = _("please enter password");
-        if (isset($_REQUEST['reginput']) || isset($_REQUEST['scannerInput'])){
+        if ($this->form->tryGet('reginput', false) !== false || $this->form->tryGet('scannerInput', false) !== false) {
 
-            $passwd = '';
-            if (isset($_REQUEST['reginput']) && !empty($_REQUEST['reginput'])){
-                $passwd = $_REQUEST['reginput'];
-            }
-            elseif (isset($_REQUEST['scannerInput']) && !empty($_REQUEST['scannerInput'])){
-                $passwd = $_REQUEST['scannerInput'];
-                UdpComm::udpSend('goodBeep');
-            }
+            $passwd = $this->getPassword();
 
-            if (Authenticate::checkPassword($passwd,4)){
+            if (Authenticate::checkPassword($passwd)){
                 $this->change_page($this->page_url."gui-modules/pos2.php");
-                return False;
+                return false;
+            } elseif ($this->session->get('LastID') == 0 && Authenticate::checkPermission($passwd, 25)) {
+                Database::setglobalvalue("LoggedIn", 0);
+                $this->session->set("LoggedIn",0);
+                $this->session->set("training",0);
+                if (Database::rotateTempData()) {
+                    Database::clearTempTables();
+                }
+                $this->change_page($this->page_url."gui-modules/login2.php");
+                return false;
             }
-            else {
-                $this->color = "errorColoredArea";
-                $this->img = $this->page_url."graphics/redkey4.gif";
-                $this->msg = _("Password Invalid, Please Re-Enter");
-            }
+            $this->color = "errorColoredArea";
+            $this->img = $this->page_url."graphics/redkey4.gif";
+            $this->msg = _("Password Invalid, Please Re-Enter");
         }
-        return True;
+
+        return true;
     }
 
     function head_content(){
@@ -87,7 +106,5 @@ class login3 extends BasicCorePage
 
 }
 
-if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
-    new login3();
+AutoLoader::dispatch();
 
-?>

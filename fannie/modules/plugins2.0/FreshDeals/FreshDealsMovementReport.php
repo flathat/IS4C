@@ -43,27 +43,30 @@ class FreshDealsMovementReport extends FannieReportPage
         $ts1 = strtotime('last tuesday');
         // -13 => previous wednesday and then back another full week
         $ts2 = mktime(0, 0, 0, date('n',$ts1), date('j',$ts1)-13, date('Y', $ts1));
+        $store = FormLib::get('store');
         $dlog = DTransactionsModel::selectDlog(date('Y-m-d', $ts2), date('Y-m-d', $ts1));
         switch ($this->form->type) {
             case 'lc':
-                list($query, $args) = $this->lcQuery($dlog, $items);
+                list($query, $args) = $this->lcQuery($dlog, $items, $store);
                 break;
             case 'scale':
-                list($query, $args) = $this->scaleQuery($dlog, $items);
+                list($query, $args) = $this->scaleQuery($dlog, $items, $store);
                 break;
             default:
             case 'upc':
-                list($query, $args) = $this->upcQuery($dlog, $items);
+                list($query, $args) = $this->upcQuery($dlog, $items, $store);
                 break;
         }
 
         $dbc = $this->connection;
+        $dbc->selectDB($this->config->get('OP_DB'));
         $prep = $dbc->prepare($query);
         // force output order to match input order
         $order = array();
         for ($i=0; $i<count($args); $i++) {
             $order[$args[$i]] = $i+1;
         }
+        $args[] = $store;
         $args[] = date('Y-m-d 00:00:00', $ts2);
         $args[] = date('Y-m-d 23:59:59', $ts1);
         $res = $dbc->execute($prep, $args);
@@ -105,7 +108,7 @@ class FreshDealsMovementReport extends FannieReportPage
         return $data;
     }
 
-    private function lcQuery($dlog, $items)
+    private function lcQuery($dlog, $items, $store)
     {
         $args = array_map(function($i){ return trim($i); }, $items);
         $inStr = str_repeat('?,', count($args));
@@ -119,6 +122,7 @@ class FreshDealsMovementReport extends FannieReportPage
                 INNER JOIN upcLike AS u ON t.upc=u.upc
                 LEFT JOIN likeCodes AS l ON u.likeCode=l.likeCode
             WHERE u.likeCode IN (' . $inStr . ')
+                AND ' . DTrans::isStoreID($store, 't') . '
                 AND t.tdate BETWEEN ? AND ?
             GROUP BY u.likeCode,
                 l.likeCodeDesc'; 
@@ -126,7 +130,7 @@ class FreshDealsMovementReport extends FannieReportPage
         return array($query, $args);
     }
 
-    private function scaleQuery($dlog, $items)
+    private function scaleQuery($dlog, $items, $store)
     {
         $args = array_map(function($i){ return '002' . str_pad($i, 4, '0', STR_PAD_LEFT) . '000000'; }, $items);
         $inStr = str_repeat('?,', count($args));
@@ -139,6 +143,7 @@ class FreshDealsMovementReport extends FannieReportPage
             FROM ' . $dlog . ' AS t
                 ' . DTrans::joinProducts() . '
             WHERE t.upc IN (' . $inStr . ')
+                AND ' . DTrans::isStoreID($store, 't') . '
                 AND t.tdate BETWEEN ? AND ?
             GROUP BY t.upc,
                 p.brand,
@@ -147,7 +152,7 @@ class FreshDealsMovementReport extends FannieReportPage
         return array($query, $args);
     }
 
-    private function upcQuery($dlog, $items)
+    private function upcQuery($dlog, $items, $store)
     {
         $args = array_filter($items, function($i){ return trim($i) !== '' ? true : false; });
         $args = array_map(function($i){ 
@@ -165,15 +170,21 @@ class FreshDealsMovementReport extends FannieReportPage
         $inStr = substr($inStr, 0, strlen($inStr)-1);
         $query = '
             SELECT t.upc,
-                p.brand,
-                p.description,
+                COALESCE(u.brand, p.brand) AS brand,
+                COALESCE(u.description, p.description) AS description,
                 ' . DTrans::sumQuantity('t').' as qty,
-                CASE WHEN p.scale=1 THEN \'LB\' ELSE p.size END AS size,
+                CASE 
+                    WHEN p.scale=1 THEN \'LB\' 
+                    ELSE CASE WHEN p.size IS NULL OR p.size=\'\' OR p.size=\'0\' THEN v.size ELSE p.size END
+                END AS size,
                 p.cost,
                 p.normal_price
             FROM ' . $dlog . ' AS t
                 ' . DTrans::joinProducts() . '
+                LEFT JOIN vendorItems AS v ON p.upc=v.upc AND p.default_vendor_id=v.vendorID
+                LEFT JOIN productUser AS u ON p.upc=u.upc
             WHERE t.upc IN (' . $inStr . ')
+                AND ' . DTrans::isStoreID($store, 't') . '
                 AND t.tdate BETWEEN ? AND ?
             GROUP BY t.upc,
                 p.brand,
@@ -184,6 +195,7 @@ class FreshDealsMovementReport extends FannieReportPage
 
     public function form_content()
     {
+        $stores = FormLib::storePicker();
         return '<form method="get">
             <div class="form-group">
                 <label>Items</label>
@@ -196,6 +208,10 @@ class FreshDealsMovementReport extends FannieReportPage
                     <option value="lc">Like Codes</option>
                     <option value="scale">Scale PLUs</option>
                 </select>
+            </div>
+            <div class="form-group">
+                <label>Store</label>
+                ' . $stores['html'] . '
             </div>
             <div class="form-group">
                 <button type="submit" class="btn btn-default btn-core">Submit</button>

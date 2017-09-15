@@ -21,10 +21,40 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\gui\NoInputCorePage;
+use COREPOS\pos\lib\Database;
 include_once(dirname(__FILE__).'/../lib/AutoLoader.php');
 
 class checklist extends NoInputCorePage 
 {
+    private function handleInput($entered)
+    {
+        $entered = strtoupper($entered);
+
+        if ($entered == "" || $entered == "CL"){
+            // should be empty string
+            // javascript causes this input if the
+            // user presses CL{enter}
+            // Redirect to main screen
+            $this->change_page($this->page_url."gui-modules/pos2.php");
+            return False;
+        }
+
+        if (!empty($entered)){ 
+            // built department input string and set it
+            // to be the next POS entry
+            // Redirect to main screen
+            $input = $this->form->tryGet('amt') . 'CQ' . $entered;
+            $this->change_page(
+                $this->page_url 
+                . "gui-modules/pos2.php"
+                . '?reginput=' . $input
+                . '&repeat=1');
+            return False;
+        }
+
+        return true;
+    }
 
     /**
       Input processing function
@@ -32,33 +62,11 @@ class checklist extends NoInputCorePage
     function preprocess()
     {
         // a selection was made
-        if (isset($_REQUEST['search'])){
-            $entered = strtoupper($_REQUEST['search']);
+        try {
+            return $this->handleInput($this->form->search);
+        } catch (Exception $ex) {}
 
-            if ($entered == "" || $entered == "CL"){
-                // should be empty string
-                // javascript causes this input if the
-                // user presses CL{enter}
-                // Redirect to main screen
-                CoreLocal::set("tenderTotal","0");    
-                $this->change_page($this->page_url."gui-modules/pos2.php");
-                return False;
-            }
-
-            if (!empty($entered)){ 
-                // built department input string and set it
-                // to be the next POS entry
-                // Redirect to main screen
-                $input = CoreLocal::get("tenderTotal")."CQ".$entered;
-                $this->change_page(
-                    $this->page_url 
-                    . "gui-modules/pos2.php"
-                    . '?reginput=' . $input
-                    . '&repeat=1');
-                return False;
-            }
-        }
-        return True;
+        return true;
     } // END preprocess() FUNCTION
 
     /**
@@ -78,9 +86,9 @@ class checklist extends NoInputCorePage
     */
     function body_content()
     {
-        $db = Database::pDataConnect();
-        $q = "SELECT TenderCode,TenderName FROM tenders WHERE TenderName LIKE '%check%' ORDER BY TenderName";
-        $r = $db->query($q);
+        $amount = $this->form->tryGet('amt', 0);
+        $dbc = Database::pDataConnect();
+        $res = $dbc->query("SELECT TenderCode,TenderName FROM tenders WHERE TenderName LIKE '%check%' ORDER BY TenderName");
 
         echo "<div class=\"baseHeight\">"
             ."<div class=\"listbox\">"
@@ -90,17 +98,18 @@ class checklist extends NoInputCorePage
             ."size=\"15\" onblur=\"\$('#search').focus();\">";
 
         $selected = "selected";
-        while($row = $db->fetch_row($r)){
+        while ($row = $dbc->fetchRow($res)) {
             echo "<option value='".$row["TenderCode"]."' ".$selected.">";
             echo $row['TenderName'];
             echo '</option>';
             $selected = "";
         }
         echo "</select>"
+            .'<input type="hidden" name="amt" value="' . $amount . '" />'
             ."</form>"
             ."</div>"
             ."<div class=\"listboxText coloredText centerOffset\">"
-            ."[Clear] to Cancel</div>"
+            ._("[Clear] to Cancel") . "</div>"
             ."<div class=\"clear\"></div>";
         echo "</div>";
 
@@ -108,9 +117,15 @@ class checklist extends NoInputCorePage
         $this->add_onload_command("\$('#search').focus();\n");
     } // END body_content() FUNCTION
 
+    public function unitTest($phpunit)
+    {
+        ob_start();
+        $phpunit->assertEquals(false, $this->handleInput(''));
+        $phpunit->assertEquals(false, $this->handleInput('CL'));
+        $phpunit->assertEquals(false, $this->handleInput('7'));
+        ob_get_clean();
+    }
 }
 
-if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
-    new checklist();
+AutoLoader::dispatch();
 
-?>

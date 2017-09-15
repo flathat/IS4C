@@ -116,6 +116,7 @@ class HourlySalesReport extends FannieReportPage
         $deptEnd = FormLib::get('deptEnd');
         $deptMulti = FormLib::get('departments', array());
         $weekday = FormLib::get('weekday', 0);
+        $store = FormLib::get('store', 0);
     
         $buyer = FormLib::get('buyer', '');
 
@@ -135,6 +136,7 @@ class HourlySalesReport extends FannieReportPage
             list($conditional, $args) = DTrans::departmentClause($deptStart, $deptEnd, $deptMulti, $args);
             $where .= $conditional;
         }
+        $args[] = $store;
 
         $date_selector = 'year(tdate), month(tdate), day(tdate)';
         $day_names = array();
@@ -167,11 +169,12 @@ class HourlySalesReport extends FannieReportPage
         if ($this->config->get('COOP_ID') == 'WFC_Duluth') {
             $query .= ' AND d.department NOT IN (993, 998, 703) ';
         }
-        $query .= " GROUP BY $date_selector, $hour
+        $query .= " AND " . DTrans::isStoreID($store, 'd') . "
+                   GROUP BY $date_selector, $hour
                    ORDER BY $date_selector, $hour";
 
-        $prep = $dbc->prepare_statement($query);
-        $result = $dbc->exec_statement($query, $args);
+        $prep = $dbc->prepare($query);
+        $result = $dbc->execute($query, $args);
 
         $dataset = array();
         $minhour = 24;
@@ -198,6 +201,12 @@ class HourlySalesReport extends FannieReportPage
             if ($hour > $maxhour) {
                 $maxhour = $hour;
             }
+        }
+
+        if (isset($dataset['Sun'])) {
+            $sunday = $dataset['Sun'];
+            unset($dataset['Sun']);
+            $dataset['Sun'] = $sunday;
         }
 
         /**

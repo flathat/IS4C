@@ -21,6 +21,11 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\lib\ReceiptBuilding\Messages;
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\ReceiptLib;
+use \CoreLocal;
+
 /**
   @class GCReceiptMessage
 */
@@ -43,19 +48,19 @@ class GCReceiptMessage extends ReceiptMessage
             $sigSlip = true;
         }
         $date = ReceiptLib::build_time(time());
-        list($emp, $reg, $trans) = explode('-',$ref);
+        list($emp, $reg, $trans) = ReceiptLib::parseRef($ref);
         $slip = '';
 
         // query database for gc receipt info 
-        $db = Database::tDataConnect();
+        $dbc = Database::tDataConnect();
         if ($reprint) {
-            $db = Database::mDataConnect();
+            $dbc = Database::mDataConnect();
         }
 
         $order = ($sigSlip) ? 'DESC' : 'ASC';
-        $trans_type = $db->concat('p.cardType', "' '", 'p.transType', '');
+        $transType = $dbc->concat('p.cardType', "' '", 'p.transType', '');
 
-        $sql = "SELECT $trans_type AS tranType,
+        $sql = "SELECT $transType AS tranType,
                     CASE WHEN p.transType = 'Return' THEN -1*p.amount ELSE p.amount END as amount,
                     p.registerNo as terminalID,
                     p.PAN,
@@ -75,9 +80,9 @@ class GCReceiptMessage extends ReceiptMessage
                     AND p.cardType = 'Gift'
                 ORDER BY p.requestDatetime " . $order;
 
-        $result = $db->query($sql);
-        $num = $db->num_rows($result);
-        while($row = $db->fetch_row($result)){
+        $result = $dbc->query($sql);
+        $num = $dbc->numRows($result);
+        while($row = $dbc->fetchRow($result)){
             $slip .= ReceiptLib::centerString("................................................")."\n";
             // store header
             for ($i=1; $i<= CoreLocal::get('chargeSlipCount'); $i++) {
@@ -99,8 +104,8 @@ class GCReceiptMessage extends ReceiptMessage
                 $col1[] = "Authorization: ".$row['xAuthorizationCode'];
                 $col2[] = "";
             }
-            $col1[] = ReceiptLib::boldFont()."Amount: ".PaycardLib::paycard_moneyFormat($row['amount']).ReceiptLib::normalFont(); // bold ttls apbw 11/3/07
-            $col2[] = "New Balance: ".PaycardLib::paycard_moneyFormat($row['xBalance']);
+            $col1[] = ReceiptLib::boldFont()."Amount: ".$row['amount'].ReceiptLib::normalFont(); // bold ttls apbw 11/3/07
+            $col2[] = "New Balance: ".$row['xBalance'];
             $slip .= ReceiptLib::twoColumns($col1, $col2);
 
             // name/phone on activation only

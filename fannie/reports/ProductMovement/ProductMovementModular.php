@@ -76,6 +76,7 @@ class ProductMovementModular extends FannieReportPage
         if (is_numeric($upc)) {
             $upc = BarcodeLib::padUPC($upc);
         }
+        $store = FormLib::get('store', 0);
 
         $dlog = DTransactionsModel::selectDlog($date1,$date2);
 
@@ -92,6 +93,7 @@ class ProductMovementModular extends FannieReportPage
                     " . DTrans::joinProducts('t', 'p', 'LEFT') . "
                   WHERE t.upc = ? AND
                     t.tdate BETWEEN ? AND ?
+                    AND " . DTrans::isStoreID($store, 't') . "
                   GROUP BY 
                     YEAR(t.tdate),
                     MONTH(t.tdate),
@@ -99,7 +101,7 @@ class ProductMovementModular extends FannieReportPage
                     t.upc,
                     p.description
                   ORDER BY year(t.tdate),month(t.tdate),day(t.tdate)";
-        $args = array($upc,$date1.' 00:00:00',$date2.' 23:59:59');
+        $args = array($upc,$date1.' 00:00:00',$date2.' 23:59:59', $store);
     
         if (strtolower($upc) == "rrr" || $upc == "0000000000052"){
             if ($dlog == "dlog_90_view" || $dlog=="dlog_15")
@@ -115,6 +117,7 @@ class ProductMovementModular extends FannieReportPage
                 $dlog as t
                 where upc = ?
                 AND datetime BETWEEN ? AND ?
+                AND " . DTrans::isStoreID($store, 't') . "
                 and emp_no <> 9999 and register_no <> 99
                 and trans_status <> 'X'
                 GROUP BY YEAR(datetime),MONTH(datetime),DAY(datetime)
@@ -130,12 +133,13 @@ class ProductMovementModular extends FannieReportPage
                 $dlog as t
                 where upc = ?
                 AND datetime BETWEEN ? AND ?
+                AND " . DTrans::isStoreID($store, 't') . "
                 and emp_no <> 9999 and register_no <> 99
                 and (trans_status <> 'X' || trans_type='L')
                 GROUP BY YEAR(datetime),MONTH(datetime),DAY(datetime)";
         }
-        $prep = $dbc->prepare_statement($query);
-        $result = $dbc->exec_statement($prep,$args);
+        $prep = $dbc->prepare($query);
+        $result = $dbc->execute($prep,$args);
 
         /**
           Simple report
@@ -143,17 +147,23 @@ class ProductMovementModular extends FannieReportPage
           Issue a query, build array of results
         */
         $ret = array();
-        while ($row = $dbc->fetch_array($result)){
-            $record = array();
-            $record[] = $row[0]."/".$row[1]."/".$row[2];
-            $record[] = $row['upc'];
-            $record[] = $row['brand'] === null ? '' : $row['brand'];
-            $record[] = $row['description'] === null ? '' : $row['description'];
-            $record[] = sprintf('%.2f', $row['qty']);
-            $record[] = sprintf('%.2f', $row['total']);
-            $ret[] = $record;
+        while ($row = $dbc->fetchRow($result)){
+            $ret[] = $this->rowToRecord($row);
         }
         return $ret;
+    }
+
+    private function rowToRecord($row)
+    {
+        $record = array();
+        $record[] = $row[0]."/".$row[1]."/".$row[2];
+        $record[] = $row['upc'];
+        $record[] = $row['brand'] === null ? '' : $row['brand'];
+        $record[] = $row['description'] === null ? '' : $row['description'];
+        $record[] = sprintf('%.2f', $row['qty']);
+        $record[] = sprintf('%.2f', $row['total']);
+
+        return $record;
     }
     
     /**
@@ -166,7 +176,11 @@ class ProductMovementModular extends FannieReportPage
             $sumQty += $row[4];
             $sumSales += $row[5];
         }
-        return array('Total',null,null,null,$sumQty,$sumSales);
+        $divisor = count($data) > 0 ? count($data) : 1;
+        return array(
+            array('Daily Avg.',null,null,null,round($sumQty/$divisor,2),round($sumSales/$divisor,2)),
+            array('Total',null,null,null,$sumQty,$sumSales)
+        );
     }
 
     public function javascriptContent()
@@ -221,6 +235,7 @@ function showGraph() {
     function form_content()
     {
         global $FANNIE_URL;
+        $stores = FormLib::storePicker();
         ob_start();
 ?>
 <form method = "get" action="ProductMovementModular.php" class="form-horizontal">
@@ -229,6 +244,12 @@ function showGraph() {
             <label class="control-label col-sm-4">UPC</label>
             <div class="col-sm-8">
                 <input type=text name=upc id=upc class="form-control" required />
+            </div>
+        </div>
+        <div class="form-group"> 
+            <label class="control-label col-sm-4">Store</label>
+            <div class="col-sm-8">
+                <?php echo $stores['html']; ?>
             </div>
         </div>
         <div class="form-group"> 
@@ -273,6 +294,13 @@ function showGraph() {
         return '<p>This report shows per-day total sales for
             a given item. You can type in item names to find the
             appropriate UPC if needed.</p>';
+    }
+
+    public function unitTest($phpunit)
+    {
+        $data = array(0=>1, 1=>1, 2=>2000, 'upc'=>'4011', 'brand'=>'test',
+            'description'=>'test', 'qty'=>1, 'total'=>1);
+        $phpunit->assertInternalType('array', $this->rowToRecord($data));
     }
 }
 

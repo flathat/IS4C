@@ -1,7 +1,7 @@
 function newBatch()
 {
     var dataStr = $('#newBatchForm').serialize();
-    if ($('#newBatchName').val() == '') {
+    if ($('#newBatchName').val() === '') {
         showBootstrapAlert('#inputarea', 'danger', 'Name cannot be blank');
         return;
     }
@@ -10,15 +10,14 @@ function newBatch()
         url: 'BatchListPage.php',
         type: 'post',
         data: dataStr,
-        dataType: 'json',
-        success: function(resp) {
-            if (resp.error) {
-                showBootstrapAlert('#inputarea', 'danger', resp.msg);
-            } else {
-                showBootstrapAlert('#inputarea', 'success', resp.msg);
-                $('#displayarea').html(resp.new_list);
-                $('#newBatchForm')[0].reset();
-            }
+        dataType: 'json'
+    }).done(function(resp) {
+        if (resp.error) {
+            showBootstrapAlert('#inputarea', 'danger', resp.msg);
+        } else {
+            showBootstrapAlert('#inputarea', 'success', resp.msg);
+            $('#displayarea').html(resp.new_list);
+            $('#newBatchForm')[0].reset();
         }
     });
 }
@@ -39,9 +38,9 @@ function editBatchLine(id)
     $('#enddate'+id).html($('<input class="form-control date-input" name="endDate"/>').val(enddate));
 
     var typesElem = $('<select class="form-control" name="batchType"/>');
-    for (typeID in batchTypes) {
+    for (var typeID in batchTypes) {
         var opt = $('<option/>').val(typeID).html(batchTypes[typeID]);
-        if (type == batchTypes[typeID]) {
+        if (type === batchTypes[typeID]) {
             opt.attr('selected','selected');
         }
         typesElem.append(opt);
@@ -50,9 +49,9 @@ function editBatchLine(id)
 
     var ownerElem = $('<select class="form-control" name="owner"/>');
     ownerElem.append('<option/>');
-    for (o in owners) {
-        var opt = $('<option/>').html(owners[o]);
-        if (owner == owners[o]) {
+    for (var o in owners) {
+        opt = $('<option/>').html(owners[o]);
+        if (owner === owners[o]) {
             opt.attr('selected','selected');
         }
         ownerElem.append(opt);
@@ -76,22 +75,22 @@ function saveBatchLine(id)
         url: 'BatchListPage.php',
         type: 'post',
         data: dataStr,
-        dataType: 'json',
-        success: function(resp) {
-            if (resp.error) {
-                showBootstrapAlert('#inputarea', 'danger', resp.msg);
-            } else {
-                showBootstrapAlert('#inputarea', 'success', resp.msg);
-            }
+        dataType: 'json'
+    }).done(function(resp) {
+        if (resp.error) {
+            showBootstrapAlert('#inputarea', 'danger', resp.msg);
+        } else {
+            showBootstrapAlert('#inputarea', 'success', resp.msg);
         }
     });
 
     $('tr#batchRow' + id + ' td').each(function() {
+        var newVal = '';
         if ($(this).find('select').length > 0) {
-            var newVal = $(this).find('option:selected').html();
+            newVal = $(this).find('option:selected').html();
             $(this).html(newVal);
         } else if ($(this).find('input').length > 0) {
-            var newVal = $(this).find('input').val();
+            newVal = $(this).find('input').val();
             $(this).html(newVal);
         }
     });
@@ -109,39 +108,49 @@ function saveBatchLine(id)
 function deleteBatch(id, name)
 {
 	var audited = $('#isAudited').val();
-	if (audited == "1") {
-		alert("You're not allowed to delete batches");
+	if (audited === "1") {
+		window.alert("You're not allowed to delete batches");
 		return;
 	}
 
     var dataStr = 'delete=1&id='+id;
 
-	if (confirm('Delete this batch ('+name+')?')) {
+	if (window.confirm('Delete this batch ('+name+')?')) {
         $.ajax({
             url: 'BatchListPage.php',
             data: dataStr,
             type: 'post',
-            dataType: 'json',
-            success: function(resp) {
-                if (resp.error) {
-                    showBootstrapAlert('#inputarea', 'danger', resp.msg);
-                } else {
-                    showBootstrapAlert('#inputarea', 'success', resp.msg);
-                    $('tr#batchRow'+id).hide();
-                }
+            dataType: 'json'
+        }).done(function(resp) {
+            if (resp.error) {
+                showBootstrapAlert('#inputarea', 'danger', resp.msg);
+            } else {
+                showBootstrapAlert('#inputarea', 'success', resp.msg);
+                $('tr#batchRow'+id).hide();
             }
         });
     }
 }
 
-function changeTimeSlice(mode) 
+function getFilters()
 {
-    batchListPager($('#filterOwner').val(), mode, '');
+    var filters = {};
+    filters.owner = $('#filterOwner').val();
+    filters.store = $('#filterStore').val();
+    filters.name = $('#filterName').val();
+    filters.date = $('#filterDate').val();
+
+    return JSON.stringify(filters);
 }
 
-function changeOwnerFilter(owner)
+function changeTimeSlice(mode) 
 {
-    batchListPager(owner, 'all', '');
+    batchListPager(getFilters(), mode, '');
+}
+
+function reFilter()
+{
+    batchListPager(getFilters(), 'all', '');
 }
 
 function batchListPager(filter,mode,batchID)
@@ -152,9 +161,8 @@ function batchListPager(filter,mode,batchID)
     $.ajax({
         url: 'BatchListPage.php',
         type: 'get',
-        data: data,
-        success: function(resp) {
-            $('#displayarea').html(resp);
-        }
+        data: data
+    }).done(function(resp) {
+        $('#displayarea').html(resp);
     });
 }

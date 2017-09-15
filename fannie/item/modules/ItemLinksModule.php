@@ -21,7 +21,7 @@
 
 *********************************************************************************/
 
-class ItemLinksModule extends ItemModule 
+class ItemLinksModule extends \COREPOS\Fannie\API\item\ItemModule 
 {
 
     public function width()
@@ -47,8 +47,8 @@ class ItemLinksModule extends ItemModule
         $ret .= '<div id="LinksList" class="col-sm-5">';
 
         $dbc = $this->db();
-        $p = $dbc->prepare_statement('SELECT upc FROM products WHERE upc=?');
-        $r = $dbc->exec_statement($p,array($upc));
+        $p = $dbc->prepare('SELECT upc FROM products WHERE upc=?');
+        $r = $dbc->execute($p,array($upc));
 
         if ($dbc->num_rows($r) > 0){
             $ret .= '<div style="width:40%; float:left;">';
@@ -88,15 +88,18 @@ class ItemLinksModule extends ItemModule
         return $ret;
     }
 
-    function SaveFormData($upc){
+    function SaveFormData($upc)
+    {
         $upc = BarcodeLib::padUPC($upc);
         $ret = '';
-        if (FormLib::get_form_value('newshelftag','') != ''){
-            $ret .= "<script type=\"text/javascript\">";
-            $ret .= "testwindow= window.open (\"addShelfTag.php?upc=$upc\", \"New Shelftag\",\"location=0,status=1,scrollbars=1,width=300,height=220\");";
-            $ret .= "testwindow.moveTo(50,50);";
-            $ret .= "</script>";
-        }
+        try {
+            if ($this->form->newshelftag !== '') {
+                $ret .= "<script type=\"text/javascript\">";
+                $ret .= "testwindow= window.open (\"addShelfTag.php?upc=$upc\", \"New Shelftag\",\"location=0,status=1,scrollbars=1,width=300,height=220\");";
+                $ret .= "testwindow.moveTo(50,50);";
+                $ret .= "</script>";
+            }
+        } catch (Exception $ex) {}
         echo $ret; // output javascript to result page
         return True;
     }

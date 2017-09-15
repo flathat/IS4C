@@ -21,7 +21,7 @@
 
 *********************************************************************************/
 
-namespace COREPOS\Fannie\API\item {
+namespace COREPOS\Fannie\API\item;
 
 class ServiceScaleLib 
 {
@@ -62,7 +62,7 @@ class ServiceScaleLib
         $soc = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
         socket_set_option($soc, SOL_SOCKET, SO_RCVTIMEO, array('sec'=>2, 'usec'=>0));
         socket_set_option($soc, SOL_SOCKET, SO_SNDTIMEO, array('sec'=>2, 'usec'=>0));
-        if (socket_connect($soc, $host, $port)) {
+        if (@socket_connect($soc, $host, $port)) {
             socket_close($soc);
             return true;
         } else {
@@ -147,7 +147,29 @@ class ServiceScaleLib
 
         return $model;
     }
-}
 
+    static public function labelTranslate($label, $scale_type)
+    {
+        if (substr(strtoupper($scale_type), 0, 3) == 'MT_') {
+            return self::toledoLabel($label);
+        } else {
+            return $label;
+        }
+    }
+
+    static private function toledoLabel($label)
+    {
+        switch ($label) {
+            case 53:
+                return 3;
+            case 23:
+            case 63:
+                return 2;
+            case 103:
+            case 133:
+            default:
+                return 1;
+        }
+    }
 }
 

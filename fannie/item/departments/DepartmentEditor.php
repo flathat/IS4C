@@ -26,7 +26,8 @@ if (!class_exists('FannieAPI')) {
     include_once($FANNIE_ROOT.'classlib2.0/FannieAPI.php');
 }
 
-class DepartmentEditor extends FanniePage {
+class DepartmentEditor extends FannieRESTfulPage 
+{
     protected $title = "Fannie : Manage Departments";
     protected $header = "Manage Departments";
     
@@ -34,244 +35,189 @@ class DepartmentEditor extends FanniePage {
     protected $auth_classes = array('departments', 'admin');
 
     public $description = '[Department Editor] creates, updates, and deletes POS departments.';
-    public $themed = true;
 
-    function preprocess(){
-        /* allow ajax calls */
-        if(FormLib::get_form_value('action') !== ''){
-            $this->ajax_response(FormLib::get_form_value('action'));
-            return False;
-        }
-
-        return True;
-    }
-
-    function ajax_response($action){
-        switch($action){
-        case 'deptDisplay':
-            $this->ajax_display_dept(FormLib::get_form_value('did',0));
-            break;
-        case 'deptSave':
-            $this->ajax_save_dept();
-            break;
-        default:
-            echo 'Bad request';
-            break;
-        }
-    }
-
-    private function ajax_display_dept($id){
-        global $FANNIE_OP_DB;
-        $dbc = FannieDB::get($FANNIE_OP_DB);
-
-        $name="";
-        $tax="";
-        $fs=0;
-        $disc=1;
-        $max=50;
-        $min=0.01;
-        $margin=0.00;
-        $pcode="";
-
-        if ($id != -1){ // -1 means create new department
-            $dept = new DepartmentsModel($dbc);
-            $dept->dept_no($id);
+    private function getDept($dbc, $deptID)
+    {
+        $dept = new DepartmentsModel($dbc);
+        if ($deptID !== -1) { // not new department
+            $dept->dept_no($deptID);
             $dept->load();
-            $name = $dept->dept_name();
-            $tax = $dept->dept_tax();
-            $fs = $dept->dept_fs();
-            $max = $dept->dept_limit();
-            $min = $dept->dept_minimum();
-            $disc = $dept->dept_discount();
-
             /**
               Use legacy tables for margin and sales code if needed
             */
             $margin = $dept->margin();
             if (empty($margin) && $dbc->tableExists('deptMargin')) {
                 $prep = $dbc->prepare('SELECT margin FROM deptMargin WHERE dept_ID=?');
-                $res = $dbc->execute($prep, array($id));
-                if ($dbc->num_rows($res) > 0) {
-                    $row = $dbc->fetch_row($res);
-                    $margin = $row['margin'];
-                }
+                $dept->margin($dbc->getValue($prep, array($id)));
             }
             $pcode = $dept->salesCode();
             if (empty($pcode) && $dbc->tableExists('deptSalesCodes')) {
                 $prep = $dbc->prepare('SELECT salesCode FROM deptSalesCodes WHERE dept_ID=?');
-                $res = $dbc->execute($prep, array($id));
-                if ($dbc->num_rows($res) > 0) {
-                    $row = $dbc->fetch_row($res);
-                    $pcode = $row['salesCode'];
-                }
+                $dept->salesCode($dbc->getValue($prep, array($id)));
             }
         }
+
+        return $dept;
+    }
+
+    private function getTaxes($dbc)
+    {
         $taxes = array();
         $taxes[0] = "NoTax";
-        $p = $dbc->prepare_statement("SELECT id,description FROM taxrates ORDER BY id");
-        $resp = $dbc->exec_statement($p);
-        while($row = $dbc->fetch_row($resp)){
+        $prep = $dbc->prepare("SELECT id,description FROM taxrates ORDER BY id");
+        $resp = $dbc->execute($prep);
+        while ($row = $dbc->fetchRow($resp)) {
             $taxes[$row[0]] = $row[1];
         }
 
-        $ret = '<div class="row">'
-            . '<label class="control-label col-sm-2">Dept #</label>'
-            . '<label class="control-label col-sm-4">Name</label>'
-            . '<label class="control-label col-sm-2">Tax</label>'
-            . '<label class="control-label col-sm-2">FS</label>'
-            . '</div>';
-        $ret .= '<div class="row">';
-        $ret .= '<div class="col-sm-2">';
-        if ($id == -1){
-            $ret .= "<input class=\"form-control\" type=text name=did id=deptno />";
-        } else {
-            $ret .= $id;
-        }
-        $ret .= "</div>";
-        $ret .= "<div class=\"col-sm-4\"><input type=text maxlength=30 name=name 
-            id=deptname value=\"$name\" class=\"form-control\" /></div>";
-        $ret .= "<div class=\"col-sm-2\"><select class=\"form-control\" id=depttax name=tax>";
-        foreach ($taxes as $k=>$v) {
-            if ($k == $tax) {
-                $ret .= "<option value=$k selected>$v</option>";
-            } else {
-                $ret .= "<option value=$k>$v</option>";
-            }
-        }
-        $ret .= "</select></div>";
-        $ret .= "<div class=\"col-sm-2\"><input type=checkbox value=1 name=fs id=deptfs "
-            . ($fs==1?'checked':'') . " class=\"checkbox\" /></div>";
-        $ret .= "</div>";
-        $ret .= '<div class="row">'
-            . '<label class="control-label col-sm-2">Discount</label>'
-            . '<label class="control-label col-sm-2">Min</label>'
-            . '<label class="control-label col-sm-2">Max</label>'
-            . '<label class="control-label col-sm-2">Margin</label>'
-            . '<label class="control-label col-sm-2">Sales Code</label>'
-            . '</div>';
-        $ret .= '<div class="row form-inline">';
-        $ret .= "<div class=\"col-sm-2\"><input class=\"checkbox\" type=checkbox value=1 
-            name=disc id=deptdisc ". ($disc>0?'checked':'') . " /></div>";
-        $ret .= sprintf("<div class=\"col-sm-2\"><div class=\"input-group\">
-            <span class=\"input-group-addon\">\$</span>
-            <input type=number name=min class=\"form-control\" 
-            id=deptmin value=\"%.2f\" min=\"0\" max=\"9999\" step=\"0.01\" />
-            </div></div>",$min,0);  
-        $ret .= sprintf("<div class=\"col-sm-2\"><div class=\"input-group\">
-            <span class=\"input-group-addon\">\$</span>
-            <input type=number name=max class=\"form-control\" id=deptmax 
-            value=\"%.2f\" min=\"0\" max=\"99999\" step=\"0.01\" /></div></div>",$max,0);  
-        $ret .= sprintf("<div class=\"col-sm-2\"><div class=\"input-group\"><input type=number name=margin 
-            class=\"form-control\" id=deptmargin value=\"%.2f\" min=\"0\" max=\"999\" step=\"0.01\" />
-            <span class=\"input-group-addon\">%%</span></div></div>",$margin*100);
-        $ret .= "<div class=\"col-sm-2\"><input type=text id=deptsalescode 
-           class=\"form-control\" name=pcode value=\"$pcode\" /></div>";
-        $ret .= '</div>';
-        if ($id != -1) {
-            $ret .= "<input type=hidden name=did id=deptno value=\"$id\" />";
-            $ret .= "<input type=hidden name=new id=isNew value=0 />";
-        } else {
-            $ret .= "<input type=hidden id=isNew name=new value=1 />";
-        }
-        $ret .= "<p><button type=submit value=Save onclick=\"deptSave(); return false;\"
-            class=\"btn btn-default\">Save</button></p>";
-
-        echo $ret;
+        return $taxes;
     }
 
-    private function ajax_save_dept(){
+    protected function get_id_handler()
+    {
         global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
 
-        $id = FormLib::get_form_value('did',0);
-        $name = FormLib::get_form_value('name','');
-        $tax = FormLib::get_form_value('tax',0);
-        $fs = FormLib::get_form_value('fs',0);
-        $disc = FormLib::get_form_value('disc',1);
-        $min = FormLib::get_form_value('min',0.01);
-        $max = FormLib::get_form_value('max',50.00);
-        $margin = FormLib::get_form_value('margin',0);
+        $dept = $this->getDept($dbc, $this->id);
+        $taxes = $this->getTaxes($dbc);
+        $vals = array(
+            'name' => $dept->dept_name(),
+            'fs' => ($dept->dept_fs()==1 ? 'checked' : ''),
+            'wic' => ($dept->dept_wicable()==1 ? 'checked' : ''),
+            'dOpts' => $this->discountOpts($dept->dept_discount(), $dept->line_item_discount()),
+            'min' => sprintf('%.2f', $dept->dept_minimum()),
+            'max' => sprintf('%.2f', $dept->dept_limit()),
+            'margin' => sprintf('%.2f', 100*$dept->margin()),
+            'pcode' => $dept->salesCode(),
+            'tax' => '',
+        );
+        foreach ($taxes as $k=>$v) {
+            if ($k == $dept->dept_tax()) {
+                $vals['tax'] .= "<option value=$k selected>$v</option>";
+            } else {
+                $vals['tax'] .= "<option value=$k>$v</option>";
+            }
+        }
+        if ($this->id != -1) {
+            $vals['hiddenID'] = "<input type=hidden name=did id=deptno value=\"" . $this->id . "\" />";
+            $vals['isNew'] = 0;
+            $vals['textID'] = $this->id;
+        } else {
+            $vals['hiddenID'] = '';
+            $vals['isNew'] = 1;
+            $vals['textID'] = "<input class=\"form-control\" type=text name=did id=deptno />";
+        }
+
+        echo include(__DIR__ . '/dept.form.html');
+
+        return false;
+    }
+
+    private function discountOpts($reg, $line)
+    {
+        $select = 0;
+        if ($reg && $line) {
+            $select = 1;
+        } elseif ($reg && !$line) {
+            $select = 2;
+        } elseif (!$reg && $line) {
+            $select = 3;
+        }
+        $opts = array(0=>'No', 1=>'Yes', 2=>'Trans only', 3=>'Line Only');
+        $ret = '';
+        foreach ($opts as $k => $v) {
+            $ret .= sprintf('<option %s value="%d">%s</option>',
+                ($k == $select ? 'selected' : ''), $k, $v);
+        }
+
+        return $ret;
+    }
+
+    protected function post_handler()
+    {
+        $dbc = $this->connection;
+
+        $deptID = FormLib::get('did',0);
+        $margin = FormLib::get('margin',0);
         $margin = ((float)$margin) / 100.0; 
-        $pcode = FormLib::get_form_value('pcode',$id);
-        if (!is_numeric($pcode)) $pcode = (int)$id;
-        $new = FormLib::get_form_value('new',0);
+        $pcode = FormLib::get('pcode',$deptID);
+        if (!is_numeric($pcode)) $pcode = (int)$deptID;
 
         $model = new DepartmentsModel($dbc);
-        $model->dept_no($id);
-        $model->dept_name($name);
-        $model->dept_tax($tax);
-        $model->dept_fs($fs);
-        $model->dept_discount($disc);
-        $model->dept_minimum($min);
-        $model->dept_limit($max);
+        $model->dept_no($deptID);
+        $model->dept_name(FormLib::get('name', ''));
+        $model->dept_tax(FormLib::get('tax', 0));
+        $model->dept_fs(FormLib::get('fs', 0));
+        $model->dept_wicable(FormLib::get('wic', 0));
+        $disc = FormLib::get('disc');
+        if ($disc == 1 || $disc == 2) {
+            $model->dept_discount(1);
+        } else {
+            $model->dept_discount(0);
+        }
+        if ($disc == 1 || $disc == 3) {
+            $model->line_item_discount(1);
+        } else {
+            $model->line_item_discount(0);
+        }
+        $model->dept_minimum(FormLib::get('min', 0.01));
+        $model->dept_limit(FormLib::get('max', 50.00));
         $model->modified(date('Y-m-d H:i:s'));
         $model->margin($margin);
         $model->salesCode($pcode);
-        if ($new == 1) {
+        if (FormLib::get('new', 0) == 1) {
             $model->modifiedby(1);
             $model->dept_see_id(0);
         }
-        $saved = $model->save();
 
-        if ($new == 1){
-            if ($saved === False){
-                echo 'Error: could not create department';
-                return;
-            }
-
-            $superP = $dbc->prepare_statement('INSERT INTO superdepts (superID,dept_ID) VALUES (0,?)');
-            $superR = $dbc->exec_statement($superP,array($id));
-        }
-        else {
-            if ($saved === False){
-                echo 'Error: could not save changes';
-                return;
-            }
-        }
-        
-        if ($dbc->tableExists('deptMargin')) {
-            $chkM = $dbc->prepare_statement('SELECT dept_ID FROM deptMargin WHERE dept_ID=?');
-            $mR = $dbc->exec_statement($chkM, array($id));
-            if ($dbc->num_rows($mR) > 0){
-                $up = $dbc->prepare_statement('UPDATE deptMargin SET margin=? WHERE dept_ID=?');
-                $dbc->exec_statement($up, array($margin, $id));
-            }
-            else {
-                $ins = $dbc->prepare_statement('INSERT INTO deptMargin (dept_ID,margin) VALUES (?,?)');
-                $dbc->exec_statement($ins, array($id, $margin));
-            }
+        if ($model->save() === false) {
+            return false;
         }
 
-        if ($dbc->tableExists('deptSalesCodes')) {
-            $chkS = $dbc->prepare_statement('SELECT dept_ID FROM deptSalesCodes WHERE dept_ID=?');
-            $rS = $dbc->exec_statement($chkS, array($id));
-            if ($dbc->num_rows($rS) > 0){
-                $up = $dbc->prepare_statement('UPDATE deptSalesCodes SET salesCode=? WHERE dept_ID=?');
-                $dbc->exec_statement($up, array($pcode, $id));
-            }
-            else {
-                $ins = $dbc->prepare_statement('INSERT INTO deptSalesCodes (dept_ID,salesCode) VALUES (?,?)');
-                $dbc->exec_statement($ins, array($id, $pcode));
-            }
+        if (FormLib::get('new', 0) == 1) {
+            $superP = $dbc->prepare('INSERT INTO superdepts (superID,dept_ID) VALUES (0,?)');
+            $superR = $dbc->execute($superP,array($deptID));
         }
 
         $json = array();
-        $json['did'] = $id;
-        $json['msg'] = 'Department '.$id.' - '.$name.' Saved';
+        $json['did'] = $deptID;
+        $json['msg'] = 'Department '.$deptID.' - '.$name.' Saved';
 
         echo json_encode($json);
+
+        return false;
     }
 
+    private function legacySave($dbc, $deptID, $margin, $pcode)
+    {
+        $sets = array(
+            array('deptMargin', 'margin', $margin),
+            array('deptSalesCodes', 'salesCode', $pcode),
+        );
+        foreach ($sets as $set) {
+            if ($dbc->tableExists($set[0])) {
+                $chkM = $dbc->prepare('SELECT dept_ID FROM ' . $set[0] . ' WHERE dept_ID=?');
+                $marginR = $dbc->execute($chkM, array($deptID));
+                if ($dbc->numRows($marginR) > 0){
+                    $upP = $dbc->prepare('UPDATE ' . $set[0] . ' SET ' . $set[1] . '=? WHERE dept_ID=?');
+                    $dbc->execute($upP, array($set[2], $deptID));
+                } else {
+                    $ins = $dbc->prepare('INSERT INTO ' . $set[0] . '(dept_ID,' . $set[1] . ') VALUES (?,?)');
+                    $dbc->execute($ins, array($deptID, $set[2]));
+                }
+            }
+        }
+    }
 
-    public function body_content()
+    public function get_view()
     {
         global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
         $depts = "<option value=0>Select a department...</option>";
         $depts .= "<option value=-1>Create a new department</option>";
-        $p = $dbc->prepare_statement("SELECT dept_no,dept_name FROM departments
+        $prep = $dbc->prepare("SELECT dept_no,dept_name FROM departments
                     ORDER BY dept_no");
-        $resp = $dbc->exec_statement($p);
+        $resp = $dbc->execute($prep);
         $selectedDID = FormLib::get_form_value('did');
         while ($row = $dbc->fetch_row($resp)) {
             if ($selectedDID !== '' && $selectedDID == $row[0]) {
@@ -284,7 +230,7 @@ class DepartmentEditor extends FanniePage {
         ?>
         <div id="deptdiv" class="form-group">
             <label class="control-label">Department</label>
-            <select class="form-control" id="deptselect" onchange="deptchange();">
+            <select class="form-control" id="deptselect" onchange="deptEdit.deptchange();">
             <?php echo $depts ?>
             </select>
         </div>
@@ -294,7 +240,7 @@ class DepartmentEditor extends FanniePage {
     
         $this->add_script('dept.js');
         if ($selectedDID !== '') {
-            $this->add_onload_command('deptchange();'); 
+            $this->add_onload_command('deptEdit.deptchange();'); 
         }
 
         return ob_get_clean();
@@ -321,7 +267,16 @@ class DepartmentEditor extends FanniePage {
             accounting team and the operational team want to categorize items and
             sales differently.</p>';
     }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->get_view()));
+        ob_start();
+        $this->id = 1;
+        $this->get_id_handler();
+        $phpunit->assertNotEquals(0, strlen(ob_get_clean()));
+    }
 }
 
-FannieDispatch::conditionalExec(false);
+FannieDispatch::conditionalExec();
 

@@ -21,6 +21,8 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\gui\NoInputCorePage;
+use COREPOS\pos\lib\TransRecord;
 include_once(dirname(__FILE__).'/../lib/AutoLoader.php');
 
 class PaidOutComment extends NoInputCorePage 
@@ -28,8 +30,8 @@ class PaidOutComment extends NoInputCorePage
 
     function preprocess()
     {
-        if (isset($_REQUEST["selectlist"])){
-            $input = $_REQUEST["selectlist"];
+        try {
+            $input = $this->form->selectlist;
             $qstr = '';
             if ($input == "Other"){
                 return true;
@@ -40,8 +42,9 @@ class PaidOutComment extends NoInputCorePage
             }
             $this->change_page($this->page_url."gui-modules/pos2.php" . $qstr);
             return false;
-        }
-        return True;
+        } catch (Exception $ex) {}
+
+        return true;
     }
     
     function head_content()
@@ -56,43 +59,54 @@ class PaidOutComment extends NoInputCorePage
         ?>
         <div class="baseHeight">
         <div class="centeredDisplay colored">
-        <span class="larger">reason for paidout</span>
+        <span class="larger"><?php echo 'reason for paidout'; ?></span>
         <form name="selectform" method="post" 
-            id="selectform" action="<?php echo $_SERVER['PHP_SELF']; ?>">
+            id="selectform" action="<?php echo filter_input(INPUT_SERVER, 'PHP_SELF'); ?>">
         <?php
-        if (isset($_POST['selectlist']) && $_POST['selectlist'] == 'Other') {
+        if ($this->form->tryGet('selectlist') == 'Other') {
         ?>
             <input type="text" id="selectlist" name="selectlist" 
                 onblur="$('#selectlist').focus();" />
         <?php
-        }
-        else {
+        } else {
         ?>
             <select name="selectlist" id="selectlist"
                 onblur="$('#selectlist').focus();">
-            <option>Paid to Supplier</option>
-            <option>Store Use</option>
-            <option>Coupon</option>
-            <option>Other</option>
-            <option>Discount</option>
-            <option>Gift Card Refund</option>
+            <option><?php echo _('Paid to Supplier'); ?></option>
+            <option><?php echo _('Store Use'); ?></option>
+            <option><?php echo _('Coupon'); ?></option>
+            <option><?php echo _('Other'); ?></option>
+            <option><?php echo _('Discount'); ?></option>
+            <option><?php echo _('Gift Card Refund'); ?></option>
             </select>
         <?php
         }
         ?>
         </form>
         <p>
-        <span class="smaller">[clear] to cancel</span>
+        <span class="smaller"><?php echo _('[clear] to cancel'); ?></span>
         </p>
         </div>
         </div>    
         <?php
-        $this->add_onload_command("\$('#selectlist').focus();\n");
-        //if (isset($_POST['selectlist']) && $_POST['selectlist'] == 'Other') 
-        $this->add_onload_command("selectSubmit('#selectlist', '#selectform')\n");
+        $this->addOnloadCommand("\$('#selectlist').focus();\n");
+        $this->addOnloadCommand("selectSubmit('#selectlist', '#selectform')\n");
     } // END body_content() FUNCTION
+
+    public function unitTest($phpunit)
+    {
+        $this->form = new COREPOS\common\mvc\ValueContainer();
+        $debug = $this->session->Debug_Redirects;
+        $this->session->Debug_Redirects = 1;
+        ob_start();
+        $this->form->selectlist = 'Other';
+        $phpunit->assertEquals(true, $this->preprocess());
+        $this->form->selectlist = 'Test';
+        $phpunit->assertEquals(false, $this->preprocess());
+        ob_end_clean();
+        $this->session->Debug_Redirects = $debug;
+    }
 }
 
-if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
-    new PaidOutComment();
-?>
+AutoLoader::dispatch();
+

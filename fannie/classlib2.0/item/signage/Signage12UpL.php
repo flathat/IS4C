@@ -34,7 +34,69 @@ class Signage12UpL extends \COREPOS\Fannie\API\item\FannieSignage
     protected $font = 'Arial';
     protected $alt_font = 'Arial';
 
-    public function drawPDF()
+    protected $width = 68.67;
+    protected $height = 70.5;
+    protected $top = 17;
+    protected $left = 8.5;
+
+    protected function drawItem($pdf, $item, $row, $column)
+    {
+        $effective_width = $this->width - $this->left;
+
+        $price = $this->printablePrice($item);
+
+        $pdf->SetXY($this->left + ($this->width*$column), $this->top + ($row*$this->height) + 6);
+        $pdf->SetFont($this->font, 'B', $this->SMALL_FONT);
+        $pdf = $this->fitText($pdf, $this->SMALL_FONT, 
+            strtoupper($item['brand']), array($column, 6, 1));
+
+        $pdf->SetFont($this->font, '', $this->MED_FONT);
+        $pdf = $this->fitText($pdf, $this->MED_FONT, 
+            $item['description'], array($column, 6, 2));
+
+        $pdf->SetX($this->left + ($this->width*$column));
+        $pdf->SetFont($this->alt_font, '', $this->SMALLER_FONT);
+        $item['size'] = $this->formatSize($item['size'], $item);
+        $pdf->Cell($effective_width, 6, $item['size'], 0, 1, 'C');
+
+        if (!isset($item['signMultiplier']) || $item['signMultiplier'] != -3) {
+            $pdf->SetXY($this->left + ($this->width*$column), $this->top + ($this->height*$row) + ($this->height - 41));
+            $pdf->SetFont($this->font, '', $this->BIG_FONT);
+            $pdf->Cell($effective_width, 12, $price, 0, 1, 'C');
+        } else {
+            $pdf->SetXY(-5 + $this->left + ($this->width*$column), $this->top + ($this->height*$row) + ($this->height - 41));
+            $pdf->SetFont($this->font, '', $this->MED_FONT);
+            $pdf->MultiCell($effective_width/2, 6, "BUY ONE\nGET ONE", 0, 'R');
+            $pdf->SetXY(-5 + $this->left + ($this->width*$column) + ($effective_width/2), $this->top + ($this->height*$row) + ($this->height - 39));
+            $pdf->SetFont($this->font, '', $this->BIG_FONT);
+            $pdf->Cell($effective_width/2, 12, 'FREE', 0, 1, 'L');
+        }
+
+        if ($this->validDate($item['startDate']) && $this->validDate($item['endDate'])) {
+            // intl would be nice
+            $datestr = $this->getDateString($item['startDate'], $item['endDate']);
+            $pdf->SetXY($this->left + ($this->width*$column), $this->top + ($this->height*$row) + ($this->height - 33));
+            $pdf->SetFont($this->alt_font, '', $this->SMALLEST_FONT);
+            $pdf->Cell($effective_width, 20, strtoupper($datestr), 0, 1, 'R');
+        }
+
+        if ($item['originShortName'] != '' || (isset($item['nonSalePrice']) && $item['nonSalePrice'] > $item['normal_price'])) {
+            $pdf->SetXY($this->left + ($this->width*$column), $this->top + ($this->height*$row) + ($this->height - 35.5));
+            $pdf->SetFont($this->alt_font, '', $this->SMALLEST_FONT);
+            $text = ($item['originShortName'] != '') ? $item['originShortName'] : sprintf('Regular Price: $%.2f', $item['nonSalePrice']);
+            $pdf->Cell($effective_width, 20, $text, 0, 1, 'L');
+            $pdf->SetXY($this->left + ($this->width*$column), $this->top + ($this->height*$row) + ($this->height - 33));
+            $pdf->Cell($effective_width, 20, $item['upc'], 0, 1, 'L');
+        } else {
+            $pdf->SetFont($this->alt_font, '', $this->SMALLEST_FONT);
+            $pdf->SetXY($this->left + ($this->width*$column), $this->top + ($this->height*$row) + ($this->height - 33));
+            $pdf->Cell($effective_width, 20, $item['upc'], 0, 1, 'L');
+        } 
+
+        return $pdf;
+    }
+
+    protected function createPDF()
     {
         $pdf = new \FPDF('L', 'mm', 'Letter');
         $pdf->SetMargins(3.175, 3.175, 3.175);
@@ -42,14 +104,17 @@ class Signage12UpL extends \COREPOS\Fannie\API\item\FannieSignage
         $pdf = $this->loadPluginFonts($pdf);
         $pdf->SetFont($this->font, '', 16);
 
+        return $pdf;
+    }
+
+    public function drawPDF()
+    {
+        $pdf = $this->createPDF();
+
         $data = $this->loadItems();
         $count = 0;
         $sign = 0;
-        $width = 68.67;
-        $height = 70.5;
-        $top = 17;
-        $left = 8.5;
-        $effective_width = $width - $left;
+        $this->top = 17;
         foreach ($data as $item) {
             $item = $this->decodeItem($item);
             if ($count % 12 == 0) {
@@ -59,106 +124,7 @@ class Signage12UpL extends \COREPOS\Fannie\API\item\FannieSignage
 
             $row = floor($sign / 4);
             $column = $sign % 4;
-
-            $price = $this->printablePrice($item);
-
-            $pdf->SetXY($left + ($width*$column), $top + ($row*$height) + 6);
-            $pdf->SetFont($this->font, 'B', $this->SMALL_FONT);
-            $font_shrink = 0;
-            while (true) {
-                $pdf->SetX($left + ($width*$column));
-                $y = $pdf->GetY();
-                $pdf->MultiCell($effective_width, 6, strtoupper($item['brand']), 0, 'C');
-                if ($pdf->GetY() - $y > 6) {
-                    $pdf->SetFillColor(0xff, 0xff, 0xff);
-                    $pdf->Rect($left + ($width*$column), $y, $left + ($width*$column) + $effective_width, $pdf->GetY(), 'F');
-                    $font_shrink++;
-                    if ($font_shrink >= $this->SMALL_FONT) {
-                        break;
-                    }
-                    $pdf->SetFontSize($this->SMALL_FONT - $font_shrink);
-                    $pdf->SetXY($left + ($width*$column), $y);
-                } else {
-                    break;
-                }
-            }
-
-            /**
-              This block attempts to write the description then
-              checks how many lines it took. If the description was
-              longer than two lines, it whites the whole thing out,
-              drops one font size, and tries again. Calculating
-              effective text size with smart line breaks seems
-              really tough.
-            */
-            $pdf->SetFont($this->font, '', $this->MED_FONT);
-            $font_shrink = 0;
-            while (true) {
-                $pdf->SetX($left + ($width*$column));
-                $y = $pdf->GetY();
-                $pdf->MultiCell($effective_width, 6, $item['description'], 0, 'C');
-                if ($pdf->GetY() - $y > 12) {
-                    $pdf->SetFillColor(0xff, 0xff, 0xff);
-                    $pdf->Rect($left + ($width*$column), $y, $left + ($width*$column) + $effective_width, $pdf->GetY(), 'F');
-                    $font_shrink++;
-                    if ($font_shrink >= $this->MED_FONT) {
-                        break;
-                    }
-                    $pdf->SetFontSize($this->MED_FONT - $font_shrink);
-                    $pdf->SetXY($left + ($width*$column), $y);
-                } else {
-                    if ($pdf->GetY() - $y < 12) {
-                        $words = explode(' ', $item['description']);
-                        $multi = '';
-                        for ($i=0;$i<floor(count($words)/2);$i++) {
-                            $multi .= $words[$i] . ' ';
-                        }
-                        $multi = trim($multi) . "\n";
-                        for ($i=floor(count($words)/2); $i<count($words); $i++) {
-                            $multi .= $words[$i] . ' ';
-                        }
-                        $item['description'] = trim($multi);
-                        $pdf->SetFillColor(0xff, 0xff, 0xff);
-                        $pdf->Rect($left + ($width*$column), $y, $left + ($width*$column) + $effective_width, $pdf->GetY(), 'F');
-                        $pdf->SetXY($left + ($width*$column), $y);
-                        $pdf->MultiCell($effective_width, 6, $item['description'], 0, 'C');
-                    }
-                    break;
-                }
-            }
-
-            $pdf->SetX($left + ($width*$column));
-            $pdf->SetFont($this->alt_font, '', $this->SMALLER_FONT);
-            $item['size'] = $this->formatSize($item['size'], $item);
-            $pdf->Cell($effective_width, 6, $item['size'], 0, 1, 'C');
-
-            if ($item['signMultiplier'] != -3) {
-                $pdf->SetXY($left + ($width*$column), $top + ($height*$row) + ($height - 39));
-                $pdf->SetFont($this->font, '', $this->BIG_FONT);
-                $pdf->Cell($effective_width, 12, $price, 0, 1, 'C');
-            } else {
-                $pdf->SetXY(-5 + $left + ($width*$column), $top + ($height*$row) + ($height - 39));
-                $pdf->SetFont($this->font, '', $this->MED_FONT);
-                $pdf->MultiCell($effective_width/2, 6, "BUY ONE\nGET ONE", 0, 'R');
-                $pdf->SetXY(-5 + $left + ($width*$column) + ($effective_width/2), $top + ($height*$row) + ($height - 39));
-                $pdf->SetFont($this->font, '', $this->BIG_FONT);
-                $pdf->Cell($effective_width/2, 12, 'FREE', 0, 1, 'L');
-            }
-
-            if ($item['startDate'] != '' && $item['endDate'] != '') {
-                // intl would be nice
-                $datestr = $this->getDateString($item['startDate'], $item['endDate']);
-                $pdf->SetXY($left + ($width*$column), $top + ($height*$row) + ($height - 33));
-                $pdf->SetFont($this->alt_font, '', $this->SMALLEST_FONT);
-                $pdf->Cell($effective_width, 20, strtoupper($datestr), 0, 1, 'R');
-            }
-
-            if ($item['originShortName'] != '' || isset($item['nonSalePrice'])) {
-                $pdf->SetXY($left + ($width*$column), $top + ($height*$row) + ($height - 33));
-                $pdf->SetFont($this->alt_font, '', $this->SMALLEST_FONT);
-                $text = ($item['originShortName'] != '') ? $item['originShortName'] : sprintf('Regular Price: $%.2f', $item['nonSalePrice']);
-                $pdf->Cell($effective_width, 20, $text, 0, 1, 'L');
-            }
+            $pdf = $this->drawItem($pdf, $item, $row, $column);
 
             $count++;
             $sign++;
@@ -168,9 +134,5 @@ class Signage12UpL extends \COREPOS\Fannie\API\item\FannieSignage
     }
 }
 
-}
-
-namespace {
-    class Signage12UpL extends \COREPOS\Fannie\API\item\signage\Signage12UpL {}
 }
 

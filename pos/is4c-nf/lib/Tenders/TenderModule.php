@@ -21,6 +21,13 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\lib\Tenders;
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\DisplayLib;
+use COREPOS\pos\lib\MiscLib;
+use COREPOS\pos\lib\TransRecord;
+use \CoreLocal;
+
 /**
   @class TenderModule
   Base class for modular tenders
@@ -31,11 +38,12 @@ class TenderModule
     protected $tender_code;
     protected $amount;
 
-    protected $name_string;
-    protected $change_type;
-    protected $change_string;
-    protected $min_limit;
-    protected $max_limit;
+    protected $name_string = '';
+    protected $change_type = 'CA';
+    protected $change_string = 'Change';
+    protected $min_limit = 0;
+    protected $max_limit = 0;
+    protected $ends_trans = true;
 
     /**
       Constructor
@@ -50,25 +58,26 @@ class TenderModule
         $this->tender_code = $code;
         $this->amount = $amt;
 
-        $db = Database::pDataConnect();
-        $query = "select TenderID,TenderCode,TenderName,TenderType,
-            ChangeMessage,MinAmount,MaxAmount,MaxRefund from 
-            tenders where tendercode = '".$this->tender_code."'";
-        $result = $db->query($query);
+        $dbc = Database::pDataConnect();
+        $query = "SELECT TenderID,TenderCode,TenderName,TenderType,
+            ChangeMessage,MinAmount,MaxAmount,MaxRefund,";
+        if (CoreLocal::get('NoCompat') != 1) {
+            $tenderTable = $dbc->tableDefinition('tenders');
+            $query .= isset($tenderTable['EndsTransaction']) ? '' : '1 AS ';
+        }
+        $query .= " EndsTransaction FROM
+            tenders WHERE tendercode = ?";
+        $prep = $dbc->prepare($query);
+        $result = $dbc->execute($prep, array($this->tender_code));
 
-        if ($db->num_rows($result) > 0) {
-            $row = $db->fetch_array($result);
+        if ($dbc->numRows($result) > 0) {
+            $row = $dbc->fetchRow($result);
             $this->name_string = $row['TenderName'];
             $this->change_type = $row['TenderType'];
             $this->change_string = $row['ChangeMessage'];
             $this->min_limit = $row['MinAmount'];
             $this->max_limit = $row['MaxAmount'];
-        } else {
-            $this->name_string = '';
-            $this->change_string = 'Change';
-            $this->min_limit = 0;
-            $this->max_limit = 0;
-            $this->change_type = 'CA';
+            $this->ends_trans = $row['EndsTransaction'] ? true : false;
         }
     }
 
@@ -83,7 +92,7 @@ class TenderModule
             $this->amount = -1 * $this->amount;
         }
 
-        $clearButton = array('OK [clear]' => 'parseWrapper(\'CL\');');
+        $clearButton = array(_('OK [clear]') => 'parseWrapper(\'CL\');');
 
         if (CoreLocal::get("LastID") == 0) {
             return DisplayLib::boxMsg(
@@ -112,7 +121,7 @@ class TenderModule
                 _("transaction must be totaled before tender can be accepted"),
                 '',
                 false,
-                array('Total [subtotal]' => 'parseWrapper(\'TL\');$(\'#reginput\').focus();', 'Dimiss [clear]' => 'parseWrapper(\'CL\');')
+                array(_('Total [subtotal]') => 'parseWrapper(\'TL\');$(\'#reginput\').focus();', _('Dimiss [clear]') => 'parseWrapper(\'CL\');')
             );
         } else if ($this->name_string === "") {
             return DisplayLib::inputUnknown();
@@ -157,8 +166,8 @@ class TenderModule
             );
             CoreLocal::set('lastRepeat', 'confirmTenderAmount');
             CoreLocal::set('boxMsgButtons', array(
-                'Confirm [enter]' => '$(\'#reginput\').val(\'\');submitWrapper();',
-                'Cancel [clear]' => '$(\'#reginput\').val(\'CL\');submitWrapper();',
+                _('Confirm [enter]') => '$(\'#reginput\').val(\'\');submitWrapper();',
+                _('Cancel [clear]') => '$(\'#reginput\').val(\'CL\');submitWrapper();',
             ));
 
             return MiscLib::base_url().'gui-modules/boxMsg2.php';
@@ -217,6 +226,11 @@ class TenderModule
         return true;
     }
 
+    public function endsTransaction()
+    {
+        return $this->ends_trans;
+    }
+
     /**
       Value to use if no total is provided
       @return number
@@ -238,12 +252,12 @@ class TenderModule
         $amt = $this->DefaultTotal();
         CoreLocal::set('boxMsg',
             '<br />'
-          . 'tender $' . sprintf('%.2f',$amt) . ' as ' . $this->name_string 
+          . _('tender $') . sprintf('%.2f',$amt) . ' as ' . $this->name_string 
         );
         CoreLocal::set('strEntered', (100*$amt).$this->tender_code);
         CoreLocal::set('boxMsgButtons', array(
-            'Confirm [enter]' => '$(\'#reginput\').val(\'\');submitWrapper();',
-            'Cancel [clear]' => '$(\'#reginput\').val(\'CL\');submitWrapper();',
+            _('Confirm [enter]') => '$(\'#reginput\').val(\'\');submitWrapper();',
+            _('Cancel [clear]') => '$(\'#reginput\').val(\'CL\');submitWrapper();',
         ));
 
         return MiscLib::base_url().'gui-modules/boxMsg2.php?quiet=1';
@@ -256,7 +270,7 @@ class TenderModule
     */
     public function disabledPrompt()
     {
-        $clearButton = array('OK [clear]' => 'parseWrapper(\'CL\');');
+        $clearButton = array(_('OK [clear]') => 'parseWrapper(\'CL\');');
         return DisplayLib::boxMsg(
             _('Amount required for ') . $this->name_string,
             '',
@@ -265,5 +279,39 @@ class TenderModule
         );
     }
 
+    protected function frankingPrompt()
+    {
+        if (CoreLocal::get("enableFranking") != 1) {
+            return parent::defaultPrompt();
+        }
+
+        CoreLocal::set('RepeatAgain', false);
+
+        $ref = trim(CoreLocal::get("CashierNo"))."-"
+            .trim(CoreLocal::get("laneno"))."-"
+            .trim(CoreLocal::get("transno"));
+
+        if ($this->amount === False) {
+            $this->amount = $this->defaultTotal();
+        }
+
+        $msg = "<br />"._("insert")." ".$this->name_string.
+            ' for $'.sprintf('%.2f',$this->amount) . '<br />';
+        if (CoreLocal::get("LastEquityReference") == $ref) {
+            $msg .= "<div style=\"background:#993300;color:#ffffff;
+                margin:3px;padding: 3px;\">"
+                . _('There was an equity sale on this transaction. Did it get
+                endorsed yet?') . "</div>";
+        }
+
+        CoreLocal::set("boxMsg",$msg);
+        CoreLocal::set('strEntered', (100*$this->amount).$this->tender_code);
+        CoreLocal::set('boxMsgButtons', array(
+            _('Endorse [enter]') => '$(\'#reginput\').val(\'\');submitWrapper();',
+            _('Cancel [clear]') => '$(\'#reginput\').val(\'CL\');submitWrapper();',
+        ));
+
+        return MiscLib::base_url().'gui-modules/boxMsg2.php?endorse=check&endorseAmt='.$this->amount;
+    }
 }
 

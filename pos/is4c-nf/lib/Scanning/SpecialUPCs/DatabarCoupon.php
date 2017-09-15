@@ -21,6 +21,14 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\lib\Scanning\SpecialUPCs;
+use COREPOS\pos\lib\Scanning\SpecialUPC;
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\DisplayLib;
+use COREPOS\pos\lib\MiscLib;
+use COREPOS\pos\lib\TransRecord;
+use \stdClass;
+
 class DatabarCoupon extends SpecialUPC 
 {
 
@@ -33,10 +41,48 @@ class DatabarCoupon extends SpecialUPC
         return false;
     }
 
+    /**
+      Coupon information is parsed into a large object reflecting all the various
+      potential properties. These properties are:
+
+      * firstReq - An object representing a set of purchase requirements
+      * secondReq - An object representing a set of purchase requirements
+      * thirdReq - An object representing a set of purchase requirements
+      * offerCode - An identifier string [probably] unique to this coupon
+      * redeemValue - A baseline value, in cents, for simple coupons
+      * requiredRulesCode - integer value indicating which combination of the
+        first, second, and third requirements must be met before using the coupon
+      * dupePrefixFlag - boolean flag. When set to true, each requirement's family
+        code is appended to the requirement's prefix. This causes each requirement
+        to look for a specific subset of items from the manufacturer prefix.
+      * serial - Another embedded identifier. Not used for anything
+      * retailer - Another embedded identifier. Not used for anything
+      * valueCode - integer value indicating how the coupon information should
+        be translated into a dollar value when redeeming the coupon
+      * valueApplies - integer value indicating whether the value given in
+        the first, second, or third requirement object should be used when
+        determining final redemption dollar value
+      * storeCoupon - integer flag. Not used for anything
+      * noMultiply - integer flag. Not used for anything
+
+      The requirement object mentioned above has the following properties:
+
+      * valid - boolean indicating the requirement is met. This is the ONLY property
+        that's guaranteed to exist for all requirement objects. All other fields are
+        only populated if present in the coupon.
+      * prefix - string manufacturer barcode prefix
+      * code - integer indicating how to calculate the requirement's dollar value
+      * value - integer value used in calculating the requirement's dollar value
+      * family - string family code associated with the requirement
+      * price - retail price of an item in the transaction that meets this requirement
+      * department - POS department of an item in the transaction that meets this requirement
+    */
+
     public function handle($upc,$json)
     {
         $pos = 0;
-        $first_req = array();
+        $coupon = new stdClass();
+        $coupon->firstReq = new stdClass();
 
         /* STEP 1 - REQUIRED FIELDS */
 
@@ -44,45 +90,46 @@ class DatabarCoupon extends SpecialUPC
         $pos += 4;
 
         // grab company prefix length, remove it from barcode
-        $prefix_length = ((int)$upc[$pos]) + 6;
+        $prefixLength = ((int)$upc[$pos]) + 6;
         $pos += 1;
 
         // grab company prefix, remove from barcode
-        $first_req['man_id'] = substr($upc,$pos,$prefix_length);
-        $pos += $prefix_length;
+        $coupon->firstReq->prefix = substr($upc,$pos,$prefixLength);
+        $pos += $prefixLength;
 
         // this way all prefixes map against
         // localtemptrans.upc[2,length]
-        if ($prefix_length==6) {
-            $first_req['man_id'] = "0".$first_req['man_id'];
+        if ($prefixLength==6) {
+            $coupon->firstReq->prefix = '0' . $coupon->firstReq->prefix;
         }
 
         // grab offer code, remove from barcode
         $offer = substr($upc,$pos,6);
+        $coupon->offerCode = substr($upc,$pos,6);
         $pos += 6;
 
         // read value length
-        $val_length = (int)$upc[$pos];
+        $valLength = (int)$upc[$pos];
         $pos += 1;
 
         // read value
-        $value = (int)substr($upc,$pos,$val_length);
-        $pos += $val_length;
+        $coupon->redeemValue = (int)substr($upc,$pos,$valLength);
+        $pos += $valLength;
 
         // read primary requirement length
-        $req_length = (int)$upc[$pos];
+        $reqLength = (int)$upc[$pos];
         $pos += 1;
 
         // read primary requirement value
-        $first_req['value'] = substr($upc,$pos,$req_length);
-        $pos += $req_length;
+        $coupon->firstReq->value = substr($upc,$pos,$reqLength);
+        $pos += $reqLength;
 
         // read primary requirement type-code
-        $first_req['code'] = $upc[$pos];
+        $coupon->firstReq->code = $upc[$pos];
         $pos += 1;
 
         // read primary requirement family code
-        $first_req['family'] = substr($upc,$pos,3);
+        $coupon->firstReq->family = substr($upc,$pos,3);
         $pos += 3;
 
         /* END REQUIRED FIELDS */
@@ -104,91 +151,89 @@ class DatabarCoupon extends SpecialUPC
         /* STEP 2 - CHECK FOR OPTIONAL FIELDS */
 
         // second required item
-        $second_req = array();
-        $req_rules_code = 1;
-        $duplicate_prefix_flag = false;
+        $coupon->secondReq = new stdClass();
+        $coupon->requiredRulesCode = 1;
+        $coupon->dupePrefixFlag = false;
         if (isset($upc[$pos]) && $upc[$pos] == "1") {
             $pos += 1;
 
-            $rules_code = $upc[$pos];
+            $srLength = (int)$upc[$pos];        
             $pos += 1;
-        
-            $sr_length = (int)$upc[$pos];        
-            $pos += 1;
-            $second_req['value'] = substr($upc,$pos,$sr_length);
-            $pos += $sr_length;
+            $coupon->secondReq->value = substr($upc,$pos,$srLength);
+            $pos += $srLength;
 
-            $second_req['code'] = $upc[$pos];
+            $coupon->secondReq->code = $upc[$pos];
             $pos += 1;
 
-            $second_req['family'] = substr($upc,$pos,3);
+            $coupon->secondReq->family = substr($upc,$pos,3);
             $pos += 3;
 
-            $sm_length = ((int)$upc[$pos]) + 6;
+            $smLength = ((int)$upc[$pos]) + 6;
             $pos += 1;
-            if ($sm_length == 15) { // 9+6
-                $second_req['man_id'] = $first_req['man_id'];
-                $duplicate_prefix_flag = true;
+            if ($smLength == 15) { // 9+6
+                $coupon->secondReq->prefix = $coupon->firstReq->prefix;
+                $coupon->dupePrefixFlag = true;
             } else {
-                $second_req['man_id'] = substr($upc,$pos,$sm_length);
-                $pos += $sm_length;
+                $coupon->secondReq->prefix = substr($upc,$pos,$smLength);
+                $pos += $smLength;
 
-                if ($sm_length == 6) {
-                    $second_req['man_id'] = "0".$second_req['man_id'];
+                if ($smLength == 6) {
+                    $coupon->secondReq->prefix = '0' . $coupon->secondReq->prefix;
                 }
             }
         }
 
         // third required item
-        $third_req = array();
+        $coupon->thirdReq = new stdClass();
         if (isset($upc[$pos]) && $upc[$pos] == "2") {
             $pos += 1;
 
-            $tr_length = (int)$upc[$pos];        
+            $trLength = (int)$upc[$pos];        
             $pos += 1;
-            $third_req['value'] = substr($upc,$pos,$tr_length);
-            $pos += $tr_length;
+            $coupon->thirdReq->value = substr($upc,$pos,$trLength);
+            $pos += $trLength;
 
-            $third_req['code'] = $upc[$pos];
+            $coupon->thirdReq->code = $upc[$pos];
             $pos += 1;
 
-            $third_req['family'] = substr($upc,$pos,3);
+            $coupon->thirdReq->family = substr($upc,$pos,3);
             $pos += 3;
 
-            $tm_length = ((int)$upc[$pos]) + 6;
+            $tmLength = ((int)$upc[$pos]) + 6;
             $pos += 1;
-            if ($tm_length == 15) { // 9+6
-                $third_req['man_id'] = $first_req['man_id'];
-                $duplicate_prefix_flag = true;
+            if ($tmLength == 15) { // 9+6
+                $coupon->thirdReq->prefix = $coupon->firstReq->prefix;
+                $coupon->dupePrefixFlag = true;
             } else {
-                $third_req['man_id'] = substr($upc,$pos,$tm_length);
-                $pos += $tm_length;
+                $coupon->thirdReq->prefix = substr($upc,$pos,$tmLength);
+                $pos += $tmLength;
 
-                if ($tm_length == 6) {
-                    $third_req['man_id'] = "0".$third_req['man_id'];
+                if ($tmLength == 6) {
+                    $coupon->thirdReq->prefix = '0' . $coupon->thirdReq->prefix;
                 }
             }
         }
 
-        if ($duplicate_prefix_flag) {
-            $first_req['man_id'] .= $first_req['family'];
-            $second_req['man_id'] .= $second_req['family'];
-            $third_req['man_id'] .= $third_req['family'];
+        if ($coupon->dupePrefixFlag) {
+            $coupon->firstReq->prefix .= $coupon->firstReq->family;
+            $coupon->secondReq->prefix .= $coupon->secondReq->family;
+            $coupon->thirdReq->prefix .= $coupon->thirdReq->family;
         }
 
         // expiration date
         if (isset($upc[$pos]) && $upc[$pos] == "3") {
             $pos += 1;
             $expires = substr($upc,$pos,6);
+            $expires = substr($upc,$pos,6);
             $pos += 6;
 
-            $y = "20".substr($expires,0,2);
-            $m = substr($expires,2,2);
-            $d = substr($expires,4,2);
+            $year = "20".substr($expires,0,2);
+            $month = substr($expires,2,2);
+            $day = substr($expires,4,2);
 
-            $tstamp = mktime(23,59,59,$m,$d,$y);
+            $tstamp = mktime(23,59,59,$month,$day,$year);
             if ($tstamp < time()) {
-                $json['output'] = DisplayLib::boxMsg("Coupon expired $m/$d/$y");
+                $json['output'] = DisplayLib::boxMsg(_("Coupon expired ") . date('m/d/Y', $tstamp));
                 return $json;
             }
         }
@@ -199,35 +244,35 @@ class DatabarCoupon extends SpecialUPC
             $starts = substr($upc,$pos,6);
             $pos += 6;
 
-            $y = "20".substr($starts,0,2);
-            $m = substr($starts,2,2);
-            $d = substr($starts,4,2);
+            $year = "20".substr($starts,0,2);
+            $month = substr($starts,2,2);
+            $dday = substr($starts,4,2);
 
-            $tstamp = mktime(0,0,0,$m,$d,$y);
+            $tstamp = mktime(0,0,0,$month,$day,$year);
             if ($tstamp > time()) {
-                $json['output'] = DisplayLib::boxMsg("Coupon not valid until $m/$d/$y");
+                $json['output'] = DisplayLib::boxMsg(sprintf(_("Coupon not valid until %d/%d/%d"), $m, $d, $y));
                 return $json;
             }
         }
         
         // serial number
-        $serial = false;
+        $coupon->serial = false;
         if (isset($upc[$pos]) && $upc[$pos] == "5") {
             $pos += 1;
-            $serial_length = ((int)$upc[$pos]) + 6;
+            $serialLength = ((int)$upc[$pos]) + 6;
             $pos += 1;
-            $serial = substr($upc,$pos,$serial_length);
-            $pos += $serial_length;
+            $coupon->serial = substr($upc,$pos,$serialLength);
+            $pos += $serialLength;
         }
 
         // retailer
-        $retailer = false;
+        $coupon->retailer = false;
         if (isset($upc[$pos]) && $upc[$pos] == "6") {
             $pos += 1;
-            $rt_length = ((int)$upc[$pos]) + 6;
+            $rtLength = ((int)$upc[$pos]) + 6;
             $pos += 1;
-            $retailer = substr($upc,$pos,$rt_length);
-            $pos += $rt_length;
+            $coupon->retailer = substr($upc,$pos,$rtLength);
+            $pos += $rtLength;
         }
 
         /* END OPTIONAL FIELDS */
@@ -239,21 +284,19 @@ class DatabarCoupon extends SpecialUPC
            consistent 
         */
 
-        $misc = array(
-            'value_code' => 0,
-            'value_applies' => 0,
-            'store_coupon' => 0,
-            'no_multiply' => 0
-        );
+        $coupon->valueCode = 0;
+        $coupon->valueApplies = 0;
+        $coupon->storeCoupon = 0;
+        $coupon->noMultiply = 0;
         if (isset($upc[$pos]) && $upc[$pos] == "9") {
             $pos += 1;
-            $misc['value_code'] = $upc[$pos];
+            $coupon->valueCode = $upc[$pos];
             $pos += 1;
-            $misc['value_applies'] = $upc[$pos];
+            $coupon->valueApplies = $upc[$pos];
             $pos += 1;
-            $misc['store_coupon'] = $upc[$pos];
+            $coupon->storeCoupon = $upc[$pos];
             $pos += 1;
-            $misc['no_multiply'] = $upc[$pos];
+            $coupon->noMultiply = $upc[$pos];
             $pos += 1;
         }
 
@@ -261,8 +304,8 @@ class DatabarCoupon extends SpecialUPC
 
         /* STEP 4 - validate coupon requirements */
 
-        $primary = $this->validateRequirement($first_req, $json);
-        if (!$primary && (count($second_req) == 0 || $req_rules_code == 1 || $req_rules_code == 2)) {
+        list($coupon->firstReq, $json) = $this->validateRequirement($coupon->firstReq, $json);
+        if (!$coupon->firstReq->valid && (!property_exists($coupon->secondReq, 'value') || $coupon->requiredRulesCode == 1 || $coupon->requiredRulesCode == 2)) {
             // if the primary requirement isn't valid and
             //    a) there are no more requirments, or
             //    b) the primary requirement is mandatory
@@ -271,8 +314,8 @@ class DatabarCoupon extends SpecialUPC
             return $json;
         }
 
-        $secondary = $this->validateRequirement($second_req, $json);
-        if (!$secondary && (count($third_req) == 0 || $req_rules_code == 1)) {
+        list($coupon->secondReq, $json) = $this->validateRequirement($coupon->secondReq, $json);
+        if (!$coupon->secondReq->valid && (!property_exists($coupon->thirdReq, 'value') || $coupon->requiredRulesCode == 1)) {
             // if the secondary requirment isn't valid and
             //    a) there are no more requirments, or
             //    b) all requirements are mandatory
@@ -281,36 +324,36 @@ class DatabarCoupon extends SpecialUPC
             return $json;
         }
 
-        $tertiary = $this->validateRequirement($third_req, $json);
+        list($coupon->thirdReq, $json) = $this->validateRequirement($coupon->thirdReq, $json);
 
         // compare requirement results with rules
         // return error message if applicable
-        switch ($req_rules_code) {
+        switch ($coupon->requiredRulesCode) {
             case '0': // any requirement can be used
-                if (!$primary && !$secondary && !$tertiary) {
+                if (!$coupon->firstReq->valid && !$coupon->secondReq->valid && !$coupon->thirdReq->valid) {
                     return $json;
                 }
                 break;
             case '1': // all required
-                if (!$primary || !$secondary || !$tertiary) {
+                if (!$coupon->firstReq->valid || !$coupon->secondReq->valid || !$coupon->thirdReq->valid) {
                     return $json;
                 }
                 break;
             case '2': // primary + second OR third
-                if (!$primary) {
+                if (!$coupon->firstReq->valid) {
                     return $json;
-                } else if (!$secondary && !$tertiary) {
+                } elseif (!$coupon->secondReq->valid && !$coupon->thirdReq->valid) {
                     return $json;
                 }
                 break;
             case '3': // either second or third. seems odd, may
                   // be misreading documentation on this one
-                if (!$secondary && !$tertiary) {
+                if (!$coupon->secondReq->valid && !$coupon->thirdReq->valid) {
                     return $json;
                 }
                 break;
             default:
-                $json['output'] = DisplayLib::boxMsg("Malformed coupon");
+                $json['output'] = DisplayLib::boxMsg(_("Malformed coupon"));
                 return $json;
         }
 
@@ -318,30 +361,30 @@ class DatabarCoupon extends SpecialUPC
     
         /* STEP 5 - determine coupon value */
 
-        $val_arr = $first_req;
-        if ($misc['value_applies'] == 1) {
-            $val_arr = $second_req;
-        } else if ($misc['value_applies'] == 2) {
-            $val_arr = $third_req;
+        $valReq = $coupon->firstReq;
+        if ($coupon->valueApplies == 1) {
+            $valReq = $coupon->secondReq;
+        } elseif ($coupon->valueApplies == 2) {
+            $valReq = $coupon->thirdReq;
         }
             
         $value = 0;
-        switch($misc['value_code']) {
+        switch($coupon->valueCode) {
             case '0': // value in cents
             case '6':
-                $value = MiscLib::truncate2($val_arr['value'] / 100.00);
+                $value = MiscLib::truncate2($coupon->redeemValue / 100.00);
                 break;
             case '1': // free item
-                $value = $val_arr['price'];
+                $value = $valReq->price;
                 break;
             case '2': // multiple free items
-                $value = MiscLib::truncate2($val_arr['price'] * $val_arr['value']);
+                $value = MiscLib::truncate2($valReq->price * $valReq->value);
                 break;
             case '5': // percent off
-                $value = MiscLib::truncate2($val_arr['price'] * ($val_arr['value']/100.00));
+                $value = MiscLib::truncate2($valReq->price * ($valReq->value/100.00));
                 break;
             default:
-                $json['output'] = DisplayLib::boxMsg("Error: bad coupon");
+                $json['output'] = DisplayLib::boxMsg(_("Error: bad coupon " . $coupon->valueCode));
                 return $json;
         }
 
@@ -365,17 +408,17 @@ class DatabarCoupon extends SpecialUPC
            be a 12 digit prefix leaving no room for the
            offer code at all.
         */
-        $upc_start = "0".$val_arr['man_id'];
+        $upcStart = "0" . $valReq->prefix;
         $offer = base_convert($offer,10,36);
-        $remaining = 13 - strlen($upc_start);
+        $remaining = 13 - strlen($upcStart);
         if (strlen($offer) < $remaining) {
             $offer = str_pad($offer,$remaining,'0',STR_PAD_LEFT);
         } elseif (strlen($offer) > $remaining) {
             $offer = substr($offer,0,$remaining);
         }
-        $coupon_upc = $upc_start.$offer;
+        $couponUPC = $upcStart.$offer;
 
-        TransRecord::addCoupon($coupon_upc, $row['department'], -1*$value);
+        TransRecord::addCoupon($couponUPC, $coupon->firstReq->department, -1*$value);
         $json['output'] = DisplayLib::lastpage();
     
         return $json;
@@ -393,30 +436,23 @@ class DatabarCoupon extends SpecialUPC
 
        return true/false based on whether requirement is met
     */
-    private function validateRequirement(&$req, &$json)
+    private function validateRequirement($req, $json)
     {
-        $db = Database::tDataConnect();
+        // non-existant requirement is treated as valid
+        if (!property_exists($req, 'value')) {
+            $req->valid = true;
+            return array($req, $json);
+        }
+        $dbc = Database::tDataConnect();
 
         /* simple case first; just wants total transaction value 
            no company prefixing
         */
-        if ($req['code'] == 2) {
-            $q = "SELECT SUM(total) FROM localtemptrans WHERE
-                trans_type IN ('I','D','M')";
-            $r = $db->query($q);
-            $ttl_required = MiscLib::truncate2($req['value'] / 100.00);
-            if ($db->num_rows($r) == 0) {
-                $json['output'] = DisplayLib::boxMsg("Coupon requires transaction of at least \$$ttl_required");
-                return false;
-            }
-
-            $w = $dbc->fetch_row($r);
-            if ($w[0] < $ttl_required) {
-                $json['output'] = DisplayLib::boxMsg("Coupon requires transaction of at least \$$ttl_required");
-                return false;
-            }
-            return true;
+        if ($req->code == 2) {
+            return $this->validateTransactionTotal($req, $json);
         }
+
+        $req->valid = false;
 
         $query = sprintf("SELECT
             max(CASE WHEN trans_status<>'C' THEN unitPrice ELSE 0 END) as price,
@@ -426,52 +462,76 @@ class DatabarCoupon extends SpecialUPC
             sum(CASE WHEN trans_status='C' THEN 1 ELSE 0 END) as couponqtty
             FROM localtemptrans WHERE
             substring(upc,2,%d) = '%s'",
-            strlen($req['man_id']),$req['man_id']);
-        $result = $db->query($query);
+            strlen($req->prefix),$req->prefix);
+        $result = $dbc->query($query);
 
-        if ($db->num_rows($result) <= 0) {
-            $json['output'] = DisplayLib::boxMsg("Coupon requirements not met");
-            return false;
+        if ($dbc->numRows($result) <= 0) {
+            $json['output'] = DisplayLib::boxMsg(_("Coupon requirements not met"));
+            return array($req, $json);
         }
-        $row = $db->fetch_row($result);
-        $req['price'] = $row['price'];
+        $row = $dbc->fetchRow($result);
+        $req->price = $row['price'];
+        $req->department = $row['department'];
 
-        switch($req['code']) {
+        switch($req->code) {
             case '0': // various qtty requirements
             case '3':
             case '4':
-                $available_qty = $row['qty'] - ($row['couponqtty'] * $req['value']);
-                if ($available_qty < $req['value']) {
-                    // Coupon requirement not met
-                    if ($row['couponqtty'] > 0) {
-                        $json['output'] = DisplayLib::boxMsg("Coupon already applied");
-                    } else {
-                        $json['output'] = DisplayLib::boxMsg("Coupon requires ".$req['value']." items");
-                    }
-                    return false;
-                }
-                break;
+                return $this->validateQty($row['qty'], $row['couponqtty'], $req, $json);
             case '1':
-                $available_ttl = $row['total'] - ($row['couponqtty'] * $req['value']);
-                if ($available_ttl < $req['value']) {
-                    // Coupon requirement not met
-                    if ($row['couponqtty'] > 0) {
-                        $json['output'] = DisplayLib::boxMsg("Coupon already applied");
-                    } else {
-                        $json['output'] = DisplayLib::boxMsg("Coupon requires ".$req['value']." items");
-                    }
-                    return false;
-                }
-                break;
+                return $this->validateQty($row['total'], $row['couponqtty'], $req, $json);
             case '9':
-                $json['output'] = DisplayLib::boxMsg("Tender coupon manually");
-                return false;
+                $json['output'] = DisplayLib::boxMsg(_("Tender coupon manually"));
+                return array($req, $json);
             default:
-                $json['output'] = DisplayLib::boxMsg("Error: bad coupon");
-                return false; 
+                $json['output'] = DisplayLib::boxMsg(_("Error: bad coupon"));
+                return array($req, $json);
         }
 
-        return true; // requirement validated
+        $req->valid = true;
+
+        return array($req, $json); // requirement validated
+    }
+
+    private function validateTransactionTotal($req, $json)
+    {
+        $dbc = Database::tDataConnect();
+        $req->valid = false;
+        $chkQ = "SELECT SUM(total) FROM localtemptrans WHERE
+            trans_type IN ('I','D','M')";
+        $chkR = $dbc->query($chkQ);
+        $ttlRequired = MiscLib::truncate2($req->value / 100.00);
+        if ($dbc->num_rows($chkR) == 0) {
+            $json['output'] = DisplayLib::boxMsg(_(sprintf("Coupon requires transaction of at least \$%.2f"), $ttlRequired));
+            return array($req, $json);
+        }
+
+        $chkW = $dbc->fetch_row($chkR);
+        if ($chkW[0] < $ttlRequired) {
+            $json['output'] = DisplayLib::boxMsg(_(sprintf("Coupon requires transaction of at least \$%.2f"), $ttlRequired));
+            return array($req, $json);
+        }
+
+        $req->valid = true;
+        return array($req, $json);
+    }
+
+    private function validateQty($qty, $couponqtty, $req, $json)
+    {
+        $available_qty = $qty - ($couponqtty * $req->value);
+        if ($available_qty < $req->value) {
+            // Coupon requirement not met
+            if ($couponqtty > 0) {
+                $json['output'] = DisplayLib::boxMsg(_("Coupon already applied"));
+            } else {
+                $json['output'] = DisplayLib::boxMsg(sprintf(_("Coupon requires %d items"), $req->value));
+            }
+            $req->valid = false;
+            return array($req, $json);
+        }
+
+        $req->valid = true;
+        return array($req, $json);
     }
 
 }

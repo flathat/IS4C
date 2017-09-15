@@ -21,6 +21,9 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 *********************************************************************************/
+/* 14Sep2017 EL Works for some sets, e.g. retail, but not for others e.g. Kitchen,
+ * for which it shows the queue name on an otherwise blank page.
+ */
 
 /*
     Using layouts
@@ -53,7 +56,10 @@ if (!defined('FPDF_FONTPATH')) {
 	define('FPDF_FONTPATH','font/');
 }
 
-require($FANNIE_ROOT.'src/fpdf/fpdf.php');
+//require($FANNIE_ROOT.'src/fpdf/fpdf.php');
+if (!class_exists('FPDF')) {
+    require(dirname(__FILE__) . '/../../../src/fpdf/fpdf.php');
+}
 
 /****Credit for the majority of what is below for barcode generation
  has to go to Olivier for posting the script on the FPDF.org scripts
@@ -172,11 +178,13 @@ class WEFC_Inventory_Items_PDF extends FPDF
 function WEFC_Inventory_Items($data,$offset=0)
 {
     global $dbc, $id;
+    global $FANNIE_OP_DB;
+    $dbc = FannieDB::get($FANNIE_OP_DB);
 
     // How did $id get to be an array?
     $id = FormLib::get_form_value('id',False);
    /*
-    * S ELECT shelfTagQueueID, description FROM ShelfTagQueues WHERE shelfTagQueueID = 303
+    * SELECT shelfTagQueueID, description FROM ShelfTagQueues WHERE shelfTagQueueID = 303
         Parameters: ArrayUnknown column '303Array' in 'where clause'
     */
     $stQ = "SELECT shelfTagQueueID, description FROM ShelfTagQueues WHERE shelfTagQueueID = ?";

@@ -12,5 +12,4 @@ $location = sprintf('Location: ActivityReport.php?memNum=%s&programID=%s&date1=%
                 );
 header("$location");
 exit;
-?>
 

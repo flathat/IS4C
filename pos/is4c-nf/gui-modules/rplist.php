@@ -21,37 +21,49 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\gui\NoInputCorePage;
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\DisplayLib;
+use COREPOS\pos\lib\PrintHandlers\PrintHandler;
+use COREPOS\pos\lib\ReceiptLib;
+
 include_once(dirname(__FILE__).'/../lib/AutoLoader.php');
 
 class rplist extends NoInputCorePage 
 {
+    private function printReceipt($trans)
+    {
+        $PRINT = PrintHandler::factory($this->session->get('ReceiptDriver'));
+        $saved = $this->session->get('receiptToggle');
+        $this->session->set('receiptToggle', 1);
+        $receipt = ReceiptLib::printReceipt('reprint', $trans);
+        $this->session->set('receiptToggle', $saved);
+        if (session_id() != '') {
+            session_write_close();
+        }
+        if(is_array($receipt)) {
+            if (!empty($receipt['any'])) {
+                $PRINT->writeLine($receipt['any']);
+            }
+            if (!empty($receipt['print'])) {
+                $PRINT->writeLine($receipt['print']);
+            }
+        } elseif(!empty($receipt)) {
+            $PRINT->writeLine($receipt);
+        }
+    }
 
     function preprocess()
     {
-        if (isset($_REQUEST['selectlist'])) {
-            if (!empty($_REQUEST['selectlist'])) {
-                $print_class = CoreLocal::get('ReceiptDriver');
-                if ($print_class === '' || !class_exists($print_class)) {
-                    $print_class = 'ESCPOSPrintHandler';
-                }
-                $PRINT_OBJ = new $print_class();
-                $receipt = ReceiptLib::printReceipt('reprint', $_REQUEST['selectlist']);
-                if (session_id() != '') {
-                    session_write_close();
-                }
-                if(is_array($receipt)) {
-                    if (!empty($receipt['any'])) {
-                        $PRINT_OBJ->writeLine($receipt['any']);
-                    }
-                    if (!empty($receipt['print'])) {
-                        $PRINT_OBJ->writeLine($receipt['print']);
-                    }
-                } elseif(!empty($receipt)) {
-                    $PRINT_OBJ->writeLine($receipt);
-                }
+        if ($this->form->tryGet('selectlist', false) !== false) {
+            if (!empty($this->form->selectlist)) {
+                $this->printReceipt($this->form->selectlist);
             }
             $this->change_page($this->page_url."gui-modules/pos2.php");
 
+            return false;
+        } elseif ($this->form->tryGet('preview') !== '') {
+            echo $this->previewTrans($this->form->preview);
             return false;
         }
 
@@ -62,14 +74,23 @@ class rplist extends NoInputCorePage
     {
         ?>
         <script type="text/javascript" src="../js/selectSubmit.js"></script>
+        <script type="text/javascript">
+        function updatePreview(trans) {
+            $.ajax({
+                data: 'preview='+trans
+            }).done(function(resp) {
+                $('#receipt-preview').html(resp);
+            });
+        }
+        </script>
         <?php
-        $this->add_onload_command("selectSubmit('#selectlist', '#selectform')\n");
-        $this->add_onload_command("\$('#selectlist').focus();\n");
+        $this->addOnloadCommand("selectSubmit('#selectlist', '#selectform')\n");
+        $this->addOnloadCommand("\$('#selectlist').focus();\n");
     }
-    
-    function body_content()
+
+    private function getTransactions()
     {
-        $db = Database::tDataConnect();
+        $dbc = Database::tDataConnect();
         $query = "
             SELECT register_no, 
                 emp_no, 
@@ -81,41 +102,80 @@ class rplist extends NoInputCorePage
             FROM localtranstoday 
             WHERE register_no = ?
                 AND emp_no = ?
-                AND datetime >= " . $db->curdate() . "
+                AND datetime >= " . $dbc->curdate() . "
             GROUP BY register_no, 
                 emp_no, 
                 trans_no 
             ORDER BY trans_no DESC";
-        $args = array(CoreLocal::get('laneno'), CoreLocal::get('CashierNo')); 
-        $prep = $db->prepare($query);
-        $result = $db->execute($prep, $args);
-        $num_rows = $db->num_rows($result);
-        ?>
+        $args = array($this->session->get('laneno'), $this->session->get('CashierNo')); 
+        $prep = $dbc->prepare($query);
+        $result = $dbc->execute($prep, $args);
+        $ret = array();
+        while ($row = $dbc->fetchRow($result)) {
+            $ret[] = $row;
+        }
 
+        return $ret;
+    }
+
+    private function previewTrans($trans)
+    {
+        list($reg, $emp, $tID) = explode('::', $trans);
+        $dbc = Database::tDataConnect();
+        $previewP = $dbc->prepare("
+            SELECT description
+            FROM localtranstoday
+            WHERE emp_no=?
+                AND register_no=?
+                AND trans_no=?
+                AND trans_type <> 'L'
+            ORDER BY trans_id");
+        $previewR = $dbc->execute($previewP, array($emp, $reg, $tID));
+        $ret = '';
+        $count = 0;
+        while ($row = $dbc->fetchRow($previewR)) {
+            $ret .= $row['description'] . '<br />';
+            $count++;
+            if ($count > 10) {
+                break;
+            }
+        }
+
+        return $ret;
+    }
+    
+    function body_content()
+    {
+        ?>
         <div class="baseHeight">
         <div class="listbox">
         <form name="selectform" method="post" id="selectform" 
-            action="<?php echo $_SERVER['PHP_SELF']; ?>" >
+            action="<?php echo filter_input(INPUT_SERVER, 'PHP_SELF'); ?>" >
         <select name="selectlist" size="15" id="selectlist"
-            onblur="$('#selectlist').focus()" >
+            onblur="$('#selectlist').focus()" onchange="updatePreview(this.value);" >
 
         <?php
         $selected = "selected";
-        for ($i = 0; $i < $num_rows; $i++) {
-            $row = $db->fetch_array($result);
-            echo "<option value='".$row["register_no"]."::".$row["emp_no"]."::".$row["trans_no"]."'";
+        $first = false;
+        foreach ($this->getTransactions() as $row) {
+            echo "<option value='".$row["emp_no"]."::".$row["register_no"]."::".$row["trans_no"]."'";
             echo $selected;
             echo ">lane ".substr(100 + $row["register_no"], -2)." Cashier ".substr(100 + $row["emp_no"], -2)
                 ." #".$row["trans_no"]." -- $".
                 sprintf('%.2f',$row["total"]);
             $selected = "";
+            if (!$first) {
+                $first = $row['emp_no'] . '::' . $row['register_no'] . '::' . $row['trans_no'];
+            }
         }
         ?>
-
         </select>
         </div>
+        <div class="listbox" id="receipt-preview" style="height: 15; font-size: 85%;">
+            <?php echo ($first) ? $this->previewTrans($first) : ''; ?>
+        </div>
         <?php
-        if (CoreLocal::get('touchscreen')) {
+        if ($this->session->get('touchscreen')) {
             echo '<div class="listbox listboxText">'
                 . DisplayLib::touchScreenScrollButtons('#selectlist')
                 . '</div>';
@@ -125,13 +185,13 @@ class rplist extends NoInputCorePage
         <?php echo _("use arrow keys to navigate"); ?><br />
         <p>
             <button type="submit" class="pos-button wide-button coloredArea">
-            Reprint <span class="smaller">[enter]</span>
+            <?php echo _('Reprint'); ?> <span class="smaller"><?php echo _('[enter]'); ?></span>
             </button>
         </p>
         <p>
             <button type="submit" class="pos-button wide-button errorColoredArea"
             onclick="$('#selectlist').append($('<option>').val(''));$('#selectlist').val('');">
-            Cancel <span class="smaller">[clear]</span>
+            <?php echo _('Cancel'); ?> <span class="smaller"><?php echo _('[clear]'); ?></span>
         </button></p>
         </div>
         </form>
@@ -140,9 +200,16 @@ class rplist extends NoInputCorePage
 
         <?php
     } // END body_content() FUNCTION
+
+    public function unitTest($phpunit)
+    {
+        $this->printReceipt('1-1-1'); // just coverage
+        $this->form = new COREPOS\common\mvc\ValueContainer();
+        $phpunit->assertEquals(true, $this->preprocess());
+        $this->form->selectlist = '';
+        $phpunit->assertEquals(false, $this->preprocess());
+    }
 }
 
-if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
-    new rplist();
+AutoLoader::dispatch();
 
-?>

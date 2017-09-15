@@ -130,7 +130,7 @@ $u = 22; //x locaiton of vendor info for label
 $down = 31.0;
 
 //cycle through result array of query
-while($row = $sql->fetch_array($result)){
+while($row = $sql->fetchRow($result)){
    //If $m == 32 add a new page and reset all counters..
    if($m == 32){
       $pdf->AddPage();
@@ -208,4 +208,3 @@ while($row = $sql->fetch_array($result)){
 
 $pdf->Output();  //Output PDF file to screen.
 
-?>

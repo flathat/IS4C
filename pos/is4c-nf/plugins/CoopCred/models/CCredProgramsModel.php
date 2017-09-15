@@ -22,6 +22,7 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\plugins\CoopCred\models;
 use COREPOS\pos\lib\models\BasicModel;
 
 /**

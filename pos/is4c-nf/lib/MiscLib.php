@@ -20,38 +20,42 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 *********************************************************************************/
+
+namespace COREPOS\pos\lib;
+use COREPOS\pos\lib\DriverWrappers\ScaleDriverWrapper;
+use \CoreLocal;
  
 /**
   @clss MiscLib
   Generic functions
 */
-class MiscLib extends LibraryClass 
+class MiscLib 
 {
 
 /**
   Path detection. Find the relative URL for 
   POS root.
-  @param $check_file file to search for
+  @param $checkFile file to search for
   @return A relative URL with trailing slash
 */
-static public function baseURL($check_file="css/pos.css")
+static public function baseURL($checkFile="css/pos.css")
 {
     $ret = "";
     $cutoff = 0;
-    while($cutoff < 20 && !file_exists($ret.$check_file)) {
+    while($cutoff < 20 && !file_exists($ret.$checkFile)) {
         $ret .= "../";
         $cutoff++;
     }
     if ($cutoff >= 20) {
         return false;
-    } else {
-        return $ret;    
     }
+
+    return $ret;    
 }
 
-static public function base_url($check_file="css/pos.css")
+static public function base_url($checkFile="css/pos.css")
 {
-    return self::baseURL($check_file);
+    return self::baseURL($checkFile);
 }
 
 /**
@@ -69,13 +73,13 @@ static public function nullwrap($num, $char=false)
 
     if ($char && ($num === '' || $num === null)) {
         return '';
-    } else if (!$num) {
+    } elseif (!$num) {
          return 0;
-    } else if (!is_numeric($num) && strlen($num) < 1) {
+    } elseif (!is_numeric($num) && strlen($num) < 1) {
         return ' ';
-    } else {
-        return $num;
     }
+
+    return $num;
 }
 
 /**
@@ -106,17 +110,17 @@ static public function truncate2($num)
 */
 static public function pingport($host, $dbms)
 {
-    $port = strstr(strtolower($dbms),'mysql') ? 3306 : 1433;
+    $port = strstr(strtolower($dbms),'mysql') ? 3306 : 1433;    
     if (strstr($host,":")) {
         list($host,$port) = explode(":",$host);
     }
-    $sock = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
-    socket_set_option($sock, SOL_SOCKET, SO_SNDTIMEO, array('sec' => 1, 'usec' => 0)); 
-    socket_set_block($sock);
-    $test = @socket_connect($sock,$host,$port);
-    socket_close($sock);
+    $sock = @stream_socket_client('tcp://' . $host . ':' . $port, $errno, $error, 1);
+    if ($sock) {
+        fclose($sock);
+        return 1;
+    }
 
-    return ($test ? 1 : 0);
+    return 0;
 }
 
 /**
@@ -145,13 +149,7 @@ static public function win32()
 */
 static public function scaleObject()
 {
-    $scaleDriver = CoreLocal::get("scaleDriver");
-    $sdh = 0;
-    if ($scaleDriver != ""){
-        $sdh = new $scaleDriver();
-    }
-
-    return $sdh;
+    return ScaleDriverWrapper::factory(CoreLocal::get('scaleDriver'));
 }
 
 /**
@@ -161,7 +159,7 @@ static public function goodBeep()
 {
     $sdh = self::scaleObject();
     if (is_object($sdh)) {
-        $sdh->WriteToScale("goodBeep");
+        $sdh->writeToScale("goodBeep");
     }
 }
 
@@ -172,7 +170,7 @@ static public function rePoll()
 {
     $sdh = self::scaleObject();
     if (is_object($sdh)) {
-        $sdh->WriteToScale("rePoll");
+        $sdh->writeToScale("rePoll");
     }
 }
 
@@ -183,7 +181,7 @@ static public function errorBeep()
 {
     $sdh = self::scaleObject();
     if (is_object($sdh)) {
-        $sdh->WriteToScale("errorBeep");
+        $sdh->writeToScale("errorBeep");
     }
 }
 
@@ -194,7 +192,7 @@ static public function twoPairs()
 {
     $sdh = self::scaleObject();
     if (is_object($sdh)) {
-        $sdh->WriteToScale("twoPairs");
+        $sdh->writeToScale("twoPairs");
     }
 }
 
@@ -213,52 +211,10 @@ static public function getAllIPs()
     $ret = array();
     if (strstr(strtoupper(PHP_OS), 'WIN')) {
         // windows
-        $cmd = "ipconfig.exe";
-        exec($cmd, $output_lines, $retval);
-        foreach ($output_lines as $line) {
-            if (preg_match('/IP Address[\. ]+?: ([\d\.]+)/', $line, $matches)) {
-                $ret[] = $matches[1];
-            } elseif (preg_match('/IPv4 Address[\. ]+?: ([\d\.]+)/', $line, $matches)) {
-                $ret[] = $matches[1];
-            }
-        }
+        $ret = self::getWindowsIPs();
     } else {
         // unix-y system
-        $cmd = '/sbin/ifconfig';
-        $count = 0;
-        // try to locate ifconfig
-        while (!file_exists($cmd)) {
-            switch ($count) {
-                case 0:
-                    $cmd = '/usr/sbin/ifconfig';
-                    break;
-                case 1:
-                    $cmd = '/usr/bin/ifconfig';
-                    break;
-                case 2:
-                    $cmd = '/bin/ifconfig';
-                    break;
-                case 3:
-                    $cmd = '/usr/local/sbin/ifconfig';
-                    break;
-                case 4:
-                    $cmd = '/usr/local/bin/ifconfig';
-                    break;
-            }
-            $count++;
-            // give up; hope $PATH is correct
-            if ($count <= 5) {
-                $cmd = 'ifconfig';
-                break;
-            }
-        }
-
-        exec($cmd, $output_lines, $retval);
-        foreach ($output_lines as $line) {
-            if (preg_match('/inet addr:([\d\.]+?) /', $line, $matches)) {
-                $ret[] = $matches[1];
-            }
-        }
+        $ret = self::getLinuxIPs();
     }
 
     /**
@@ -273,6 +229,13 @@ static public function getAllIPs()
         }
     }
     
+    $ret = self::globalIPs($ret);
+
+    return $ret;
+}
+
+static private function globalIPs(array $ret)
+{
     /**
       $_SERVER may simply contain an IP address
     */
@@ -290,6 +253,44 @@ static public function getAllIPs()
         $resolved = gethostbyname($sname);
         if (preg_match('/^[\d\.+]$/', $resolved) && !in_array($resolved, $ret)) {
             $ret[] = $resolved;
+        }
+    }
+
+    return $ret;
+}
+
+static private function getWindowsIPs()
+{
+    $cmd = "ipconfig.exe";
+    exec($cmd, $outputLines);
+    $ret = array();
+    foreach ($outputLines as $line) {
+        if (preg_match('/IP Address[\. ]+?: ([\d\.]+)/', $line, $matches)) {
+            $ret[] = $matches[1];
+        } elseif (preg_match('/IPv4 Address[\. ]+?: ([\d\.]+)/', $line, $matches)) {
+            $ret[] = $matches[1];
+        }
+    }
+
+    return $ret;
+}
+
+static private function getLinuxIPs()
+{
+    $bins = array('/sbin/', '/usr/sbin/', '/usr/bin/', '/bin/', '/usr/local/sbin/', '/usr/local/bin/');
+    $bins = array_filter($bins, function($i){ return file_exists($i . 'ifconfig'); });
+    if (count($bins) > 0) {
+        $cmd = array_shift($bins) . 'ifconfig';
+    } else {
+        // give up; hope $PATH is correct
+        $cmd = 'ifconfig';
+    }
+
+    exec($cmd, $outputLines);
+    $ret = array();
+    foreach ($outputLines as $line) {
+        if (preg_match('/inet addr:([\d\.]+?) /', $line, $matches)) {
+            $ret[] = $matches[1];
         }
     }
 
@@ -334,6 +335,11 @@ public static function centStrToDouble($str)
     $ret *= $mult;
 
     return $ret;
+}
+
+public static function jqueryFile()
+{
+    return self::win32() ? 'jquery-1.8.3.min.js' : 'jquery.js';
 }
 
 } // end class MiscLib

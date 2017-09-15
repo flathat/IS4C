@@ -30,7 +30,7 @@ class CCReport extends FannieReportPage
     public function form_content()
     {
         $this->add_onload_command("\$('input:first').datepicker({dateFormat:'yy-mm-dd',changeYear:true});\n");
-        return "<form action=index.php method=get>
+        return "<form action=CCReport.php method=get>
             <b>Date</b>: <input type=text name=date /> <input type=submit value=Submit />
             </form>";
     }
@@ -49,30 +49,23 @@ class CCReport extends FannieReportPage
         $seconds = strtotime($date);
         $start = date('Y-m-d 00:00:00',$seconds);
         $end = date('Y-m-d 23:59:59',$seconds);
-        $query = $dbc->prepare_statement("
-            SELECT q.datetime,
-                q.laneno,
-                q.cashierno,
-                q.transno,
-                q.amount,
-                q.PAN, 
-                year(q.datetime) AS year,
-                day(q.datetime) AS day,
-                month(q.datetime) AS month,
-                r.xResultMessage
-            FROM efsnetRequest q LEFT JOIN efsnetResponse r
-            on r.date=q.date and r.cashierNo=q.cashierNo and 
-            r.transNo=q.transNo and r.laneNo=q.laneNo
-            and r.transID=q.transID
-            left join efsnetRequestMod m
-            on m.date = q.date and m.cashierNo=q.cashierNo and
-            m.transNo=q.transNo and m.laneNo=q.laneNo
-            and m.transID=q.transID
-            where q.datetime between ? AND ?
-            and q.laneNo <> 99 and q.cashierNo <> 9999
-            and m.transID is null
-            order by q.datetime,q.laneNo,q.transNo,q.cashierNo");
-        $result = $dbc->exec_statement($query,array($start,$end));
+        $query = $dbc->prepare("
+            SELECT requestDatetime AS datetime,
+                registerNo AS laneno,
+                empNo AS cashierno,
+                transNo AS transno,
+                amount,
+                PAN, 
+                year(requestDatetime) AS year,
+                day(requestDatetime) AS day,
+                month(requestDatetime) AS month,
+                xResultMessage
+            FROM PaycardTransactions
+            WHERE requestDatetime between ? AND ?
+                and registerNo <> 99 and empNo <> 9999
+                and transID is not null
+            order by requestDatetime,registerNo,transNo,empNo");
+        $result = $dbc->execute($query,array($start,$end));
 
         $sum = 0;
         $htable = array();
@@ -99,8 +92,8 @@ class CCReport extends FannieReportPage
             $record['meta'] = FannieReportPage::META_COLOR;
             $record['meta_background'] = '#ffffcc';
         }
-        if (strstr($row[9],"APPROVED") || $row[9] == "" || strstr($row[9],"PENDING")){
-            $sum += $row[4];
+        if (strstr($row['xResultMessage'],"APPROVED") || $row['xResultMessage'] == "" || strstr($row['xResultMessage'],"PENDING")){
+            $sum += $row['amount'];
             $htable[$row['amount']."+".$row['PAN']] = 1;
         }
 
@@ -115,6 +108,16 @@ class CCReport extends FannieReportPage
             Report</strong> is newer and probably better but
             this has not been retired yet.
             </p>';
+    }
+
+    public function unitTest($phpunit)
+    {
+        $data = array('datetime'=>'2000-01-01', 'PAN'=>'1111', 'amount'=>1,
+            'xResultMessage'=>'APPROVED', 'month'=>1, 'day'=>1, 'year'=>2000,
+            'cashierno'=>1,'laneno'=>1,'transno'=>1);
+        $htable = array('1+1111'=>1);
+        $sum = 0;
+        $phpunit->assertInternalType('array', $this->rowToRecord($data, $htable, $sum));
     }
 }
 

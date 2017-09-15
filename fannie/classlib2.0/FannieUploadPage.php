@@ -21,16 +21,10 @@
 
 *********************************************************************************/
 
-namespace COREPOS\Fannie\API {
+namespace COREPOS\Fannie\API;
 
 if (!class_exists('\FannieAPI')) {
     include_once(dirname(__FILE__).'/FannieAPI.php');
-}
-if (!class_exists('\Spreadsheet_Excel_Reader')) {
-    include_once(dirname(__FILE__).'/../src/Excel/xls_read/reader.php');
-}
-if (!class_exists('\PHPExcel_IOFactory')) {
-    include_once(dirname(__FILE__).'/../src/Excel/xlsx_read/Classes/PHPExcel.php');
 }
 
 /**
@@ -68,8 +62,8 @@ class FannieUploadPage extends \FanniePage
         'example' => array(
             'name' => 'upc',
             'display_name' => 'UPC',
-            'default' => 7,
-            'required' => true,
+            'default' => 0,
+            'required' => false,
         ),
     );
 
@@ -102,6 +96,24 @@ class FannieUploadPage extends \FanniePage
     */
     protected $use_js = false;
 
+    private function finishPreviewOpts()
+    {
+        foreach ($this->preview_opts as $k=>$v) {
+            if (!isset($this->preview_opts[$k]['name'])) {
+                $this->preview_opts[$k]['name'] = $k;
+            }
+            if (!isset($this->preview_opts[$k]['display_name'])) {
+                $this->preview_opts[$k]['display_name'] = $this->preview_opts[$k]['name'];
+            }
+            if (!isset($this->preview_opts[$k]['required'])) {
+                $this->preview_opts[$k]['required'] = false;
+            }
+            if (!isset($this->preview_opts[$k]['default'])) {
+                $this->preview_opts[$k]['default'] = -1;
+            }
+        }
+    }
+
     /**
       Handle pre-display tasks such as input processing
       @return
@@ -111,6 +123,7 @@ class FannieUploadPage extends \FanniePage
     public function preprocess()
     {
         $col_select = \FormLib::get_form_value('cs','');
+        $this->finishPreviewOpts();
 
         if (isset($_FILES[$this->upload_field_name])) {
             /* file upload submitted */
@@ -183,7 +196,7 @@ class FannieUploadPage extends \FanniePage
                                 break;
                             }
                         }
-                        $try = $this->process_file($lines);
+                        $try = $this->process_file($lines, $this->getIndexes());
 
                         $done = ($offset + $chunk_size) > count($fileData) ? true : false;
 
@@ -243,7 +256,7 @@ class FannieUploadPage extends \FanniePage
                     } else {
                         /* process one file */
                         $this->upload_file_name = sys_get_temp_dir().'/fannie/splits/'.array_pop($files);                                    
-                        $try = $this->process_file($this->fileToArray());
+                        $try = $this->process_file($this->fileToArray(), $this->getIndexes());
                         unlink($this->upload_file_name);
                         if ($try && count($files) > 0) {
                             /* if more remain, redirect back to self */
@@ -260,7 +273,7 @@ class FannieUploadPage extends \FanniePage
                         }
                     }
                 } else { // not using splits
-                    $try = $this->process_file($this->fileToArray());
+                    $try = $this->process_file($this->fileToArray(), $this->getIndexes());
                 }
 
                 if ($try) {
@@ -421,9 +434,10 @@ class FannieUploadPage extends \FanniePage
       Do something with the uploaded data
       @param $linedata an array of arrays
        (each inner area is one line of data)
+      @param $indexes an array of column names and indexes
       @return True on success, False on error
     */
-    public function process_file($linedata)
+    public function process_file($linedata, $indexes)
     {
         return true;
     }
@@ -685,6 +699,17 @@ class FannieUploadPage extends \FanniePage
         return $ret;
     }
 
+    protected function getIndexes()
+    {
+        $ret = array();
+        foreach ($this->preview_opts as $key => $info) {
+            $name = isset($info['name']) ? $info['name'] : $key;
+            $ret[$name] = $this->getColumnIndex($name);
+        }
+
+        return $ret;
+    }
+
     /**
       Get the numerical index that the user selected for
       a given column
@@ -746,6 +771,31 @@ class FannieUploadPage extends \FanniePage
         return \COREPOS\Fannie\API\data\FileData::xlsxToArray($this->upload_file_name, $limit);
     }
 
+    protected function simpleStats($stats, $key='imported')
+    {
+        $ret = '
+            <p>Import Complete</p>
+            <div class="alert alert-success">' . $stats[$key] . ' records imported</div>';
+        if ($stats['errors']) {
+            $ret .= '<div class="alert alert-error"><ul>';
+            foreach ($stats['errors'] as $error) {
+                $ret .= '<li>' . $error . '</li>';
+            }
+            $ret .= '</ul></div>';
+        }
+
+        return $ret;
+    }
+
+    protected function checkIndex($index, $line)
+    {
+        if ($index !== false && isset($line[$index])) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
     public function helpContent()
     {
         return '
@@ -764,11 +814,19 @@ class FannieUploadPage extends \FanniePage
             </ul>
         </p>';
     }
-}
 
-}
-
-namespace {
-    class FannieUploadPage extends \COREPOS\Fannie\API\FannieUploadPage {}
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertInternalType('string', $this->bodyContent());
+        $phpunit->assertInternalType('string', $this->preview_content());
+        $this->error_details = 'Test error';
+        $phpunit->assertInternalType('string', $this->uploadError());
+        $phpunit->assertInternalType('string', $this->processingError());
+        $stats = array(
+            'errors' => array('one', 'two'),
+            'imported' => 0,
+        );
+        $phpunit->assertInternalType('string', $this->simpleStats($stats));
+    }
 }
 

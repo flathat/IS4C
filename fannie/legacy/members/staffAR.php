@@ -85,13 +85,14 @@ if(!validateUserQuiet('staffar')){
    $result = $sql->query($query);
 
    echo "<form name=upStaffAR method=post action=staffAR.php>";
+   echo '<a href="../../modules/plugins2.0/StaffArPayrollDeduction/StaffArAccountsPage.php?excel=csv">Download</a>';
    echo "<table cellspacing=0 cellpadding=3>";
    echo "<tr><th align=left>Mem#</th><th align=left>ADP#</th><th align=left>Lastname</th><th align=left>Firstname</th>";
    echo "<th align=left>Current deduction</th><th align=left>Change deduction to</th></tr>";
    $sum = 0;
    $colors = array('#ffffff','#ffffaa');
    $c = 1;
-   while($row = $sql->fetch_array($result)){
+   while($row = $sql->fetchRow($result)){
       echo "<tr><td bgcolor=$colors[$c]>".$row['cardNo']."</td>"
       ."<td bgcolor=$colors[$c]>".$row['adpID']."</td>"
       ."<td bgcolor=$colors[$c]>".$row['lastName']."</td>"
@@ -113,5 +114,4 @@ if(!validateUserQuiet('staffar')){
    echo "</body>";
    echo "</html>";
 }
-?>
 

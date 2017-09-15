@@ -25,7 +25,7 @@ if (!class_exists('FannieAPI')) {
     include_once(dirname(__FILE__).'/../../classlib2.0/FannieAPI.php');
 }
 
-class ProdUserModule extends ItemModule 
+class ProdUserModule extends \COREPOS\Fannie\API\item\ItemModule 
 {
 
     public function showEditForm($upc, $display_mode=1, $expand_mode=1)
@@ -60,7 +60,8 @@ class ProdUserModule extends ItemModule
         $ret .= '<div class="row form-group">'
                 . '<label class="col-sm-1">Brand</label> '
                 . '<div class="col-sm-8">'
-                . '<input type="text" class="form-control" id="lf_brand" name="lf_brand" value="' . $model->brand() . '" />'
+                . '<input type="text" class="form-control" id="lf_brand" name="lf_brand" value="' . $model->brand() . '" 
+                    placeholder="Optional longer brand" />'
                 . '</div>'
                 . '<div class="col-sm-3">'
                 . ' <a href="" onclick="createSign(); return false;">Make Sign</a>'
@@ -69,7 +70,8 @@ class ProdUserModule extends ItemModule
         $ret .= '<div class="row form-group">'
                 . '<label class="col-sm-1">Desc.</label> '
                 . '<div class="col-sm-8">'
-                . '<textarea class="form-control" rows="2" id="lf_desc" name="lf_desc">'
+                . '<textarea class="form-control" rows="2" id="lf_desc" name="lf_desc"
+                    placeholder="Optional longer description; values from above are used if this brand and description are blank." >'
                 . $model->description()
                 . '</textarea>'
                 . '</div>'
@@ -77,9 +79,12 @@ class ProdUserModule extends ItemModule
 
         $ret .= '<div class="row form-group">'
                 . '<label class="small col-sm-1">Sign Ct.</label> '
-                . '<div class="col-sm-8">'
+                . '<div class="col-sm-4">'
                 . '<input type="number" class="form-control price-field"
                     name="sign-count" value="' . $model->signCount() . '" />'
+                . '</div>'
+                . '<div class="col-sm-3">'
+                . '<label>Narrow Tag <input type="checkbox" value="1" name="narrowTag" ' . ($model->narrow() ? 'checked' : '') . ' /></label>'
                 . '</div>'
                 . '</div>';
 
@@ -141,6 +146,8 @@ class ProdUserModule extends ItemModule
             $ret .= '</select></div>';
         }
         $ret .= '<div id="originsBeforeMe"></div>';
+        $ret .= '<label>Item Photo</label>';
+        $ret .= $this->imageInput($model->photo(), 'item');
         $ret .= '</div>';
 
         $ret .= '<div class="col-sm-6">';
@@ -151,11 +158,42 @@ class ProdUserModule extends ItemModule
                     . str_replace('<br />', "\n", $model->long_text()) 
                     . '</textarea></div>';
 
+        $ret .= '<label>Nutrition Facts</label>';
+        $ret .= $this->imageInput($model->nutritionFacts(), 'nf');
         $ret .= '</div>';
         $ret .= '</div>';
         $ret .= '</div>';
 
         return $ret;
+    }
+
+    private function imageInput($filename, $type='item')
+    {
+        $url = $this->imageUrl($type);
+        $file = dirname(__FILE__) . '/../' . $url . $filename;
+        $ret = '';
+        if (file_exists($file) && is_file($file)) {
+            $ret .= sprintf('<div><img src="%s" alt="image" width="200" /></div>', $url . $filename);
+        } else {
+            $ret .= '<div class="alert alert-info">Currently no image</div>';
+        }
+        $ret .= '<br /><label>Upload new image</label>
+            <input type="file" name="image_' . $type . '" class="form-control" 
+                accept="image/png" />';
+
+        return $ret;
+    }
+
+    private function imageUrl($type)
+    {
+        switch (strtolower($type)) {
+            case 'item':
+                return 'images/done/';
+            case 'nf':
+                return 'images/nutrition-facts/';
+            default:
+                return false;
+        }
     }
 
     function SaveFormData($upc)
@@ -165,6 +203,7 @@ class ProdUserModule extends ItemModule
         $desc = FormLib::get('lf_desc');
         $origin = FormLib::get('origin', 0);
         $floorID = FormLib::get('floor-id', 0);
+        $narrow = FormLib::get('narrowTag', 0) ? 1 : 0;
         $text = FormLib::get('lf_text');
         $text = str_replace("\r", '', $text);
         $text = str_replace("\n", '<br />', $text);
@@ -188,6 +227,7 @@ class ProdUserModule extends ItemModule
         $model->description($desc);
         $model->long_text($text);
         $model->signCount($signs);
+        $model->narrow($narrow);
 
         $multiOrigin = FormLib::get('otherOrigin', array());
         $originMap = array();
@@ -228,6 +268,7 @@ class ProdUserModule extends ItemModule
             $prod->upc($item);
             $prod->store_id(1);
             $prod->current_origin_id($origin);
+            $prod->enableLogging(false);
             $prod->save();
 
             $dbc->execute($mapP, array($item));
@@ -235,8 +276,54 @@ class ProdUserModule extends ItemModule
                 $dbc->execute($addP, array($originID, $item));
             }
         }
+
+        $model = $this->savePhotos($model);
         
         return $model->save();
+    }
+
+    private function savePhotos($model)
+    {
+        if ($this->savePhoto($model->upc(), 'item')) {
+            $model->photo(ltrim($model->upc(), '0') . '.png');
+        }
+        if ($this->savePhoto($model->upc(), 'nf')) {
+            $model->nutritionFacts(ltrim($model->upc(), '0') . '.png');
+        }
+
+        return $model;
+    }
+
+    private function savePhoto($upc, $type)
+    {
+        if ($this->validPhoto($type)) {
+            $infile = $_FILES['image_' . $type]['tmp_name'];
+            $outfile = dirname(__FILE__) . '/../' . $this->imageUrl($type) . ltrim($upc, 0) . '.png';
+            if (file_exists($outfile)) {
+                unlink($outfile);
+            }
+            $res = move_uploaded_file($infile, $outfile);
+        }
+
+        return false;
+    }
+
+    private function validPhoto($type)
+    {
+        if (!isset($_FILES['image_' . $type])) {
+            return false;
+        }
+
+        if ($_FILES['image_' . $type]['error'] !== UPLOAD_ERR_OK) {
+            return false;
+        }
+
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        if ($finfo->file($_FILES['image_' . $type]['tmp_name']) !== 'image/png') {
+            return false;
+        }
+
+        return true;
     }
 
     public function getFormJavascript($upc)

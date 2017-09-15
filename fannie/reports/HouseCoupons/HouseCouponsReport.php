@@ -61,7 +61,7 @@ class HouseCouponsReport extends FannieReportPage {
         /* Needs to JOIN houseCoupons for the name of the coupon instead of
          * the upc and later drill down to link to house coupons editor.
          */
-        $query = $dbc->prepare_statement("SELECT 
+        $query = $dbc->prepare("SELECT 
             CASE WHEN upc='0' THEN 'NOT SCANNED' ELSE upc END as upc, 
             sum(CASE WHEN upc='0' THEN 1 ELSE quantity END) as qty,
             sum(-total) as ttl FROM $dlog
@@ -69,10 +69,10 @@ class HouseCouponsReport extends FannieReportPage {
             AND tdate BETWEEN ? AND ?
             GROUP BY upc
             ORDER BY upc");
-        $result = $dbc->exec_statement($query, array($d1.' 00:00:00', $d2.' 23:59:59'));
+        $result = $dbc->execute($query, array($d1.' 00:00:00', $d2.' 23:59:59'));
 
         $data = array();
-        while($row = $dbc->fetch_row($result)){
+        while($row = $dbc->fetchRow($result)){
             $data[] = array(
                         $row['upc'],
                         sprintf('%.2f', $row['qty']),

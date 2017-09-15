@@ -21,6 +21,10 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\lib\ReceiptBuilding\Messages;
+use COREPOS\pos\lib\ReceiptLib;
+use \CoreLocal;
+
 /**
   @class EquitySoldReceiptMessage
 */
@@ -47,4 +51,4 @@ class EquitySoldReceiptMessage extends ReceiptMessage {
         return $slip;
     }
 }
-?>
+

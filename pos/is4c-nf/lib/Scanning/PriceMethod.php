@@ -21,6 +21,10 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\lib\Scanning;
+use COREPOS\pos\lib\Scanning\PriceMethods\BasicPM;
+use \CoreLocal;
+
 /**
   @class PriceMethod
   Base class for handling different price methods
@@ -40,17 +44,23 @@
 class PriceMethod 
 {
     public static $MAP = array(
-        0   => 'BasicPM',
-        1   => 'GroupPM',
-        2   => 'QttyEnforcedGroupPM',
-        3   => 'SplitABGroupPM',
-        4   => 'ABGroupPM',
-        5   => 'BigGroupPM',
-        6   => 'MoreThanQttyPM',
+        0   => 'COREPOS\\pos\\lib\\Scanning\\PriceMethods\\BasicPM',
+        1   => 'COREPOS\\pos\\lib\\Scanning\\PriceMethods\\GroupPM',
+        2   => 'COREPOS\\pos\\lib\\Scanning\\PriceMethods\\QttyEnforcedGroupPM',
+        3   => 'COREPOS\\pos\\lib\\Scanning\\PriceMethods\\SplitABGroupPM',
+        4   => 'COREPOS\\pos\\lib\\Scanning\\PriceMethods\\ABGroupPM',
+        5   => 'COREPOS\\pos\\lib\\Scanning\\PriceMethods\\BigGroupPM',
+        6   => 'COREPOS\\pos\\lib\\Scanning\\PriceMethods\\MoreThanQttyPM',
     );
 
     protected $savedRow;
     protected $savedInfo;
+    protected $session;
+
+    public function __construct($session)
+    {
+        $this->session = $session;
+    }
 
     /**
       Add the item to the transaction
@@ -59,7 +69,7 @@ class PriceMethod
       @param $priceObj A DiscountType object 
       @return boolean success/failure
     */
-    public function addItem($row, $quantity, $priceObj)
+    public function addItem(array $row, $quantity, $priceObj)
     {
         return true;
     }
@@ -72,6 +82,29 @@ class PriceMethod
     public function errorInfo()
     {
         return '';
+    }
+
+    /* get price method object  & add item
+    
+       CORE reserves values 0 through 99 in 
+       PriceMethod::$MAP for default methods.
+
+       Additional methods provided by plugins
+       can use values 100 and up. Because
+       the PriceMethodClasses array is zero-indexed,
+       subtract 100 as an offset  
+    */
+    public static function getObject($pricemethod, $session)
+    {
+        $pmClasses = CoreLocal::get("PriceMethodClasses");
+        $class = 'COREPOS\\pos\\lib\\Scanning\\PriceMethods\\BasicPM';
+        if ($pricemethod < 100 && isset(PriceMethod::$MAP[$pricemethod])) {
+            $class = PriceMethod::$MAP[$pricemethod];
+        } elseif ($pricemethod >= 100 && isset($pmClasses[($pricemethod-100)])) {
+            $class = $pmClasses[($pricemethod-100)];
+        }
+
+        return new $class($session);
     }
 }
 

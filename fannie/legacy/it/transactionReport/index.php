@@ -49,7 +49,7 @@ for ($datediff = -7 - $Dow; $datediff <= -1 - $DoW; $datediff++){
         group by q.trans_num,q.transaction_type");
     $transR = $sql->execute($transQ, array($datediff));
     
-    while($transW = $sql->fetch_array($transR)){
+    while($transW = $sql->fetchRow($transR)){
         $dailyTotals[$transW[3]] += 1;
         $dailyItems[$transW[3]] += $transW[1];
         $dailySales[$transW[3]] += $transW[2];
@@ -127,5 +127,3 @@ echo "<td>".round($sales/$trans,2)."<t/d>";
 echo "</tr>";
 echo "</table>";
 
-
-?>

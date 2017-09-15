@@ -28,7 +28,6 @@ if (!class_exists('FannieAPI')) {
 if (!function_exists('checkLogin')) {
     include_once($FANNIE_ROOT . 'auth/login.php');
 }
-if (!function_exists("updateProductAllLanes")) include($FANNIE_ROOT.'item/laneUpdates.php');
 
 class BatchListPage extends FannieRESTfulPage 
 {
@@ -39,7 +38,6 @@ class BatchListPage extends FannieRESTfulPage
 
     public $description = '[Sales Batches] is the primary tool for creating, editing, and managing 
     sale and price change batches.';
-    public $has_unit_tests = true;
 
     private $audited = 1;
     private $con = null;
@@ -75,8 +73,8 @@ class BatchListPage extends FannieRESTfulPage
         $dbc = FannieDB::get($FANNIE_OP_DB);
         $json = array('error'=>0, 'msg'=>'Created batch ' . $this->newName);
 
-        $infoQ = $dbc->prepare_statement("select discType from batchType where batchTypeID=?");
-        $infoR = $dbc->exec_statement($infoQ,array($this->newType));
+        $infoQ = $dbc->prepare("select discType from batchType where batchTypeID=?");
+        $infoR = $dbc->execute($infoQ,array($this->newType));
         $discounttype = 1; // if no match, assuming sale is probably safer
                            // than assuming price change
         if ($infoR && ($infoW = $dbc->fetch_row($infoR))) {
@@ -98,8 +96,8 @@ class BatchListPage extends FannieRESTfulPage
         }
 
         if ($dbc->tableExists('batchowner')) {
-            $insQ = $dbc->prepare_statement("insert batchowner values (?,?)");
-            $insR = $dbc->exec_statement($insQ,array($id,$b->owner()));
+            $insQ = $dbc->prepare("insert batchowner values (?,?)");
+            $insR = $dbc->execute($insQ,array($id,$b->owner()));
         }
         
         if ($id === false) {
@@ -121,7 +119,7 @@ class BatchListPage extends FannieRESTfulPage
         $infoQ = $dbc->prepare("SELECT discType 
                                 FROM batchType 
                                 WHERE batchTypeID=?");
-        $infoR = $dbc->exec_statement($infoQ,array($this->batchType));
+        $infoR = $dbc->execute($infoQ,array($this->batchType));
         $infoW = $dbc->fetch_row($infoR);
         $discounttype = $infoW['discType'];
 
@@ -136,14 +134,14 @@ class BatchListPage extends FannieRESTfulPage
         $saved = $model->save();
         
         if ($dbc->tableExists('batchowner')) {
-            $checkQ = $dbc->prepare_statement("select batchID from batchowner where batchID=?");
-            $checkR = $dbc->exec_statement($checkQ,array($this->id));
+            $checkQ = $dbc->prepare("select batchID from batchowner where batchID=?");
+            $checkR = $dbc->execute($checkQ,array($this->id));
             if($dbc->num_rows($checkR) == 0) {
-                $insQ = $dbc->prepare_statement("insert batchowner values (?,?)");
-                $insR = $dbc->exec_statement($insQ,array($this->id,$this->owner));
+                $insQ = $dbc->prepare("insert batchowner values (?,?)");
+                $insR = $dbc->execute($insQ,array($this->id,$this->owner));
             } else {
-                $upQ = $dbc->prepare_statement("update batchowner set owner=? where batchID=?");
-                $upR = $dbc->exec_statement($upQ,array($this->owner,$this->id));
+                $upQ = $dbc->prepare("update batchowner set owner=? where batchID=?");
+                $upR = $dbc->execute($upQ,array($this->owner,$this->id));
             }
         }
 
@@ -173,11 +171,11 @@ class BatchListPage extends FannieRESTfulPage
         $batch = new BatchesModel($dbc);
         $batch->forceStopBatch($this->id);
 
-        $delQ = $dbc->prepare_statement("delete from batches where batchID=?");
-        $batchR = $dbc->exec_statement($delQ,array($this->id));
+        $delQ = $dbc->prepare("delete from batches where batchID=?");
+        $batchR = $dbc->execute($delQ,array($this->id));
     
-        $delQ = $dbc->prepare_statement("delete from batchList where batchID=?");
-        $itemR = $dbc->exec_statement($delQ,array($this->id));
+        $delQ = $dbc->prepare("delete from batchList where batchID=?");
+        $itemR = $dbc->execute($delQ,array($this->id));
         if ($itemR !== false && $batchR === false) {
             $json['error'] = 1;
             $json['msg'] = 'Items were unsaled and removed from the batch, but the batch could not be deleted';
@@ -201,9 +199,8 @@ class BatchListPage extends FannieRESTfulPage
      */
     function newBatchInput()
     {
-        global $FANNIE_URL, $FANNIE_OP_DB;
-        
-        $dbc = FannieDB::get($FANNIE_OP_DB);
+        $dbc = FannieDB::get($this->config->get('OP_DB'));
+        $url = $this->config->get('URL');
 
         $ownersQ = $dbc->prepare("SELECT super_name 
                                   FROM MasterSuperDepts 
@@ -211,10 +208,14 @@ class BatchListPage extends FannieRESTfulPage
                                   ORDER BY super_name");
         $ownersR = $dbc->execute($ownersQ);
         $owners = array();
-        while($ownersW = $this->con->fetch_row($ownersR)) {
+        $oOpts = '';
+        while ($ownersW = $this->con->fetchRow($ownersR)) {
             $owners[] = $ownersW[0];
+            $oOpts .= '<option>' . $ownersW[0] . '</option>';
         }
-        $owners[] = 'IT';
+        $owners[] = 'MULTIPLE DEPTS.';
+        $oOpts .= '<option>MULTIPLE DEPTS.</option>';
+        $oJSON = json_encode($owners);
 
         $typesQ = $dbc->prepare("SELECT batchTypeID,
                                     typeDesc 
@@ -222,56 +223,71 @@ class BatchListPage extends FannieRESTfulPage
                                  ORDER BY batchTypeID");
         $typesR = $dbc->execute($typesQ);
         $types = array();
-        while ($typesW = $dbc->fetch_row($typesR)) {
+        $tOpts = '';
+        while ($typesW = $dbc->fetchRow($typesR)) {
             $types[$typesW['batchTypeID']] = $typesW['typeDesc'];
+            $tOpts .= sprintf('<option value="%d">%s</option>', $typesW['batchTypeID'], $typesW['typeDesc']);
+        }
+        $tJSON = json_encode($types);
+        $stores = new StoresModel($dbc);
+        $stores->hasOwnItems(1);
+        $storeOpts = '';
+        foreach ($stores->find() as $obj) {
+            $storeOpts .= sprintf('<option value="%d">%s</option>',
+                $obj->storeID(), $obj->description());
         }
 
-        $ret = "<form id=\"newBatchForm\" onsubmit=\"newBatch(); return false;\">";
-        $ret .= '<h3>Create a Batch</h3>';
-        $ret .= '<div class="row">
+        return <<<HTML
+<form id="newBatchForm" onsubmit="newBatch(); return false;">
+    <h3>Create a Batch</h3>
+        <div class="row">
             <label class="col-sm-2">Batch/Sale Type</label>
             <label class="col-sm-2">Name</label>
             <label class="col-sm-2">Start date</label>
             <label class="col-sm-2">End date</label>
             <label class="col-sm-3">Owner/Super Dept.</label>
-            </div>';
-        $ret .= '<div class="row">';
-        $ret .= '<div class="col-sm-2"><select class="form-control" id=newBatchType name="newType">';
-        foreach ($types as $id=>$desc) {
-            $ret .= "<option value=$id>$desc</option>";
-        }
-        $ret .= "</select></div>";
-        $ret .= '<div class="col-sm-2"><input class="form-control" type=text id=newBatchName name="newName" /></div>';
-        $ret .= '<div class="col-sm-2"><input class="form-control date-field" type=text id=newBatchStartDate name="newStart" /></div>';
-        $ret .= '<div class="col-sm-2"><input class="form-control date-field" type=text id=newBatchEndDate name="newEnd" /></div>';
-        $ret .= '<div class="col-sm-2"><select class="form-control" id=newBatchOwner name="newOwner">';
-        $ret .= '<option value=""></option>';
-        foreach ($owners as $o) {
-            $ret .= "<option>$o</option>";
-        }
-        $ret .= "</select></div>";
-        $ret .= '<div class="col-sm-1"><button type=submit class="btn btn-default">Create Batch</button></div>';
-        $ret .= '</div>';
-        
-        $ret .= "<p></p>"; // spacer
-
-        $ret .= '<div class="row">';
-        $ret .= '<div class="col-sm-6">';
-        $ret .= "<select class=\"form-control\" id=filterOwner onchange=\"changeOwnerFilter(this.value);\">";
-        $ret .= '<option value="">Filter list by batch owner / super dept.</option>';
-        foreach ($owners as $o) {
-            $ret .= "<option>$o</option>";
-        }
-        $ret .= "</select>";
-        $ret .= '</div>';
-        
-        $ret .= " <a href=\"{$FANNIE_URL}admin/labels/BatchShelfTags.php\">Print shelf tags</a>";
-        $ret .= '</div>';
-
-        $ret .= '<input type="hidden" id="ownerJSON" value=\'' . json_encode($owners) . '\' />';
-        $ret .= '<input type="hidden" id="typeJSON" value=\'' . json_encode($types) . '\' />';
-
-        return $ret;
+        </div>
+        <div class="row">
+            <div class="col-sm-2"><select class="form-control" id=newBatchType name="newType">
+                {$tOpts}
+            </select></div>
+            <div class="col-sm-2"><input class="form-control" type=text placeholder="Batch Name" id=newBatchName name="newName" /></div>
+            <div class="col-sm-2"><input class="form-control date-field" placeholder="Start Date" type=text id=newBatchStartDate name="newStart" /></div>
+            <div class="col-sm-2"><input class="form-control date-field" placeholder="End Date" type=text id=newBatchEndDate name="newEnd" /></div>
+            <div class="col-sm-2"><select class="form-control" id=newBatchOwner name="newOwner">
+                <option value=""></option>
+                {$oOpts}
+            </select></div>
+            <div class="col-sm-1"><button type=submit class="btn btn-default">Create Batch</button></div>
+        </div>
+</form>
+        <p></p> <!-- spacer -->
+        <div class="row">
+            <div class="col-sm-4">
+                <select class="form-control" id=filterOwner onchange="reFilter();">
+                    <option value="">Filter list by batch owner / super dept.</option>
+                    {$oOpts}
+                </select>
+            </div>
+            <div class="col-sm-2">
+                <select class="form-control" id="filterStore" onchange="reFilter();">
+                    <option value="">Store...</option>
+                    {$storeOpts}
+                </select>
+            </div>
+            <div class="col-sm-2">
+                <input type="text" class="form-control" id="filterName" 
+                    placeholder="Batch name..." onchange="reFilter();" />
+            </div>
+            <div class="col-sm-2">
+                <input type="text" class="form-control date-field" id="filterDate"
+                    placeholder="Batch date..." onchange="reFilter();" />
+            </div>
+            <a href="{$url}admin/labels/BatchShelfTags.php">Print shelf tags</a>
+        </div>
+        <input type="hidden" id="ownerJSON" value='{$oJSON}' />
+        <input type="hidden" id="typeJSON" value='{$tJSON}' />
+HTML;
     }
 
     /* display functions
@@ -283,10 +299,15 @@ class BatchListPage extends FannieRESTfulPage
         global $FANNIE_URL;
         $dbc = $this->con;
 
+        $filters = json_decode($filter, true);
+        if ($filters === null) {
+            $filters = array();
+        }
+
         if ($mode === '') {
             $mode = $this->config->get('BATCH_VIEW', 'all');
         }
-        
+
         $colors = array('#ffffff','#ffffcc');
         $c = 0;
         $ret = "";
@@ -348,9 +369,13 @@ class BatchListPage extends FannieRESTfulPage
                         COUNT(l.upc) AS items,
                    $ownerclause
                     LEFT JOIN batchType AS t ON b.batchType = t.batchTypeID
-                    LEFT JOIN batchList AS l ON b.batchID=l.batchID
-                   WHERE 1=1 ";
+                    LEFT JOIN batchList AS l ON b.batchID=l.batchID ";
         $args = array();
+        if (isset($filters['store']) && $filters['store'] != '') {
+            $fetchQ .= ' INNER JOIN StoreBatchMap AS m ON b.batchID=m.batchID AND m.storeID=? ';
+            $args[] = $filters['store'];
+        }
+        $fetchQ .= " WHERE 1=1 ";
         switch($mode) {
             case 'pending':
                 $fetchQ .= ' AND '. $dbc->datediff("b.startDate",$dbc->now()) . ' > 0 ';
@@ -365,23 +390,31 @@ class BatchListPage extends FannieRESTfulPage
                 break;    
         }
         // use a filter - only works in 'all' mode
-        if ($filter != '') {
+        if (isset($filters['owner']) && $filters['owner'] != '') {
             $fetchQ .= ' AND ' . $owneralias . '.owner = ? ';
-            $args[] = $filter;
+            $args[] = $filters['owner'];
+        }
+        if (isset($filters['name']) && $filters['name'] != '') {
+            $fetchQ .= ' AND b.batchName LIKE ? ';
+            $args[] = '%' . $filters['name'] . '%';
+        }
+        if (isset($filters['date']) && $filters['date'] != '') {
+            $fetchQ .= ' AND ? BETWEEN b.startDate AND b.endDate ';
+            $args[] = $filters['date'];
         }
         $fetchQ .= ' GROUP BY b.batchName, b.batchType, b.startDate, b.endDate, b.batchID,
                         t.typeDesc, ' . $owneralias . '.owner ';
         $fetchQ .= ' ORDER BY b.batchID DESC';
-        $fetchQ = $dbc->add_select_limit($fetchQ,50);
+        $fetchQ = $dbc->addSelectLimit($fetchQ,50);
         if (is_numeric($maxBatchID)) {
             $fetchQ = str_replace("WHERE ","WHERE b.batchID < ? AND ",$fetchQ);
             array_unshift($args,$maxBatchID);
         }
-        $fetchR = $dbc->exec_statement($fetchQ,$args);
+        $fetchR = $dbc->execute($fetchQ,$args);
         
         $count = 0;
         $lastBatchID = 0;
-        while ($fetchW = $dbc->fetch_array($fetchR)) {
+        while ($fetchW = $dbc->fetchRow($fetchR)) {
             /**
               strtotime() and date() are not reciprocal functions
               date('Y-m-d', strtotime('0000-00-00')) results in
@@ -416,7 +449,7 @@ class BatchListPage extends FannieRESTfulPage
                 </a>
                 </td>";
             $ret .= "<td bgcolor=$colors[$c]><a href=\"\" class=\"btn btn-danger btn-xs\"
-                onclick=\"deleteBatch({$id},'" . str_replace("'", '', $fetchW['batchName']) . "'); return false;\">"
+                onclick=\"deleteBatch({$id}," . htmlspecialchars(json_encode($fetchW['batchName'])) . "); return false;\">"
                 . \COREPOS\Fannie\API\lib\FannieUI::deleteIcon() . '</a></td>';
             $ret .= "<td bgcolor=$colors[$c]><a href=\"batchReport.php?batchID={$id}\">Report</a></td>";
             $ret .= "</tr>";
@@ -445,27 +478,25 @@ class BatchListPage extends FannieRESTfulPage
 
     function get_view()
     {
-        global $FANNIE_URL;
-        $this->add_script('list.js');
-        $this->add_script('../../src/javascript/tablesorter/jquery.tablesorter.min.js');
+        $url = $this->config->get('URL');
+        $inputForm = $this->newBatchInput();
+        $batchList = $this->batchListDisplay();
+        $this->addScript('list.js');
+        $this->addScript('../../src/javascript/tablesorter/jquery.tablesorter.min.js');
         $this->add_css_file('index.css');
-        ob_start();
-        ?>
-        <div id="inputarea">
-        <?php echo $this->newBatchInput(); ?>
-        </div>
-        <div id="displayarea">
-        <?php echo $this->batchListDisplay(); ?>
-        </div>
-        <input type=hidden id=uid value="<?php echo $this->current_user; ?>" />
-        <input type=hidden id=isAudited value="<?php echo $this->audited; ?>" />
-        <?php
-        $ret = ob_get_clean();
-    
-        $ret .= "<input type=hidden id=buttonimgpath value=\"{$FANNIE_URL}src/img/buttons/\" />";
-        $this->add_onload_command("\$('.tablesorter').tablesorter();");
+        $this->addOnloadCommand("\$('.tablesorter').tablesorter();");
 
-        return $ret;
+        return <<<HTML
+<div id="inputarea">
+    {$inputForm}
+</div>
+<div id="displayarea">
+    {$batchList}
+</div>
+<input type=hidden id=uid value="{$this->current_user}" />
+<input type=hidden id=isAudited value="{$this->audited}" />
+<input type=hidden id=buttonimgpath value="{$url}src/img/buttons/" />
+HTML;
     }
 
     public function helpContent()
@@ -499,7 +530,7 @@ class BatchListPage extends FannieRESTfulPage
         $this->newName = 'Test BatchListPage';
         $this->newStart = date('Y-m-d 00:00:00');
         $this->newEnd = date('Y-m-d 00:00:00');
-        $this->newOwner = 'IT';
+        $this->newOwner = 'MULTIPLE DEPTS.';
         ob_start();
         $this->post_newType_newName_newStart_newEnd_newOwner_handler();
         ob_end_clean();
@@ -545,7 +576,7 @@ class BatchListPage extends FannieRESTfulPage
         foreach ($modes as $m) {
             $get = $this->batchListDisplay('', $m, rand(0, 50));
             $phpunit->assertNotEquals(0, strlen($get));
-            $get = $this->batchListDisplay('IT', $m, rand(0, 50));
+            $get = $this->batchListDisplay('MULTIPLE DEPTS.', $m, rand(0, 50));
             $phpunit->assertNotEquals(0, strlen($get));
         }
     }

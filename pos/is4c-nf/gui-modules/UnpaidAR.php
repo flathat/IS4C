@@ -21,36 +21,38 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\gui\BasicCorePage;
+use COREPOS\pos\lib\DisplayLib;
+use COREPOS\pos\lib\PrehLib;
 include_once(dirname(__FILE__).'/../lib/AutoLoader.php');
 
 class UnpaidAR extends BasicCorePage 
 {
-
     function preprocess()
     {
-            $AR_department = '990';
-            if (CoreLocal::get("store") == 'WEFC_Toronto') {
-                $AR_department = '1005';
-            }
-        if (isset($_REQUEST['reginput'])){
-            $dec = $_REQUEST['reginput'];
-            $amt = CoreLocal::get("old_ar_balance");
+        $arDepartment = '990';
+        if ($this->session->get("store") == 'WEFC_Toronto') {
+            $arDepartment = '1005';
+        }
+        try {
+            $dec = $this->form->reginput;
+            $amt = $this->session->get("old_ar_balance");
 
             if (strtoupper($dec) == "CL"){
-                if (CoreLocal::get('memType') == 0){
-                    PrehLib::setMember(CoreLocal::get("defaultNonMem"), 1);
+                if ($this->session->get('memType') == 0){
+                    COREPOS\pos\lib\MemberLib::setMember($this->session->get("defaultNonMem"), 1);
                 }
                 $this->change_page($this->page_url."gui-modules/pos2.php");
                 return False;
             }
             elseif ($dec == "" || strtoupper($dec) == "BQ"){
                 if (strtoupper($dec)=="BQ")
-                    $amt = CoreLocal::get("balance");
-                $inp = ($amt*100)."DP{$AR_department}0";
-                $memtype = CoreLocal::get("memType");
-                $type = CoreLocal::get("Type");
+                    $amt = $this->session->get("balance");
+                $inp = ($amt*100)."DP{$arDepartment}0";
+                $memtype = $this->session->get("memType");
+                $type = $this->session->get("Type");
                 if ($memtype == 1 || $memtype == 3 || $type == "INACT"){
-                    CoreLocal::set("isMember",1);
+                    $this->session->set("isMember",1);
                     PrehLib::ttl();
                 }
                 $this->change_page(
@@ -60,7 +62,8 @@ class UnpaidAR extends BasicCorePage
                     . '&repeat=1');
                 return false;
             }
-        }
+        } catch (Exception $ex) {}
+
         return true;
     }
 
@@ -71,34 +74,40 @@ class UnpaidAR extends BasicCorePage
     
     function body_content()
     {
-        $amt = CoreLocal::get("old_ar_balance");
+        $amt = $this->session->get("old_ar_balance");
         $this->input_header();
         ?>
         <div class="baseHeight">
 
         <?php
-        if ($amt == CoreLocal::get("balance")){
-            echo DisplayLib::boxMsg(sprintf("Old A/R Balance: $%.2f<br />
+        if ($amt == $this->session->get("balance")){
+            echo DisplayLib::boxMsg(sprintf(_("Old A/R Balance: $%.2f<br />
                 [Enter] to pay balance now<br />
-                [Clear] to leave balance",$amt));
-        }
-        else {
-            echo DisplayLib::boxMsg(sprintf("Old A/R Balance: $%.2f<br />
+                [Clear] to leave balance"),$amt));
+        } else {
+            echo DisplayLib::boxMsg(sprintf(_("Old A/R Balance: $%.2f<br />
                 Total A/R Balance: $%.2f<br />
                 [Enter] to pay old balance<br />
                 [Balance] to pay the entire balance<br />
-                [Clear] to leave the balance",
-                $amt,CoreLocal::get("balance")));
+                [Clear] to leave the balance"),
+                $amt,$this->session->get("balance")));
         }
         echo "</div>";
         echo "<div id=\"footer\">";
         echo DisplayLib::printfooter();
         echo "</div>";
-        CoreLocal::set("msgrepeat",2);
     } // END body_content() FUNCTION
+
+    public function unitTest($phpunit)
+    {
+        ob_start();
+        $this->form->reginput = 'CL';
+        $phpunit->assertEquals(false, $this->preprocess());
+        $this->form->reginput = 'BQ';
+        $phpunit->assertEquals(false, $this->preprocess());
+        ob_end_clean();
+    }
 }
 
-if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
-    new UnpaidAR();
+AutoLoader::dispatch();
 
-?>

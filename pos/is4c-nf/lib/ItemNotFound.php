@@ -21,14 +21,27 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\lib;
+use COREPOS\pos\lib\DisplayLib;
+use COREPOS\pos\lib\TransRecord;
+
 /**
   @class ItemNotFound
   Deal with a UPC entry that doesn't
   exist in products or match a SpecialUPC
   handler
 */
-class ItemNotFound extends LibraryClass 
+class ItemNotFound 
 {
+    public static function factory($class)
+    {
+        if ($class !== '' && $class !== 'ItemNotFound' && class_exists($class)) {
+            return new $class();
+        }
+
+        return new ItemNotFound();
+    }
+
     /**
       React to missing item
       @param $upc [string] UPC value
@@ -42,7 +55,7 @@ class ItemNotFound extends LibraryClass
     public function handle($upc, $json)
     {
         $opts = array('upc'=>$upc,'description'=>'BADSCAN');
-        TransRecord::add_log_record($opts);
+        TransRecord::addLogRecord($opts);
         $json['output'] = DisplayLib::boxMsg(
             _('not a valid item'),
             _('UPC: ') . $upc,
@@ -65,7 +78,7 @@ class LogNotFound extends ItemNotFound
     public function handle($upc, $json)
     {
         $opts = array('upc'=>$upc,'description'=>'NOTFOUND');
-        TransRecord::add_log_record($opts);
+        TransRecord::addLogRecord($opts);
         CoreLocal::set("boxMsg", $upc . ' ' . _("not a valid item"));
         $json['main_frame'] = $my_url . "gui-modules/boxMsg2.php";
 

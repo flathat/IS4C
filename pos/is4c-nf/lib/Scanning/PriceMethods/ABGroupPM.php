@@ -21,6 +21,12 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\lib\Scanning\PriceMethods;
+use COREPOS\pos\lib\Scanning\PriceMethod;
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\MiscLib;
+use COREPOS\pos\lib\TransRecord;
+
 /** 
    @class ABGroupPM
    
@@ -37,7 +43,7 @@
 class ABGroupPM extends PriceMethod 
 {
 
-    function addItem($row,$quantity,$priceObj)
+    public function addItem(array $row, $quantity, $priceObj)
     {
         if ($quantity == 0) {
             return false;
@@ -46,7 +52,7 @@ class ABGroupPM extends PriceMethod
         $pricing = $priceObj->priceInfo($row,$quantity);
 
         // enforce limit on discounting sale items
-        $dsi = CoreLocal::get('DiscountableSaleItems');
+        $dsi = $this->session->get('DiscountableSaleItems');
         if ($dsi == 0 && $dsi !== '' && $priceObj->isSale()) {
             $row['discount'] = 0;
         }
@@ -78,14 +84,14 @@ class ABGroupPM extends PriceMethod
 
         // lookup existing qualifiers (i.e., item As)
         // by-weight items are rounded down here
-        $q1 = "SELECT floor(sum(ItemQtty)),max(department) 
+        $qualQ = "SELECT CEIL(sum(ItemQtty)),max(department) 
             FROM localtemptrans WHERE mixMatch='$qualMM' 
             and trans_status <> 'R'";
-        $r1 = $dbt->query($q1);
+        $qualR = $dbt->query($qualQ);
         $quals = 0;
         $dept1 = 0;
-        if($dbt->num_rows($r1)>0){
-            $rowq = $dbt->fetch_row($r1);
+        if($dbt->num_rows($qualR)>0){
+            $rowq = $dbt->fetch_row($qualR);
             $quals = round($rowq[0]);
             $dept1 = $rowq[1];    
         }
@@ -95,20 +101,26 @@ class ABGroupPM extends PriceMethod
         //
         // extra checks to make sure the maximum
         // discount on scale items is "free"
-        $q2 = "SELECT sum(CASE WHEN scale=0 THEN ItemQtty ELSE 1 END),
-            max(department),max(scale),max(total),max(quantity) FROM localtemptrans 
+        $discQ = "SELECT sum(CASE WHEN scale=0 THEN ItemQtty ELSE 1 END),
+            max(department),max(scale),max(total),max(quantity),
+            MAX(tax) AS tax, MAX(foodstamp) AS fs
+            FROM localtemptrans 
             WHERE mixMatch='$discMM' 
             and trans_status <> 'R'";
-        $r2 = $dbt->query($q2);
+        $discR = $dbt->query($discQ);
         $dept2 = 0;
+        $tax2 = 0;
+        $fs2 = 0;
         $discs = 0;
         $discountIsScale = false;
         $discountScaleQty = 0;
         $scaleDiscMax = 0;
-        if($dbt->num_rows($r2)>0){
-            $rowd = $dbt->fetch_row($r2);
+        if($dbt->num_rows($discR)>0){
+            $rowd = $dbt->fetch_row($discR);
             $discs = round($rowd[0]);
             $dept2 = $rowd[1];
+            $tax2 = $rowd['tax'];
+            $fs2 = $rowd['foodstamp'];
             if ($rowd[2]==1) $discountIsScale = true;
             $scaleDiscMax = $rowd[3];
             $discountScaleQty = $rowd[4];
@@ -120,13 +132,13 @@ class ABGroupPM extends PriceMethod
         }
 
         // items that have already been used in an AB set
-        $q3 = "SELECT sum(matched) FROM localtemptrans WHERE
+        $matchQ = "SELECT sum(matched) FROM localtemptrans WHERE
             mixmatch IN ('$qualMM','$discMM')";
-        $r3 = $dbt->query($q3);
+        $matchR = $dbt->query($matchQ);
         $matches = 0;
-        if ($r3 && $dbt->num_rows($r3) > 0) {
-            $w3 = $dbt->fetch_row($r3);
-            $matches = $w3[0];
+        if ($matchR && $dbt->num_rows($matchR) > 0) {
+            $matchW = $dbt->fetch_row($matchR);
+            $matches = $matchW[0];
         }
 
         // reduce totals by existing matches
@@ -138,7 +150,7 @@ class ABGroupPM extends PriceMethod
 
         // where does the currently scanned item go?
         if ($mixMatch > 0){
-            $quals = ($quals >0)?$quals+floor($quantity):floor($quantity);
+            $quals = ($quals >0)?$quals+ceil($quantity):ceil($quantity);
             $dept1 = $row['department'];
         }
         else {
@@ -148,6 +160,8 @@ class ABGroupPM extends PriceMethod
             else
                 $discs = ($discs >0)?$discs+$quantity:$quantity;
             $dept2 = $row['department'];
+            $tax2 = $row['tax'];
+            $fs2 = $row['foodstamp'];
         }
 
         // count up complete sets
@@ -201,7 +215,7 @@ class ABGroupPM extends PriceMethod
             ));
 
             if (!$priceObj->isMemberSale() && !$priceObj->isStaffSale()){
-                TransRecord::additemdiscount($dept2,MiscLib::truncate2($maxDiscount));
+                TransRecord::additemdiscount($dept2,MiscLib::truncate2($maxDiscount), $tax2, $fs2);
             }
         }
 

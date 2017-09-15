@@ -57,7 +57,7 @@ class TableSnapshotTask extends FannieTask
         }
 
         try {
-            if ($sql->dbms_name() == "mssql") {
+            if ($sql->dbmsName() == "mssql") {
                 $sql->query("SELECT * INTO productBackup FROM products");
             } else {
                 $sql->query("CREATE TABLE productBackup LIKE products");
@@ -84,7 +84,7 @@ class TableSnapshotTask extends FannieTask
         }
 
         try {
-            if ($sql->dbms_name() == "mssql") {
+            if ($sql->dbmsName() == "mssql") {
                 $sql->query("SELECT * INTO custdataBackup FROM custdata");
             } else {
                 $sql->query("CREATE TABLE custdataBackup LIKE custdata");
@@ -97,6 +97,23 @@ class TableSnapshotTask extends FannieTask
             */
             $this->cronMsg("Failed to back up custdata. Details: " . $ex->getMessage(),
                     FannieLogger::ERROR);
+        }
+
+        try {
+            $map = $this->config->get('ARCHIVE_DB') . $sql->sep() . 'ProductAttributeMap';        
+            $attr = $this->config->get('OP_DB') . $sql->sep() . 'ProductAttributes';
+            $query = "
+                INSERT INTO {$map} (dateID, upc, productAttributeID)
+                SELECT " . $sql->dateymd($sql->curdate()) . ",
+                    upc,
+                    MAX(productAttributeID)
+                FROM {$attr}
+                GROUP BY upc
+                ORDER BY upc";
+            $sql->query($query);
+        } catch (Exception $ex) {
+            $this->cronMsg("Could not get snapshot attributes. Details: " . $ex->getMessage(),
+                    FannieLogger::NOTICE);
         }
     }
 }

@@ -212,7 +212,7 @@ class ReturnsByReceipt extends FannieReportPage {
          *  and includes today; hence the manual union.
          */
         $dtrans = DTransactionsModel::selectDlog($this->dateFrom,$this->dateTo);
-        $datestamp = $dbc->identifier_escape('datetime');
+        $datestamp = $dbc->identifierEscape('datetime');
 
         if ( isset($FANNIE_COOP_ID) && $FANNIE_COOP_ID == 'WEFC_Toronto' ) {
             //Is t. used
@@ -299,8 +299,8 @@ class ReturnsByReceipt extends FannieReportPage {
                 $this->report_headers[] = 'Comments';
         }
 
-        $retsP = $dbc->prepare_statement($query);
-        $retsR = $dbc->exec_statement($retsP, $retArgs);
+        $retsP = $dbc->prepare($query);
+        $retsR = $dbc->execute($retsP, $retArgs);
 
         $today = date('Y-m-d');
         $TRANS = $FANNIE_TRANS_DB . $dbc->sep();
@@ -310,7 +310,7 @@ class ReturnsByReceipt extends FannieReportPage {
         $ert = "";
         $lastERT = "";
         $nthReturn = 0;
-        while($row = $dbc->fetch_array($retsR)){
+        while($row = $dbc->fetchRow($retsR)){
             if ($row['description'] == 'Bottle Return') {
                 continue;
             }
@@ -415,7 +415,7 @@ class ReturnsByReceipt extends FannieReportPage {
 
             $rItems = 0;
             $rComments = array();
-            while($rowR = $dbc->fetch_array($transR)){
+            while($rowR = $dbc->fetchRow($transR)){
                 $rItems++;
                 if ($rItems != $nthReturn) {
                     continue;

@@ -195,6 +195,7 @@ class ActivityReport extends FannieReportPage
         }
         $fromSpec .= ")";
 
+// <<<<<<< HEAD Clean up cruft.
         /*
         $q = "SELECT cardNo,charges,transNum,payments,
             year(tdate) AS year, month(tdate) AS month, day(tdate) AS day,
@@ -207,6 +208,7 @@ class ActivityReport extends FannieReportPage
         $q = "SELECT cardNo,charges,transNum,payments,
             year(tdate) AS year, month(tdate) AS month, day(tdate) AS day,
             date(tdate) AS ddate
+            , tdate
                 FROM $fromSpec AS s 
                 WHERE programID=?{$dateSpec}
                 ORDER BY tdate ASC,transNum";
@@ -214,21 +216,32 @@ class ActivityReport extends FannieReportPage
          * or reformat it as %05d-%05d-%05d so it will sort alpha.
          * Same in Liability report.
          */
-        $s = $dbc->prepare_statement($q);
+        $s = $dbc->prepare($q);
         $args=array($this->programID);
         //$args=array($this->cardNo,$this->programID);
         if ($this->hasDates) {
             $args[] = "{$this->epoch} 00:00:00";
             $args[] = "{$this->dateTo} 23:59:59";
         }
-        $r = $dbc->exec_statement($s,$args);
+        $r = $dbc->execute($s,$args);
+/*======= Delete if report is OK cruft
+        START >>>>>>> upstream/version-2.7
+        $q = $dbc->prepare("SELECT charges,transNum,payments,
+                year(tdate) AS year, month(tdate) AS month, day(tdate) AS day
+                FROM $fromSpec AS s 
+                WHERE s.cardNo=? AND programID=?
+                ORDER BY tdate DESC");
+        $args=array($this->cardNo,$this->programID);
+        $r = $dbc->execute($q,$args);
+        END >>>>>>> upstream/version-2.7
+ */
 
         $data = array();
         $rrp  = "{$FANNIE_URL}admin/LookupReceipt/RenderReceiptPage.php";
         $balance = 0.0;
         $opening = array();
         $lastRow = array();
-        while($row = $dbc->fetch_row($r)) {
+        while($row = $dbc->fetchRow($r)) {
             if ($row['charges'] == 0 && $row['payments'] == 0) {
                 continue;
             }
@@ -490,12 +503,12 @@ class ActivityReport extends FannieReportPage
                 LEFT JOIN {$OP}custdata AS c on m.cardNo = c.CardNo
                 WHERE c.personNum =1
                 ORDER BY programID, LastName, FirstName";
-            $statement = $dbc->prepare_statement("$query");
+            $statement = $dbc->prepare("$query");
             $args = array();
-            $results = $dbc->exec_statement("$statement", $args);
+            $results = $dbc->execute("$statement", $args);
             echo "<select id='memNum' name='memNum' size=8>";
             echo "<option value=''>Choose a Member in a Program</option>";
-            while ($row = $dbc->fetch_row($results)) {
+            while ($row = $dbc->fetchRow($results)) {
                 $desc = sprintf('(%d) %s, %s',
                     $row['programID'],
                     $row['LastName'],
@@ -525,7 +538,7 @@ class ActivityReport extends FannieReportPage
             $selectSize = 1;
             $rslt = $dbc->query("SELECT count(programID) AS ct FROM CCredPrograms");
             if ($rslt !== False) {
-                $row = $dbc->fetch_row($rslt);
+                $row = $dbc->fetchRow($rslt);
                 $selectSize = min(12,(int)$row['ct']);
             }
             echo "<select id='programID' name='programID' size='{$selectSize}'>";
@@ -650,5 +663,5 @@ title="Tick to display with sorting from column heads; un-tick for a plain formt
 
 }
 
-FannieDispatch::conditionalExec(false);
+FannieDispatch::conditionalExec();
 

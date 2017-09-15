@@ -21,71 +21,36 @@
 
 *********************************************************************************/
 
-use COREPOS\pos\lib\FormLib;
+use COREPOS\pos\lib\gui\NoInputCorePage;
+use COREPOS\pos\lib\Authenticate;
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\ReceiptLib;
+use COREPOS\pos\lib\TransRecord;
+use COREPOS\pos\lib\UdpComm;
 
 include_once(dirname(__FILE__).'/../lib/AutoLoader.php');
 
 class mgrlogin extends NoInputCorePage 
 {
-
-    function preprocess(){
-        if (FormLib::get('input') !== '') {
-            $arr = $this->mgrauthenticate(FormLib::get('input'));
-            echo JsonLib::array_to_json($arr);
-            return False;
-        } else {
+    function preprocess()
+    {
+        try {
+            $arr = $this->mgrauthenticate($this->form->input);
+            echo json_encode($arr);
+            return false;
+        } catch (Exception $ex) {
             // beep on initial page load
-            if (CoreLocal::get('LoudLogins') == 1) {
+            if ($this->session->get('LoudLogins') == 1) {
                 UdpComm::udpSend('twoPairs');
             }
+
+            return true;
         } 
-        return True;
     }
 
     function head_content(){
         ?>
-        <script type="text/javascript">
-        function submitWrapper(){
-            var passwd = $('#reginput').val();
-            if (passwd == ''){
-                passwd = $('#userPassword').val();
-            }
-            $.ajax({
-                url: '<?php echo filter_input(INPUT_SERVER, 'PHP_SELF'); ?>',
-                data: 'input='+passwd,
-                type: 'get',
-                cache: false,
-                dataType: 'json',
-                error: function(data,st,xmlro){
-                },
-                success: function(data){
-                    if (data.cancelOrder){
-                        $.ajax({
-                            url: '<?php echo $this->page_url; ?>ajax-callbacks/ajax-end.php',
-                            type: 'get',
-                            data: 'receiptType=cancelled&ref='+data.trans_num,
-                            cache: false,
-                            success: function(data2){
-                                location = '<?php echo $this->page_url; ?>gui-modules/pos2.php';
-                            }
-                        });
-                    }
-                    else if (data.giveUp){
-                        location = '<?php echo $this->page_url; ?>gui-modules/pos2.php';
-                    }
-                    else {
-                        $('div#cancelLoginBox').removeClass('coloredArea');
-                        $('div#cancelLoginBox').addClass('errorColoredArea');
-                        $('span.larger').html(data.heading);
-                        $('span#localmsg').html(data.msg);
-                        $('#userPassword').val('');
-                        $('#userPassword').focus();
-                    }
-                }
-            });
-            return false;
-        }
-        </script>
+        <script type="text/javascript" src="js/mgrlogin.js"></script>
         <?php
         $this->default_parsewrapper_js();
         $this->scanner_scale_polling(True);
@@ -101,7 +66,8 @@ class mgrlogin extends NoInputCorePage
         <?php echo _("confirm cancellation"); ?>
         </span><br />
         <form name="form" id="formlocal" method="post" 
-            autocomplete="off" onsubmit="return submitWrapper();">
+            autocomplete="off" 
+            onsubmit="return mgrlogin.submitWrapper('<?php echo $this->page_url; ?>');">
         <input type="password" name="userPassword" tabindex="0" 
             onblur="$('#userPassword').focus();" id="userPassword" />
         <input type="hidden" name="reginput" id="reginput" value="" />
@@ -131,8 +97,11 @@ class mgrlogin extends NoInputCorePage
             return $ret;
         }
 
-        $priv = sprintf("%d",CoreLocal::get("SecurityCancel"));
-        if (Authenticate::checkPermission($password, $priv)) {
+        $priv = sprintf("%d",$this->session->get("SecurityCancel"));
+        $chk = false;
+        $chk = ($priv == 25) ? Authenticate::checkPassword($password) : Authenticate::checkPermission($password, $priv);
+
+        if ($chk) {
             $this->cancelorder();
             $ret['cancelOrder'] = true;
             $ret['trans_num'] = ReceiptLib::receiptNumber();
@@ -140,14 +109,9 @@ class mgrlogin extends NoInputCorePage
             $dbc = Database::tDataConnect();
             $dbc->query("update localtemptrans set trans_status = 'X'");
             TransRecord::finalizeTransaction(true);
-
-            if (CoreLocal::get('LoudLogins') == 1) {
-                UdpComm::udpSend('twoPairs');
-            }
-        } else {
-            if (CoreLocal::get('LoudLogins') == 1) {
-                UdpComm::udpSend('errorBeep');
-            }
+        }
+        if ($this->session->get('LoudLogins') == 1) {
+            UdpComm::udpSend('twoPairs');
         }
 
         return $ret;
@@ -155,10 +119,23 @@ class mgrlogin extends NoInputCorePage
 
     function cancelorder() 
     {
-        CoreLocal::set("plainmsg",_("transaction cancelled"));
+        $this->session->set("plainmsg",_("transaction cancelled"));
         UdpComm::udpSend("rePoll");
+    }
+
+    public function unitTest($phpunit)
+    {
+        $this->cancelorder();
+        $phpunit->assertEquals('transaction cancelled', $this->session->get('plainmsg'));
+        $ret = $this->mgrauthenticate('CL');
+        $phpunit->assertEquals(true, $ret['giveUp']);
+        $ret = $this->mgrauthenticate('56');
+        $phpunit->assertEquals(true, $ret['cancelOrder']);
+        $ret = $this->mgrauthenticate('12345');
+        $phpunit->assertEquals(false, $ret['cancelOrder']);
+        $this->session->set('plainmsg', '');
     }
 }
 
-if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
-    new mgrlogin();
+AutoLoader::dispatch();
+

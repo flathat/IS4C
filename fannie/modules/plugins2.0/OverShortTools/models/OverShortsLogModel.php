@@ -24,11 +24,13 @@
 class OverShortsLogModel extends BasicModel {
 
     protected $name = 'overshortsLog';
+    protected $preferred_db = 'plugin:OverShortDatabase';
 
     protected $columns = array(
     'date' => array('type'=>'VARCHAR(10)','primary_key'=>True),
     'username' => array('type'=>'VARCHAR(25)'),
-    'resolved' => array('type'=>'TINYINT','default'=>0)
+    'resolved' => array('type'=>'TINYINT','default'=>0),
+    'storeID' => array('type'=>'INT','primary_key'=>true),
     );
 }
 

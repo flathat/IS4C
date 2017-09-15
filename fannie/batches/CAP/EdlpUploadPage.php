@@ -37,26 +37,22 @@ class EdlpUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
 
     protected $preview_opts = array(
         'upc' => array(
-            'name' => 'upc',
-            'display_name' => 'UPC',
+            'display_name' => 'UPC*',
             'default' => 0,
             'required' => true
         ),
         'price' => array(
-            'name' => 'price',
-            'display_name' => 'Max Price',
+            'display_name' => 'Max Price*',
             'default' => 13,
             'required' => true
         ),
         'sku' => array(
-            'name' => 'sku',
             'display_name' => 'SKU',
             'default' => 3,
-            'required' => False
         ),
     );
 
-    public function process_file($linedata)
+    public function process_file($linedata, $indexes)
     {
         $dbc = $this->connection;
         $dbc->selectDB($this->config->get('OP_DB'));
@@ -73,7 +69,7 @@ class EdlpUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
         $skuP = $dbc->prepare('
             SELECT s.upc,
                 p.price_rule_id
-            FROM vendorSKUtoPLU AS s
+            FROM VendorAliases AS s
                 INNER JOIN vendors AS v ON s.vendorID=v.vendorID
                 ' . DTrans::joinProducts('s', 'p', 'INNER') . '
             WHERE s.sku=?
@@ -93,6 +89,7 @@ class EdlpUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
             WHERE priceRuleID=?');
         $extraP = $dbc->prepare('UPDATE prodExtra SET variable_pricing=1 WHERE upc=?');
         $prodP = $dbc->prepare('UPDATE products SET price_rule_id=? WHERE upc=?');
+        $dbc->startTransaction();
         foreach ($linedata as $data) {
             if (!is_array($data)) continue;
 
@@ -109,7 +106,7 @@ class EdlpUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
             if ($dbc->numRows($lookup) == 0 && $SKU !== false) {
                 $sku = str_replace('-', '', $data[$SKU]);
                 $found = false;
-                $look2 = $dbc->exec_statement($skuP, array($sku));
+                $look2 = $dbc->execute($skuP, array($sku));
                 if ($dbc->numRows($look2)) {
                     $w = $dbc->fetchRow($look2);
                     $upc = $w['upc'];
@@ -157,6 +154,7 @@ class EdlpUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
                 $dbc->execute($prodP, array($rule_id, $upc));
             }
         }
+        $dbc->commitTransaction();
 
         return true;
     }

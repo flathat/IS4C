@@ -32,22 +32,17 @@ class SiteMap extends FannieRESTfulPage
     protected $title = 'Site Map';
 
     public $must_authenticate = true;
-    public $auth_classes = array('admin');
+    public $auth_classes = array('admin', 'sitemap');
     public $themed = true;
 
     public $description = '[Site Map] is a list of all known pages. It\'s very likely the page
     you\'re on right now!';
 
-    public function get_view()
+    private function getPages()
     {
-        global $FANNIE_ROOT, $FANNIE_URL;
         $pages = FannieAPI::listModules('FanniePage');
         $sets = array();
         $help = array(
-            'done' => 0,
-            'total' => 0,
-        );
-        $test_stats = array(
             'done' => 0,
             'total' => 0,
         );
@@ -56,12 +51,15 @@ class SiteMap extends FannieRESTfulPage
             if (!$obj->discoverable) {
                 continue;
             }
-            /* 3 set's from CORE issue #718 esp setConfig */
             $obj->setConfig($this->config);
             $obj->setLogger($this->logger);
             $obj->setConnection($this->connection);
             $reflect = new ReflectionClass($obj);
-            $url = $FANNIE_URL . str_replace($FANNIE_ROOT, '', $reflect->getFileName());
+            $file = $reflect->getFileName();
+            if (DIRECTORY_SEPARATOR == '\\') {
+                $file = str_replace(DIRECTORY_SEPARATOR, '/', $file);
+            }
+            $url = $this->config->get('URL') . str_replace($this->config->get('ROOT'), '', $file);
             if (!isset($sets[$obj->page_set])) {
                 $sets[$obj->page_set] = array();
             }
@@ -72,53 +70,56 @@ class SiteMap extends FannieRESTfulPage
             $help['total']++;
             if ($obj->helpContent() && substr($obj->helpContent(),0,17) != '<!-- need doc -->') {
                 $help['done']++;
-                $sets[$obj->page_set][$p]['help'] = 'alert-success';
+                $sets[$obj->page_set][$p]['help'] = 'collapse';
             } else {
                 $sets[$obj->page_set][$p]['help'] = 'alert-danger';
             }
-            $test_stats['total']++;
-            if ($obj->has_unit_tests) {
-                $test_stats['done']++;
-                $sets[$obj->page_set][$p]['test'] = 'alert-success';
-            } else {
-                $sets[$obj->page_set][$p]['test'] = 'alert-danger';
-            }
         }
+
+        return array($sets, $help);
+    }
+
+    private function printPageSet($sets, $set_name)
+    {
+        $ret = '<li>' . $set_name;
+        $ret .= '<ul>';
+        $page_keys = array_keys($sets[$set_name]);
+        sort($page_keys);
+        foreach ($page_keys as $page_key) {
+            $description = $sets[$set_name][$page_key]['info'];
+            $url = $sets[$set_name][$page_key]['url'];
+            $linked = preg_replace('/\[(.+)\]/', '<a href="' . $url . '">\1</a>', $description);
+            if ($linked === $description) {
+                $linked .= ' (<a href="' . $url . '">Link</a>)';
+            }
+            $ret .= sprintf('<li>%s 
+                <span class="%s">Internal Help Missing</span>
+                </li>',
+                $linked,
+                $sets[$set_name][$page_key]['help']
+            );
+        }
+        $ret .= '</ul>';
+        $ret .= '</li>';
+
+        return $ret;
+    }
+
+    public function get_view()
+    {
+        list($sets, $help) = $this->getPages();
 
         $ret = '';
         $ret .= '<div class="alert alert-info">';
         $ret .= sprintf('New UI help content percent: <strong>%.2f%%</strong><br />', 
             ((float)$help['done']) / $help['total'] * 100);
-        $ret .= sprintf('Unit test coverage for pages: <strong>%.2f%%</strong><br />', 
-            ((float)$test_stats['done']) / $test_stats['total'] * 100);
         $ret .= '</div>';
 
         $keys = array_keys($sets);
         sort($keys);
         $ret .= '<ul>';
         foreach ($keys as $set_name) {
-            $ret .= '<li>' . $set_name;
-            $ret .= '<ul>';
-            $page_keys = array_keys($sets[$set_name]);
-            sort($page_keys);
-            foreach ($page_keys as $page_key) {
-                $description = $sets[$set_name][$page_key]['info'];
-                $url = $sets[$set_name][$page_key]['url'];
-                $linked = preg_replace('/\[(.+)\]/', '<a href="' . $url . '">\1</a>', $description);
-                if ($linked === $description) {
-                    $linked .= ' (<a href="' . $url . '">Link</a>)';
-                }
-                $ret .= sprintf('<li>%s 
-                    <span class="%s">Help</span>
-                    <span class="%s">Tested</span>
-                    </li>',
-                    $linked,
-                    $sets[$set_name][$page_key]['help'],
-                    $sets[$set_name][$page_key]['test']
-                );
-            }
-            $ret .= '</ul>';
-            $ret .= '</li>';
+            $ret .= $this->printPageSet($sets, $set_name);
         }
         $ret .= '</ul>';
 
@@ -127,10 +128,15 @@ class SiteMap extends FannieRESTfulPage
 
     public function helpContent()
     {
-        return '<p>A list of all known Fannie tools and reports including those
+        return _('<p>A list of all known Fannie tools and reports including those
             provided by plugins. Pages <em>may</em> opt out of this list but the
             vast majority do not. This is provided to ensure users can locate
-            most everything regardless of how the menus are set up.</p>';
+            most everything regardless of how the menus are set up.</p>');
+    }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->get_view()));
     }
 }
 

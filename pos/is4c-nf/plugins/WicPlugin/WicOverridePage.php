@@ -21,7 +21,11 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\gui\BasicCorePage;
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\DisplayLib;
 use COREPOS\pos\lib\FormLib;
+use COREPOS\pos\lib\MiscLib;
 
 include_once(dirname(__FILE__).'/../../lib/AutoLoader.php');
 
@@ -31,6 +35,8 @@ class WicOverridePage extends BasicCorePage
     private $box_color="coloredArea";
     private $errMsg;
     private $upc;
+
+    protected $mask_input = true;
 
     public function preprocess()
     {

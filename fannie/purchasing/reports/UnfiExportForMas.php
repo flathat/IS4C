@@ -29,53 +29,25 @@ if (!class_exists('FannieAPI')) {
 class UnfiExportForMas extends FannieReportPage 
 {
 
-    protected $report_headers = array('Vendor', 'Inv#', 'Date', 'Inv Ttl', 'Code Ttl', 'Code');
+    protected $report_headers = array('Vendor', 'Inv#', 'PO#', 'Date', 'Inv Ttl', 'Code Ttl', 'Code');
     protected $sortable = false;
     protected $no_sort_but_style = true;
 
-    public $page_set = 'Purchasing';
+    public $report_set = 'Finance';
     public $description = '[MAS Invoice Export] exports vendor invoices for MAS90.';
-    public $themed = true;
-
-    function preprocess(){
-        /**
-          Set the page header and title, enable caching
-        */
-        $this->report_cache = 'none';
-        $this->title = "Fannie : Invoice Export";
-        $this->header = "Invoice Export";
-
-        if (isset($_REQUEST['date1'])) {
-            /**
-              Form submission occurred
-
-              Change content function, turn off the menus,
-              set up headers
-            */
-            $this->content_function = "report_content";
-            $this->has_menus(False);
-        
-            /**
-              Check if a non-html format has been requested
-            */
-            if (isset($_REQUEST['excel']) && $_REQUEST['excel'] == 'xls')
-                $this->report_format = 'xls';
-            elseif (isset($_REQUEST['excel']) && $_REQUEST['excel'] == 'csv')
-                $this->report_format = 'csv';
-        }
-
-        return True;
-    }
+    protected $required_fields = array('date1', 'date2');
+    public $discoverable = false;
 
     /**
       Lots of options on this report.
     */
-    function fetch_report_data(){
-        global $FANNIE_OP_DB;
-        $date1 = FormLib::get_form_value('date1',date('Y-m-d'));
-        $date2 = FormLib::get_form_value('date2',date('Y-m-d'));
+    function fetch_report_data()
+    {
+        $date1 = FormLib::get('date1',date('Y-m-d'));
+        $date2 = FormLib::get('date2',date('Y-m-d'));
 
-        $dbc = FannieDB::get($FANNIE_OP_DB);
+        $dbc = $this->connection;
+        $dbc->selectDB($this->config->get('OP_DB'));
         $mustCodeP = $dbc->prepare('
             SELECT i.orderID,
                 i.sku
@@ -102,15 +74,17 @@ class UnfiExportForMas extends FannieReportPage
 
         $codingQ = 'SELECT o.orderID, 
                         o.salesCode, 
+                        i.vendorOrderID,
                         i.vendorInvoiceID, 
                         SUM(o.receivedTotalCost) as rtc,
-                        MAX(o.receivedDate) AS rdate
+                        MAX(o.receivedDate) AS rdate,
+                        MAX(i.storeID) AS storeID
                     FROM PurchaseOrderItems AS o
                         LEFT JOIN PurchaseOrder as i ON o.orderID=i.orderID 
                     WHERE i.vendorID=? 
                         AND i.userID=0
                         AND o.receivedDate BETWEEN ? AND ?
-                    GROUP BY o.orderID, o.salesCode, i.vendorInvoiceID
+                    GROUP BY o.orderID, o.salesCode, i.vendorInvoiceID, i.vendorOrderID
                     ORDER BY rdate, i.vendorInvoiceID, o.salesCode';
         $codingP = $dbc->prepare($codingQ);
 
@@ -125,12 +99,14 @@ class UnfiExportForMas extends FannieReportPage
                 continue;
             }
             $code = $accounting::toPurchaseCode($codingW['salesCode']);
+            $code = $this->wfcCoding($code, $codingW['storeID']);
             if (empty($code) && $this->report_format == 'html') {
                 $code = 'n/a';
             }
             $record = array(
                 'UNFI',
                 '<a href="../ViewPurchaseOrders.php?id=' . $codingW['orderID'] . '">' . $codingW['vendorInvoiceID'] . '</a>',
+                $codingW['vendorOrderID'],
                 $codingW['rdate'],
                 0.00,
                 sprintf('%.2f', $codingW['rtc']),
@@ -151,23 +127,27 @@ class UnfiExportForMas extends FannieReportPage
             $invTTL = 0;
             for ($i=0; $i<count($data); $i++) {
                 $row = $data[$i];
-                $invTTL += $row[4];
+                $invTTL += $row[5];
             }
 
             foreach ($orders[$id] as $row) {
-                $row[3] = $invTTL;
+                $row[4] = $invTTL;
                 $report[] = $row;
             }
         }
 
-        /*
-        for ($i=0; $i<count($report); $i++) {
-            $inv = $report[$i][1];
-            $report[$i][3] = sprintf('%.2f', $invoice_sums[$inv]);
-        }
-        */
-
         return $report;
+    }
+
+    private function wfcCoding($code,$storeID)
+    {
+        if (substr($code, 0, 3) === '512' || $code === '51600') {
+            return $code . '0' . $storeID . '20';
+        } elseif ($code === '51300' || $code === '51310' || $code === '51315') {
+            return $code . '0' . $storeID . '30';
+        } else {
+            return $code . '0' . $storeID . '60';
+        }
     }
     
     function form_content()

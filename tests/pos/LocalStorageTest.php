@@ -8,22 +8,14 @@ class LocalStorageTest extends PHPUnit_Framework_TestCase
     public function testAll()
     {
         $defaults = array(
-            'SessionStorage',
-            'UnitTestStorage',
-            'WrappedStorage',
+            'COREPOS\\pos\\lib\\LocalStorage\\SessionStorage',
+            'COREPOS\\pos\\lib\\LocalStorage\\UnitTestStorage',
+            'COREPOS\\pos\\lib\\LocalStorage\\WrappedStorage',
         );
-
-        /**
-          Not worth fighting with right now. Cannot get PECL package
-          to install for local testing. Trying to remote debug CI errors
-          is annoying and no one uses this storage mechanism anyway
-        if (function_exists('sqlite_open'))
-            $defaults[] = 'SQLiteStorage';
-        */
 
         foreach ($defaults as $class) {
             $obj = new $class();
-            $this->assertInstanceOf('LocalStorage',$obj);
+            $this->assertInstanceOf('COREPOS\\pos\\lib\\LocalStorage\\LocalStorage',$obj);
 
             $unk = $obj->get('unknownKey');
             $this->assertInternalType('string',$unk);
@@ -49,18 +41,18 @@ class LocalStorageTest extends PHPUnit_Framework_TestCase
             $this->assertInternalType('array',$get, 'Array test failed for ' . $class);
             $this->assertEquals(array(1, 2), $get, 'Array equality failed for ' . $class);
 
-            $obj->set('imm','imm',True);
-            $get = $obj->get('imm');
-            $this->assertInternalType('string',$get);
-            $this->assertEquals('imm',$get);
-
-            $is = $obj->isImmutable('imm');
-            $isNot = $obj->isImmutable('testArray');
-            $this->assertInternalType('boolean',$is);
-            $this->assertInternalType('boolean',$isNot);
-            $this->assertEquals(True,$is);
-            $this->assertEquals(False,$isNot);
+            foreach ($obj as $key => $val) {
+                // is iterable
+            }
         }
 
+    }
+
+    public function testCoreLocal()
+    {
+        CoreLocal::refresh();
+        CoreLocal::migrateSettings();
+        $json = CoreLocal::convertIniPhpToJson();
+        $this->assertInternalType('array', json_decode($json, true));
     }
 }

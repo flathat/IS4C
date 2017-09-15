@@ -79,7 +79,7 @@ class GeneralRangeReport extends FannieReportPage
             GROUP BY t.TenderName ORDER BY TenderName");
         $tenderR = $dbc->execute($tenderQ,$dates);
         $report = array();
-        while ($tenderW = $dbc->fetch_row($tenderR)) {
+        while ($tenderW = $dbc->fetchRow($tenderR)) {
             $record = array($tenderW['TenderName'],$tenderW[1],
                     sprintf('%.2f',$tenderW['total']));
             $report[] = $record;
@@ -133,7 +133,7 @@ class GeneralRangeReport extends FannieReportPage
         $salesP = $dbc->prepare($salesQ);
         $salesR = $dbc->execute($salesP,$dates);
         $report = array();
-        while ($salesW = $dbc->fetch_row($salesR)) {
+        while ($salesW = $dbc->fetchRow($salesR)) {
             $record = array($salesW['category'],
                     sprintf('%.2f',$salesW['qty']),
                     sprintf('%.2f',$salesW['total']));
@@ -155,7 +155,7 @@ class GeneralRangeReport extends FannieReportPage
                 ORDER BY m.memDesc");
         $discR = $dbc->execute($discQ,$dates);
         $report = array();
-        while ($discW = $dbc->fetch_row($discR)) {
+        while ($discW = $dbc->fetchRow($discR)) {
             $record = array($discW['memDesc'],$discW[2],$discW[1]);
             $report[] = $record;
             $reconciliation['Discounts'] += $discW['Discount'];
@@ -174,7 +174,7 @@ class GeneralRangeReport extends FannieReportPage
                 " GROUP BY d.description"
         );
         $lineItemR = $dbc->execute($lineItemQ, $dates);
-        while ($lineItemW = $dbc->fetch_row($lineItemR)) {
+        while ($lineItemW = $dbc->fetchRow($lineItemR)) {
             $record = array($lineItemW['description'] . ' (est. owed)',
                 sprintf('%.2f', $lineItemW['ttl']));
             $report[] = $record;
@@ -187,7 +187,7 @@ class GeneralRangeReport extends FannieReportPage
                 AND (d.upc = 'tax'){$this->shrinkageUsers}
             GROUP BY d.upc");
         $taxR = $dbc->execute($taxSumQ,$dates);
-        while ($taxW = $dbc->fetch_row($taxR)) {
+        while ($taxW = $dbc->fetchRow($taxR)) {
             $record = array('Total Tax Collected',
                 sprintf("%.2f",$taxW['tax_collected']));
             $report[] = $record;
@@ -204,7 +204,7 @@ class GeneralRangeReport extends FannieReportPage
         }
         $data[] = $report;
 
-        $transQ = $dbc->prepare_statement("SELECT q.trans_num,sum(q.quantity) as items,
+        $transQ = $dbc->prepare("SELECT q.trans_num,sum(q.quantity) as items,
             transaction_type, sum(q.total) FROM
             (
             SELECT trans_num,card_no,quantity,total,
@@ -216,9 +216,9 @@ class GeneralRangeReport extends FannieReportPage
                 AND upc <> 'RRR'{$this->shrinkageUsers}
             ) as q 
             GROUP by q.trans_num,q.transaction_type");
-        $transR = $dbc->exec_statement($transQ,$dates);
+        $transR = $dbc->execute($transQ,$dates);
         $transinfo = array();
-        while($row = $dbc->fetch_array($transR)){
+        while($row = $dbc->fetchArray($transR)){
             if (!isset($transinfo[$row[2]]))
                 $transinfo[$row[2]] = array(0,0.0,0.0,0.0,0.0);
             $transinfo[$row[2]][0] += 1;
@@ -264,7 +264,7 @@ class GeneralRangeReport extends FannieReportPage
                 GROUP BY d.card_no, t.dept_name ORDER BY d.card_no, t.dept_name");
             $equityR = $dbc->execute($equityQ,$dates);
             $report = array();
-            while ($equityW = $dbc->fetch_row($equityR)) {
+            while ($equityW = $dbc->fetchRow($equityR)) {
                 $record = array($equityW['card_no'],$equityW['dept_name'],
                         sprintf('%.2f',$equityW['total']));
                 $report[] = $record;

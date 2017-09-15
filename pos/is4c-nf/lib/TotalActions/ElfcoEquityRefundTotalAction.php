@@ -21,6 +21,8 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\TotalActions\TotalAction;
+
 /**
   @class ElfcoEquityRefundTotalAction
   Tender the default amount of MI for eligible members.

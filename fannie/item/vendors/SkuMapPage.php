@@ -36,17 +36,67 @@ class SkuMapPage extends FannieRESTfulPage
 
     public $description = '[Vendor SKU Map] uses SKUs to map items that have a different
         vendor UPC than store UPC. Typically the "store" UPC is a PLU.';
-    public $themed = true;
 
     public function preprocess()
     {
         $this->__routes[] = 'get<id><sku><plu>';
         $this->__routes[] = 'get<id><apply>';
+        $this->__routes[] = 'get<id><print>';
 
         return parent::preprocess();
     }
 
-    public function delete_id_handler()
+    protected function get_id_print_handler()
+    {
+        $pdf = new FPDF('P', 'mm', 'Letter');
+        $pdf->AddPage();
+        $pdf->SetMargins(10,10,10);
+        $pdf->SetFont('Arial', '', 7);
+        $dbc = $this->connection;
+        $prep = $dbc->prepare('
+            SELECT p.description, v.sku, n.vendorName, p.brand
+            FROM products AS p
+                INNER JOIN vendorSKUtoPLU AS v ON p.upc=v.upc AND p.default_vendor_id=v.vendorID
+                INNER JOIN vendors AS n ON p.default_vendor_id=n.vendorID
+            WHERE v.vendorID=? 
+            GROUP BY p.description, v.sku, n.vendorName'); 
+        $res = $dbc->execute($prep, $this->id);
+        $posX = 5;
+        $posY = 20;
+        while ($row = $dbc->fetchRow($res)) {
+            //$prepB = $dbc->prepare('SELECT units, size FROM vendorItems WHERE sku = ?');
+            $prepB = $dbc->prepare('SELECT max(receivedDate), caseSize, unitSize, brand FROM PurchaseOrderItems WHERE sku = ?');
+            $resB = $dbc->execute($prepB, $row['sku']);
+            $tagSize = array();
+            $tagSize = $dbc->fetch_row($resB);
+            $pdf->SetXY($posX+3, $posY);
+            $pdf->Cell(0, 5, substr($row['description'], 1, 25));
+            $pdf->Ln(3);
+            $pdf->SetX($posX+3);
+            $pdf->Cell(0, 5, $row['vendorName'] . ' - ' . $row['sku']);
+            $img = Image_Barcode2::draw($row['sku'], 'code128', 'png', false, 20, 1, false);
+            $file = tempnam(sys_get_temp_dir(), 'img') . '.png';
+            imagepng($img, $file);
+            $pdf->Image($file, $posX, $posY+7);
+            unlink($file);
+            $pdf->SetXY($posX+3, $posY+16);
+            $pdf->Cell(0, 5, $tagSize['unitSize'] . ' / ' . $tagSize['caseSize'] . ' - ' . $tagSize['brand']);
+            $posX += 52;
+            if ($posX > 170) {
+                $posX = 5;
+                $posY += 31;
+                if ($posY > 250) {
+                    $posY = 20;
+                    $pdf->AddPage();
+                }
+            }
+        }
+        $pdf->Output('skus.pdf', 'I');
+
+        return false;
+    }
+
+    protected function delete_id_handler()
     {
         $sku = FormLib::get('sku');
         $plu = BarcodeLib::padUPC(FormLib::get('plu'));
@@ -57,12 +107,14 @@ class SkuMapPage extends FannieRESTfulPage
                 AND sku=?
                 AND upc=?');
         $delR = $dbc->execute($delP, array($this->id, $sku, $plu));
-        $this->addOnloadCommand("showBootstrapAlert('#alert-area', 'success', 'Deleted entry for PLU #{$plu}')\n");
 
-        return true;
+        $resp = array('error'=>($delR === false ? 1 : 0));
+        echo json_encode($resp);
+
+        return false;
     }
 
-    public function get_id_apply_handler()
+    protected function get_id_apply_handler()
     {
         $dbc = FannieDB::get($this->config->get('OP_DB'));
         $map = new VendorSKUtoPLUModel($dbc); 
@@ -85,7 +137,7 @@ class SkuMapPage extends FannieRESTfulPage
         return true;
     }
 
-    public function get_id_sku_plu_handler()
+    protected function get_id_sku_plu_handler()
     {
         if (empty($this->sku) || empty($this->plu)) {
             return true;
@@ -94,71 +146,85 @@ class SkuMapPage extends FannieRESTfulPage
         $dbc = FannieDB::get($this->config->get('OP_DB'));
         $this->plu = BarcodeLib::padUPC($this->plu);
 
+        if ($this->updateSKU($dbc, $this->id, $this->sku, $this->plu)) {
+            $this->addOnloadCommand("showBootstrapAlert('#alert-area', 'success', 'Updated entry for SKU #{$this->sku}')\n");
+        } elseif ($this->updatePLU($dbc, $this->id, $this->sku, $this->plu)) {
+            $this->addOnloadCommand("showBootstrapAlert('#alert-area', 'success', 'Updated entry for PLU #{$this->plu}')\n");
+        } else {
+            $this->addMapping($dbc, $this->id, $this->sku, $this->plu);
+            $this->addOnloadCommand("showBootstrapAlert('#alert-area', 'success', 'Added new entry for PLU #{$this->plu}')\n");
+        }
+
+        return true;
+    }
+
+    private function updateSKU($dbc, $id, $sku, $plu)
+    {
         $skuP = $dbc->prepare('
             SELECT upc
             FROM vendorSKUtoPLU
             WHERE vendorID=?
                 AND sku=?');
-        $skuR = $dbc->execute($skuP, array($this->id, $this->sku));
+        $skuR = $dbc->execute($skuP, array($id, $sku));
         if ($skuR && $dbc->numRows($skuR) > 0) {
             $upP = $dbc->prepare('
                 UPDATE vendorSKUtoPLU
                 SET upc=?
                 WHERE vendorID=?
                     AND sku=?');
-            $upR = $dbc->execute($upP, array($this->plu, $this->id, $this->sku));
-            $this->addOnloadCommand("showBootstrapAlert('#alert-area', 'success', 'Updated entry for SKU #{$this->sku}')\n");
+            $upR = $dbc->execute($upP, array($plu, $id, $sku));
 
             return true;
+        } else {
+            return false;
         }
+    }
 
+    private function updatePLU($dbc, $id, $sku, $plu)
+    {
         $pluP = $dbc->prepare('
             SELECT sku
             FROM vendorSKUtoPLU
             WHERE vendorID=?
                 AND upc=?');
-        $pluR = $dbc->execute($pluP, array($this->id, $this->plu));
+        $pluR = $dbc->execute($pluP, array($id, $plu));
         if ($pluR && $dbc->numRows($pluR) > 0) {
             $upP = $dbc->prepare('
                 UPDATE vendorSKUtoPLU
                 SET sku=?
                 WHERE vendorID=?
                     AND upc=?');
-            $upR = $dbc->execute($upP, array($this->sku, $this->id, $this->plu));
-            $this->addOnloadCommand("showBootstrapAlert('#alert-area', 'success', 'Updated entry for PLU #{$this->plu}')\n");
-
+            $upR = $dbc->execute($upP, array($sku, $id, $plu));
             return true;
+        } else {
+            return false;
         }
+    }
 
+    private function addMapping($dbc, $id, $sku, $plu)
+    {
         $insP = $dbc->prepare('
             INSERT INTO vendorSKUtoPLU
             (vendorID, sku, upc)
             VALUES
             (?, ?, ?)');
-        $insR = $dbc->execute($insP, array($this->id, $this->sku, $this->plu));
-        $this->addOnloadCommand("showBootstrapAlert('#alert-area', 'success', 'Added new entry for PLU #{$this->plu}')\n");
-
-        return true;
+        $insR = $dbc->execute($insP, array($id, $sku, $plu));
     }
 
-    public function delete_id_view()
+    protected function get_id_apply_view()
     {
         return '<div id="alert-area"></div>' . $this->get_id_view();
     }
 
-    public function get_id_apply_view()
+    protected function get_id_sku_plu_view()
     {
         return '<div id="alert-area"></div>' . $this->get_id_view();
     }
 
-    public function get_id_sku_plu_view()
-    {
-        return '<div id="alert-area"></div>' . $this->get_id_view();
-    }
-
-    public function get_id_view()
+    protected function get_id_view()
     {
         $dbc = FannieDB::get($this->config->get('OP_DB'));
+        $this->addScript('skuMap.js');
 
         $prep = $dbc->prepare("
             SELECT m.sku,
@@ -174,10 +240,10 @@ class SkuMapPage extends FannieRESTfulPage
 
         $ret = '';
 
-        $ret .= '<form action="' . $_SERVER['PHP_SELF'] . '" method="get">';
+        $ret .= '<form action="' . filter_input(INPUT_SERVER, 'PHP_SELF') . '" method="get">';
         $ret .= '<div class="form-group form-inline">
             <label>SKU</label>
-            <input type="text" class="form-control" name="sku" placeholder="Vendor SKU" />
+            <input type="text" class="form-control" id="sku" name="sku" placeholder="Vendor SKU" />
             <label>PLU</label>
             <input type="text" class="form-control" name="plu" placeholder="Our PLU" />
             <button type="submit" class="btn btn-default">Add Entry</button>
@@ -198,38 +264,43 @@ class SkuMapPage extends FannieRESTfulPage
             </tr></thead><tbody>';
         $res = $dbc->execute($prep, array($this->id));
         while ($row = $dbc->fetchRow($res)) {
-            if (empty($row['vendorDescript'])) {
-                $row['vendorDescript'] = '<span class="alert-danger">Discontinued by vendor?</span>';
-            }
-            if (empty($row['storeDescript'])) {
-                $row['storeDescript'] = '<span class="alert-danger">Discontinued by us?</span>';
-            }
-            $ret .= sprintf('
-                <tr>
-                    <td>%s</td>
-                    <td><a href="../ItemEditorPage.php?searchupc=%s">%s</a></td>
-                    <td>%s</td>
-                    <td>%s</td>
-                    <td>
-                        <a href="?_method=delete&id=%d&sku=%s&plu=%s" 
-                        onclick="return confirm(\'Delete entry for PLU #%s?\');">%s</a>
-                    </td>
-                </tr>',
-                $row['sku'],
-                $row['upc'], $row['upc'],
-                $row['vendorDescript'],
-                $row['storeDescript'],
-                $this->id, $row['sku'], $row['upc'],
-                $row['upc'], FannieUI::deleteIcon()
-            );
-
+            $ret .= $this->rowToTable($row);
         }
 
-        $ret .= '</tbody></table>';
+        $ret .= '</tbody></table>
+            <p><a href="?print=1&id=' . $this->id . '" class="btn btn-default">Print Order Tags</a></p>';
         $this->addScript('../../src/javascript/tablesorter/jquery.tablesorter.js');
         $this->addOnloadCommand("\$('.table').tablesorter([[1,0]]);\n");
+        $this->addOnloadCommand("\$('#sku').focus();\n");
 
         return $ret;
+    }
+
+    private function rowToTable($row) 
+    {
+        if (empty($row['vendorDescript'])) {
+            $row['vendorDescript'] = '<span class="alert-danger">Discontinued by vendor?</span>';
+        }
+        if (empty($row['storeDescript'])) {
+            $row['storeDescript'] = '<span class="alert-danger">Discontinued by us?</span>';
+        }
+        return sprintf('
+            <tr>
+                <td>%s</td>
+                <td><a href="../ItemEditorPage.php?searchupc=%s">%s</a></td>
+                <td>%s</td>
+                <td>%s</td>
+                <td>
+                    <a href=""
+                    onclick="return skuMap.deleteRow(%d, \'%s\', \'%s\', this);">%s</a>
+                </td>
+            </tr>',
+            $row['sku'],
+            $row['upc'], $row['upc'],
+            $row['vendorDescript'],
+            $row['storeDescript'],
+            $this->id, $row['sku'], $row['upc'], COREPOS\Fannie\API\lib\FannieUI::deleteIcon()
+        );
     }
 
     public function css_content()
@@ -251,6 +322,17 @@ class SkuMapPage extends FannieRESTfulPage
             rebuilds the catalog from scratch. This separate mapping
             preserves SKU => UPC relationships through that rebuild.
             </p>';
+    }
+
+    public function unitTest($phpunit)
+    {
+        $this->id = 1;
+        $phpunit->assertNotEquals(0, strlen($this->get_id_apply_view()));
+        $phpunit->assertNotEquals(0, strlen($this->get_id_sku_plu_view()));
+        $phpunit->assertNotEquals(0, strlen($this->css_content()));
+        $row = array('vendorDescript'=>'', 'storeDescript'=>'', 'sku'=>'111',
+            'upc'=>'4011');
+        $phpunit->assertNotEquals(0, strlen($this->rowToTable($row)));
     }
 }
 

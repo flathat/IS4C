@@ -282,8 +282,8 @@ class CoopCredProgramEditor extends FanniePage {
             FROM {$OP}tenders
             WHERE TenderCode NOT IN ('CA','CK','CC','DC','MI','CX','TV')
             ORDER BY TenderCode";
-        $p = $dbc->prepare_statement($q);
-        $resp = $dbc->exec_statement($p);
+        $p = $dbc->prepare($q);
+        $resp = $dbc->execute($p);
         $tenderRet = "";
         $tSelected = '';
         if ($pTenderType == "{$this->dummyTenderCode}") {
@@ -349,8 +349,8 @@ class CoopCredProgramEditor extends FanniePage {
             FROM {$OP}departments
             WHERE dept_no BETWEEN $this->deptMin AND $this->deptMax
             ORDER BY dept_no";
-        $p = $dbc->prepare_statement($q);
-        $resp = $dbc->exec_statement($p);
+        $p = $dbc->prepare($q);
+        $resp = $dbc->execute($p);
         $departmentRet = "";
         $dSelected = '';
         if ($pPaymentDepartment == $this->dummyDepartment) {
@@ -394,8 +394,8 @@ class CoopCredProgramEditor extends FanniePage {
             FROM {$OP}custdata
             WHERE CardNo BETWEEN $this->bankerMin AND $this->bankerMax
             ORDER BY CardNo";
-        $p = $dbc->prepare_statement($q);
-        $resp = $dbc->exec_statement($p);
+        $p = $dbc->prepare($q);
+        $resp = $dbc->execute($p);
         $bankerRet = "";
         $dSelected = '';
         if ($pBankID == $this->dummyBanker) {
@@ -1368,8 +1368,8 @@ $ccmModel->whichDB($FANNIE_PLUGIN_SETTINGS['CoopCredDatabase']);
         $q = "SELECT programID, programName
                 FROM CCredPrograms
                 ORDER BY programID";
-        $p = $dbc->prepare_statement($q);
-        $resp = $dbc->exec_statement($p);
+        $p = $dbc->prepare($q);
+        $resp = $dbc->execute($p);
         if ($resp === false) {
             return "<p style='font-size:1.2em;'>" . 
                "Exec SQL failed: $q" . "</p>";
@@ -1524,6 +1524,5 @@ $ccmModel->whichDB($FANNIE_PLUGIN_SETTINGS['CoopCredDatabase']);
 // CoopCredProgramEditor class
 }
 
-FannieDispatch::conditionalExec(false);
+FannieDispatch::conditionalExec();
 
-?>

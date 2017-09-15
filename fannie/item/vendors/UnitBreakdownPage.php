@@ -28,15 +28,14 @@ if (!class_exists('FannieAPI')) {
 
 class UnitBreakdownPage extends FannieRESTfulPage 
 {
-    protected $title = "Fannie : Vendor Case Breakdowns";
-    protected $header = "Vendor Case Breakdowns";
+    protected $title = "Fannie : Vendor Unit Breakdowns";
+    protected $header = "Vendor Unit Breakdowns";
 
     protected $must_authenticate = true;
     protected $auth_classes = array('pricechange');
 
-    public $description = '[Vendor Case Breakdowns] manages items where the splits a package
+    public $description = '[Vendor Unit Breakdowns] manages items where the splits a package
         and sells items individually';
-    public $themed = true;
 
     public function preprocess()
     {
@@ -61,19 +60,13 @@ class UnitBreakdownPage extends FannieRESTfulPage
                 continue;
             }
             $split_factor = false;
-            $unit_size = '';
-            if (preg_match('/^\d+$/', $original->size())) {
-                $split_factor = $original->size();
-            } elseif (preg_match('/(\d+)\s*\\/\s*(.+)/', $original->size(), $matches)) {
-                $split_factor = $matches[1];
-                $unit_size = $matches[2];
-            } elseif (preg_match('/(\d+)\s*CT/', $original->size(), $matches)) {
-                $split_factor = $matches[1];
-            } elseif (preg_match('/(\d+)\s*PKT/', $original->size(), $matches)) {
-                $split_factor = $matches[1];
+            list($split_factor, $unit_size) = $obj->getSplit($original->size());
+            if ($split_factor) {
+                $obj->units($split_factor);
+                $obj->save();
             }
             if (!$split_factor) {
-                $this->addOnloadCommand("showBootstrapAlert('#alert-area', 'danger', 'Vendor SKU #" . $original->size() . " cannot be broken down');\n");
+                $this->addOnloadCommand("showBootstrapAlert('#alert-area', 'danger', 'Vendor SKU #" . $obj->sku() . ' ' . $original->size() . " cannot be broken down');\n");
                 continue;
             }
 
@@ -83,7 +76,9 @@ class UnitBreakdownPage extends FannieRESTfulPage
             $original->sku($obj->upc());
             $original->upc($obj->upc());
             $original->units(1);
-            $original->size($unit_size);
+            if ($unit_size != '') {
+                $original->size($unit_size);
+            }
             $original->cost($original->cost() / $split_factor);
             $original->saleCost($original->saleCost() / $split_factor);
             if ($original->save()) {
@@ -130,6 +125,7 @@ class UnitBreakdownPage extends FannieRESTfulPage
 
         $dbc = FannieDB::get($this->config->get('OP_DB'));
         $this->plu = BarcodeLib::padUPC($this->plu);
+        $this->sku = trim($this->sku);
 
         $skuP = $dbc->prepare('
             SELECT upc
@@ -199,9 +195,11 @@ class UnitBreakdownPage extends FannieRESTfulPage
 
         $prep = $dbc->prepare("
             SELECT m.sku,
+                v.upc AS parentUPC,
                 m.upc,
                 v.description AS vendorDescript,
-                p.description as storeDescript
+                p.description as storeDescript,
+                m.units
             FROM VendorBreakdowns AS m
                 " . DTrans::joinProducts('m') . "
                 LEFT JOIN vendorItems AS v ON v.sku=m.sku AND v.vendorID=m.vendorID
@@ -228,10 +226,11 @@ class UnitBreakdownPage extends FannieRESTfulPage
 
         $ret .= '<table class="table table-bordered">';
         $ret .= '<thead><tr>
-            <th>Vendor SKU</th>
-            <th>Our PLU</th>
-            <th>Vendor Description</th>
-            <th>Our Description</th>
+            <th>Parent SKU</th>
+            <th>Child UPC</th>
+            <th>Parent Description</th>
+            <th>Child Description</th>
+            <th>Units</th>
             <th>&nbsp;</th>
             </tr></thead><tbody>';
         $res = $dbc->execute($prep, array($this->id));
@@ -244,8 +243,9 @@ class UnitBreakdownPage extends FannieRESTfulPage
             }
             $ret .= sprintf('
                 <tr>
-                    <td>%s</td>
                     <td><a href="../ItemEditorPage.php?searchupc=%s">%s</a></td>
+                    <td><a href="../ItemEditorPage.php?searchupc=%s">%s</a></td>
+                    <td>%s</td>
                     <td>%s</td>
                     <td>%s</td>
                     <td>
@@ -253,12 +253,13 @@ class UnitBreakdownPage extends FannieRESTfulPage
                         onclick="return confirm(\'Delete entry for PLU #%s?\');">%s</a>
                     </td>
                 </tr>',
-                $row['sku'],
+                $row['parentUPC'], $row['sku'],
                 $row['upc'], $row['upc'],
                 $row['vendorDescript'],
                 $row['storeDescript'],
+                $row['units'],
                 $this->id, $row['sku'], $row['upc'],
-                $row['upc'], FannieUI::deleteIcon()
+                $row['upc'], COREPOS\Fannie\API\lib\FannieUI::deleteIcon()
             );
 
         }
@@ -268,6 +269,12 @@ class UnitBreakdownPage extends FannieRESTfulPage
         $this->addOnloadCommand("\$('.table').tablesorter([[1,0]]);\n");
 
         return $ret;
+    }
+
+    // redirect since ID is required
+    public function get_handler()
+    {
+        return 'VendorIndexPage.php';
     }
 
     public function css_content()
@@ -292,6 +299,17 @@ class UnitBreakdownPage extends FannieRESTfulPage
             and calculate their costs based on the original
             items\' unit size.
             </p>';
+    }
+
+    public function unitTest($phpunit)
+    {
+        $this->id = 1;
+        $phpunit->assertNotEquals(0, strlen($this->delete_id_view()));
+        $phpunit->assertNotEquals(0, strlen($this->get_id_sku_plu_view()));
+        $phpunit->assertNotEquals(0, strlen($this->get_id_break_view()));
+        $phpunit->assertNotEquals(0, strlen($this->css_content()));
+        $phpunit->assertNotEquals(0, strlen($this->get_id_view()));
+        $phpunit->assertNotEquals(0, strlen($this->get_handler()));
     }
 }
 

@@ -44,7 +44,7 @@ $sql = new SQLManager($FANNIE_SERVER,$FANNIE_SERVER_DBMS,$FANNIE_OP_DB,
 
 $TRANS = $FANNIE_TRANS_DB . ($FANNIE_SERVER_DBMS=="MSSQL" ? 'dbo.' : '.');
 
-$custdata = $sql->table_definition('custdata');
+$custdata = $sql->tableDefinition('custdata');
 
 $dStr = date("Y-m-01 00:00:00");
 
@@ -65,7 +65,7 @@ $susQ = "INSERT INTO suspensions
          AND YEAR(d.start_date) >= 2013) 
     )
     and c.Type='PC' and n.payments < 100
-    and c.memType in (1,3)
+    and c.memType in (1,3,5)
     and NOT EXISTS(SELECT NULL FROM suspensions as s
     WHERE s.cardno=m.card_no)";
 if (!isset($custdata['ChargeLimit'])) {
@@ -110,4 +110,3 @@ $memQ = "UPDATE meminfo as m LEFT JOIN
     where s.cardno is not null";
 $sql->query($memQ);
 
-?>

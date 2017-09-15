@@ -108,10 +108,10 @@ class PatronageTransferTool extends FanniePage {
             }
 
             $dlog = DTransactionsModel::selectDlog($this->date);
-            $q = $dbc->prepare_statement("SELECT card_no FROM $dlog WHERE trans_num=? AND
+            $q = $dbc->prepare("SELECT card_no FROM $dlog WHERE trans_num=? AND
                 tdate BETWEEN ? AND ?
                 ORDER BY card_no DESC");
-            $r = $dbc->exec_statement($q,array($this->tn,$this->date.' 00:00:00',$this->date.' 23:59:59'));
+            $r = $dbc->execute($q,array($this->tn,$this->date.' 00:00:00',$this->date.' 23:59:59'));
             if ($dbc->num_rows($r) == 0){
                 $this->errors .= "<div class=\"alert alert-error\">Error: receipt not found: " . $this->tn . "</div>"
                     ."<br /><br />"
@@ -121,9 +121,9 @@ class PatronageTransferTool extends FanniePage {
             $w = $dbc->fetchRow($r);
             $this->cn1 = is_array($w) ? $w[0] : 0;
 
-            $q = $dbc->prepare_statement("SELECT SUM(CASE WHEN trans_type in ('I','M','D') then total else 0 END)
+            $q = $dbc->prepare("SELECT SUM(CASE WHEN trans_type in ('I','M','D') then total else 0 END)
                 FROM $dlog WHERE trans_num=? AND tdate BETWEEN ? AND ?");
-            $r = $dbc->exec_statement($q,array($this->tn,$this->date.' 00:00:00',$this->date.' 23:59:59'));
+            $r = $dbc->execute($q,array($this->tn,$this->date.' 00:00:00',$this->date.' 23:59:59'));
             $w = $dbc->fetchRow($r);
             $this->amt = is_array($w) ? $w[0] : 0;
         }
@@ -278,8 +278,25 @@ class PatronageTransferTool extends FanniePage {
             just the total of the products on the receipt.
             </p>';
     }
+
+    public function unitTest($phpunit)
+    {
+        $this->errors = 'foo';
+        $this->mode = 'init';
+        $phpunit->assertEquals('foo', $this->body_content());
+        $this->errors = '';
+        $phpunit->assertNotEquals(0, strlen($this->body_content()));
+        $this->errors = 'foo';
+        $this->mode = 'confirm';
+        $phpunit->assertEquals('foo', $this->body_content());
+        $this->errors = '';
+        $this->amt = 1;
+        $this->cn1 = 1;
+        $this->cn2 = 2;
+        $this->name2 = 'JoeyJoeJoe';
+        $phpunit->assertNotEquals(0, strlen($this->body_content()));
+    }
 }
 
-FannieDispatch::conditionalExec(false);
+FannieDispatch::conditionalExec();
 
-?>

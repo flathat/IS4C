@@ -21,7 +21,7 @@
 
 *********************************************************************************/
 
-namespace COREPOS\Fannie\API\item {
+namespace COREPOS\Fannie\API\item;
 
 /**
   @class Accounting
@@ -65,7 +65,10 @@ class Accounting
     {
         return $code;
     }
-}
 
+    public static function extend($code, $store_id)
+    {
+        return $code;
+    }
 }
 

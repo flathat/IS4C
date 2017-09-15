@@ -34,7 +34,7 @@ class ProductHistoryReport extends FannieReportPage
 
     protected $title = "Fannie : Product History";
     protected $header = "Product History Report";
-    protected $report_headers = array('Date','Description', 'Price', 'Cost', 'Dept#', 'Tax', 'FS', 'Scale', 'Qty Rq\'d', 'NoDisc', 'UserID');
+    protected $report_headers = array('Date','Description', 'Price', 'Cost', 'Sale Price', 'Dept#', 'Tax', 'FS', 'WIC', 'Scale', 'Qty Rq\'d', 'NoDisc', 'UserID', 'Update Type');
     protected $required_fields = array('upc');
 
     protected $sort_direction = 1;
@@ -51,10 +51,6 @@ class ProductHistoryReport extends FannieReportPage
         }
 
         $table = 'prodUpdate';
-        $def = $dbc->tableDefinition('prodUpdate');
-        if (!isset($def['prodUpdateID'])) { // older schema
-            $table = 'prodUpdateArchive';
-        }
         $query = 'SELECT
                     upc,
                     description,
@@ -64,13 +60,16 @@ class ProductHistoryReport extends FannieReportPage
                     dept,
                     tax,
                     fs,
+                    wic,
                     scale,
                     likeCode,
                     modified,
                     user,
                     forceQty,
                     noDisc,
-                    inUse
+                    inUse,
+                    salePrice,
+                    updateType
                   FROM ' . $table . '
                   WHERE upc = ?';
         $args = array($upc);
@@ -82,28 +81,35 @@ class ProductHistoryReport extends FannieReportPage
         }
         $query .= ' ORDER BY modified DESC';
 
-        $prep = $dbc->prepare_statement($query);
-        $result = $dbc->exec_statement($prep,$args);
+        $prep = $dbc->prepare($query);
+        $result = $dbc->execute($prep,$args);
 
         $data = array();
-        while($row = $dbc->fetch_row($result)) {
-            $record = array(
-                $row['modified'],
-                $row['description'],
-                $row['price'],
-                $row['cost'],
-                $row['dept'],
-                $row['tax'],
-                $row['fs'],
-                $row['scale'],
-                $row['forceQty'],
-                $row['noDisc'],
-                $row['user'],
-            );
-            $data[] = $record;
+        while ($row = $dbc->fetchRow($result)) {
+            $data[] = $this->rowToRecord($row);
         }
 
         return $data;
+    }
+
+    private function rowToRecord($row)
+    {
+        return array(
+            $row['modified'],
+            $row['description'],
+            $row['price'],
+            $row['cost'],
+            $row['salePrice'],
+            $row['dept'],
+            $row['tax'],
+            $row['fs'],
+            $row['wic'] === null ? 'n/a' : $row['wic'],
+            $row['scale'],
+            $row['forceQty'],
+            $row['noDisc'],
+            $row['user'],
+            $row['updateType'],
+        );
     }
     
     public function form_content()
@@ -140,6 +146,14 @@ class ProductHistoryReport extends FannieReportPage
         return '<p>
             List audit log of changes to a given item.
             </p>';
+    }
+
+    public function unitTest($phpunit)
+    {
+        $data = array('modified'=>'2000-01-01', 'description'=>'test', 'price'=>1,
+            'cost'=>1, 'dept'=>1, 'tax'=>0, 'fs'=>1, 'scale'=>0, 'forceQty'=>0,
+            'noDisc'=>0, 'user'=>1234, 'wic'=>1, 'salePrice'=>0, 'updateType'=>'TEST');
+        $phpunit->assertInternalType('array', $this->rowToRecord($data));
     }
 }
 

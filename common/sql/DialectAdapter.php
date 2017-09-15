@@ -43,5 +43,7 @@ interface DialectAdapter
     public function convert($expr, $type);
     public function locate($substr, $str);
     public function concat($expressions);
+    public function setLockTimeout($seconds);
+    public function setCharSet($charset);
 }
 

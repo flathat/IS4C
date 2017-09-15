@@ -103,21 +103,40 @@ class VendorMarginsPage extends FannieRESTfulPage
     public function helpContent()
     {
         $ret = '';
-        $ret .= '<p>The form is a list of store Departments.
-            Margins greater than 0.00 entered here will override the margin
-            used for Standard Retail Price (SRP) calculation
-            for this vendor\'s items that have been assigned to the store
-            Department.';
-        $ret .= '<br />It is not necessary to set the margins here for
-            every Department the Vendor\'s items are in;
-            margins of 0.00 here will default to the store Department margin
-            for SRP calculations.';
-        $ret .= '</p>';
-        $ret .= '<p>Click the "Save" button at the bottom of the page
-            to save your changes.';
-        $ret .= '</p>';
+        if ($this->config->COOP_ID == 'WEFC_Toronto') {
+            $ret .= '<p>The form is a list of store Departments.
+                Margins greater than 0.00 entered here will override the margin
+                used for Standard Retail Price (SRP) calculation
+                for this vendor\'s items that have been assigned to the store
+                Department.';
+            $ret .= '</p>';
+            $ret .= '<p>These are the highest priority margin targets,
+                ahead of both general margin targets for POS departments
+                and margin targets for vendor-specific subcategories.';
+            $ret .= '</p>';
+            $ret .= '<p>It is not necessary to set the margins here for
+                every Department the Vendor\'s items are in;
+                margins of 0.00 here will default to the store Department margin
+                for SRP calculations.';
+            $ret .= '</p>';
+            $ret .= '<p>Click the "Save" button at the bottom of the page
+                to save your changes.';
+            $ret .= '</p>';
+        } else {
+            $ret .= '<p>Set margin targets that are specific to both a vendor and a POS department. 
+A value of zero means there is no target for this vendor & POS department combination.</p>
+<p>These are the highest priority margin targets ahead of both general margin targets for
+POS departments and margin targets for vendor-specific subcategories.</p>';
+        }
         return $ret;
     }
+
+    public function unitTest($phpunit)
+    {
+        $this->id = 1;
+        $phpunit->assertNotEquals(0, strlen($this->get_id_view()));
+    }
+
 }
 
 FannieDispatch::conditionalExec();

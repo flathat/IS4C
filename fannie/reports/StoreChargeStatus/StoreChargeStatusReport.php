@@ -509,12 +509,12 @@ class StoreChargeStatusReport extends FannieReportPage
         // summary
         }
 
-        $statement = $dbc->prepare_statement("$query");
+        $statement = $dbc->prepare("$query");
         if ($statement === False) {
             $ret[] = "***Error preparing: $query";
             return $ret;
         }
-        $results = $dbc->exec_statement($statement,$args);
+        $results = $dbc->execute($statement,$args);
         if ($results === False) {
             $allArgs = implode(' : ',$args);
             $ret[] = "***Error executing: $query with: $allArgs";
@@ -534,7 +534,7 @@ class StoreChargeStatusReport extends FannieReportPage
             $subtotalPayments = 0;
             $subtotalNet = 0;
             $rowCount = 0;
-            while ($row = $dbc->fetch_array($results)) {
+            while ($row = $dbc->fetchArray($results)) {
                 // If member has changed and a per-member subtotal is wanted
                 //  put that out.
                 if ($this->subTotals == True && $row['CardNo'] != $lastCardNo && $lastCardNo != 0) {
@@ -608,7 +608,7 @@ class StoreChargeStatusReport extends FannieReportPage
             $rowCount = 0;
             $dateFromFull = "$this->dateFrom 00:00:00";
             $dateToFull = "$this->dateTo 23:59:59";
-            while ($row = $dbc->fetch_array($results)) {
+            while ($row = $dbc->fetchArray($results)) {
                 if ($row['CardNo'] != $lastCardNo && $lastCardNo != 0) {
                     if ($this->placeholders || ($record[2] != 0.00 || $record[3] != 0.00)) {
                         $record[2] = sprintf("%.2f",$record[2]);

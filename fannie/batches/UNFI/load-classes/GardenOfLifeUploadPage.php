@@ -26,8 +26,8 @@ if (!class_exists('FannieAPI')) {
     include_once($FANNIE_ROOT.'classlib2.0/FannieAPI.php');
 }
 
-class GardenOfLifeUploadPage extends \COREPOS\Fannie\API\FannieUploadPage {
-
+class GardenOfLifeUploadPage extends \COREPOS\Fannie\API\FannieUploadPage 
+{
     public $title = "Fannie - Garden of Life Prices";
     public $header = "Upload Garden of Life price file";
     public $themed = true;
@@ -37,37 +37,30 @@ class GardenOfLifeUploadPage extends \COREPOS\Fannie\API\FannieUploadPage {
 
     protected $preview_opts = array(
         'upc' => array(
-            'name' => 'upc',
             'display_name' => 'UPC *',
             'default' => 7,
             'required' => true
         ),
         'desc' => array(
-            'name' => 'desc',
             'display_name' => 'Description *',
             'default' => 0,
             'required' => true
         ),
         'sku' => array(
-            'name' => 'sku',
             'display_name' => 'SKU *',
             'default' => 6,
             'required' => true
         ),
         'cost' => array(
-            'name' => 'cost',
             'display_name' => 'Case Cost (Reg) *',
             'default' => 8,
             'required' => true
         ),
         'size' => array(
-            'name' => 'size',
             'display_name' => 'Unit Size',
             'default' => 4,
-            'required' => false
         ),
         'type' => array(
-            'name' => 'type',
             'display_name' => 'Unit Type',
             'default' => 5,
             'required' => true
@@ -77,7 +70,7 @@ class GardenOfLifeUploadPage extends \COREPOS\Fannie\API\FannieUploadPage {
     protected $use_splits = false;
     protected $use_js = false;
 
-    function process_file($linedata)
+    function process_file($linedata, $indexes)
     {
         $dbc = $this->connection;
         $dbc->selectDB($this->config->get('OP_DB'));
@@ -94,27 +87,7 @@ class GardenOfLifeUploadPage extends \COREPOS\Fannie\API\FannieUploadPage {
         $idW = $dbc->fetchRow($idR);
         $VENDOR_ID = $idW['vendorID'];
 
-        $clean = $dbc->prepare('
-            DELETE 
-            FROM vendorItems
-            WHERE 
-            vendorID=?
-                AND upc NOT IN (
-                    SELECT upc
-                    FROM VendorBreakdowns
-                    WHERE vendorID=?
-                )');
-        $dbc->execute($clean, array($VENDOR_ID, $VENDOR_ID));
-
-        $SKU = $this->get_column_index('sku');
-        $BRAND = $this->get_column_index('brand');
-        $DESCRIPTION = $this->get_column_index('desc');
-        $UPC = $this->get_column_index('upc');
-        $REG_COST = $this->get_column_index('cost');
-        $SIZE = $this->get_column_index('size');
-        $TYPE = $this->get_column_index('type');
-
-        $extraP = $dbc->prepare_statement("update prodExtra set cost=? where upc=?");
+        $extraP = $dbc->prepare("update prodExtra set cost=? where upc=?");
         $prodP = $dbc->prepare('
             UPDATE products
             SET cost=?,
@@ -157,22 +130,22 @@ class GardenOfLifeUploadPage extends \COREPOS\Fannie\API\FannieUploadPage {
         foreach ($linedata as $data) {
             if (!is_array($data)) continue;
 
-            if (!isset($data[$UPC])) continue;
+            if (!isset($data[$indexes['upc']])) continue;
 
             // grab data from appropriate columns
-            $sku = ($SKU !== false) ? $data[$SKU] : '';
-            $description = $data[$DESCRIPTION];
-            $upc = str_replace(' ', '', $data[$UPC]);
+            $sku = ($indexes['sku'] !== false) ? $data[$indexes['sku']] : '';
+            $description = $data[$indexes['desc']];
+            $upc = str_replace(' ', '', $data[$indexes['upc']]);
             $upc = substr($upc, 0, strlen($upc)-1);
             $upc = BarcodeLib::padUPC($upc);
-            $size = ($SIZE !== false) ? $data[$SIZE] : '';
+            $size = ($indexes['size'] !== false) ? $data[$indexes['size']] : '';
             if (is_numeric($size)) {
                 $size .= 'CT';
             }
-            $type = strtolower($data[$TYPE]);
+            $type = strtolower($data[$indexes['type']]);
             $qty = 1;
             // zeroes isn't a real item, skip it
-            $reg = trim($data[$REG_COST]);
+            $reg = trim($data[$indexes['cost']]);
             // blank spreadsheet cell
             // can't process items w/o price (usually promos/samples anyway)
             if (empty($reg)) {
@@ -182,7 +155,6 @@ class GardenOfLifeUploadPage extends \COREPOS\Fannie\API\FannieUploadPage {
             // syntax fixes. kill apostrophes in text fields,
             // trim $ off amounts as well as commas for the
             // occasional > $1,000 item
-            $description = str_replace("'","",$description);
             $reg = str_replace('$',"",$reg);
             $reg = str_replace(",","",$reg);
             $reg = trim($reg);
@@ -241,14 +213,13 @@ class GardenOfLifeUploadPage extends \COREPOS\Fannie\API\FannieUploadPage {
 
     function preview_content()
     {
-        return '';  
         return '<input type="checkbox" name="rm_cds" checked /> Remove check digits';
     }
 
     function results_content()
     {
         $ret = "<p>Price data import complete</p>";
-        $ret .= '<p><a href="'.$_SERVER['PHP_SELF'].'">Upload Another</a></p>';
+        $ret .= '<p><a href="'.filter_input(INPUT_SERVER, 'PHP_SELF').'">Upload Another</a></p>';
 
         return $ret;
     }

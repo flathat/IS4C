@@ -26,122 +26,119 @@ if (!class_exists('FannieAPI')) {
     include_once($FANNIE_ROOT.'classlib2.0/FannieAPI.php');
 }
 
-class UnfiUploadPage extends \COREPOS\Fannie\API\FannieUploadPage {
-
+class UnfiUploadPage extends \COREPOS\Fannie\API\FannieUploadPage 
+{
     public $title = "Fannie - UNFI Prices";
     public $header = "Upload UNFI price file";
-    public $themed = true;
 
     public $description = '[UNFI Catalog Import] specialized vendor import tool. Column choices
     default to UNFI price file layout.';
 
     protected $preview_opts = array(
         'upc' => array(
-            'name' => 'upc',
             'display_name' => 'UPC *',
             'default' => 14,
             'required' => True
         ),
         'srp' => array(
-            'name' => 'srp',
             'display_name' => 'SRP *',
             'default' => 16,
             'required' => True
         ),
         'brand' => array(
-            'name' => 'brand',
             'display_name' => 'Brand *',
             'default' => 2,
             'required' => True
         ),
         'desc' => array(
-            'name' => 'desc',
             'display_name' => 'Description *',
             'default' => 6,
             'required' => True
         ),
         'sku' => array(
-            'name' => 'sku',
             'display_name' => 'SKU *',
             'default' => 1,
             'required' => true
         ),
         'qty' => array(
-            'name' => 'qty',
             'display_name' => 'Case Qty *',
             'default' => 3,
             'required' => True
         ),
         'size' => array(
-            'name' => 'size',
             'display_name' => 'Unit Size',
             'default' => 4,
-            'required' => False
         ),
         'cost' => array(
-            'name' => 'cost',
             'display_name' => 'Case Cost (Reg) *',
             'default' => 8,
             'required' => True
         ),
         'saleCost' => array(
-            'name' => 'saleCost',
             'display_name' => 'Case Cost (Sale)',
             'default' => 12,
-            'required' => false
         ),
         'cat' => array(
-            'name' => 'cat',
             'display_name' => 'UNFI Category # *',
             'default' => 5,
             'required' => True
         ),
         'flags' => array(
-            'name' => 'flags',
             'display_name' => 'Flags',
             'default' => 20,
-            'required' => false
         ),
     );
 
-    protected $use_splits = false;
-    protected $use_js = true;
+    protected $use_splits = true;
+    protected $use_js = false;
+    protected $vendor_name = 'UNFI';
 
-    function process_file($linedata)
+    protected function getVendorID()
+    {
+        $idP = $this->connection->prepare("SELECT vendorID FROM vendors WHERE vendorName=? ORDER BY vendorID");
+        $vid = $this->connection->getValue($idP, array($this->vendor_name));
+
+        return $vid;
+    }
+
+    function process_file($linedata, $indexes)
     {
         global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
-        $idP = $dbc->prepare_statement("SELECT vendorID FROM vendors WHERE vendorName='UNFI' ORDER BY vendorID");
-        $idR = $dbc->exec_statement($idP);
-        if ($dbc->num_rows($idR) == 0){
+        $VENDOR_ID = $this->getVendorID();
+        if ($VENDOR_ID === false) {
             $this->error_details = 'Cannot find vendor';
-            return False;
+            return false;
         }
-        $idW = $dbc->fetchRow($idR);
-        $VENDOR_ID = $idW['vendorID'];
-
-        $SKU = $this->get_column_index('sku');
-        $BRAND = $this->get_column_index('brand');
-        $DESCRIPTION = $this->get_column_index('desc');
-        $QTY = $this->get_column_index('qty');
-        $SIZE1 = $this->get_column_index('size');
-        $UPC = $this->get_column_index('upc');
-        $CATEGORY = $this->get_column_index('cat');
-        $REG_COST = $this->get_column_index('cost');
-        $NET_COST = $this->get_column_index('saleCost');
-        $SRP = $this->get_column_index('srp');
-        $FLAGS = $this->get_column_index('flags');
 
         // PLU items have different internal UPCs
         // map vendor SKUs to the internal PLUs
         $SKU_TO_PLU_MAP = array();
-        $skusP = $dbc->prepare_statement('SELECT sku, upc FROM vendorSKUtoPLU WHERE vendorID=?');
+        $skusP = $dbc->prepare('SELECT sku, upc, isPrimary, multiplier FROM VendorAliases WHERE vendorID=?');
         $skusR = $dbc->execute($skusP, array($VENDOR_ID));
         while($skusW = $dbc->fetch_row($skusR)) {
-            $SKU_TO_PLU_MAP[$skusW['sku']] = $skusW['upc'];
+            if (!isset($SKU_TO_PLU_MAP[$skusW['sku']])) {
+                $SKU_TO_PLU_MAP[$skusW['sku']] = array();
+            }
+            $SKU_TO_PLU_MAP[$skusW['sku']][] = $skusW;
         }
 
-        $extraP = $dbc->prepare_statement("update prodExtra set cost=? where upc=?");
+        // Repack items that are mapped to bulk items
+        $LINKED_MAP = array();
+        $linkP = $dbc->prepare('
+            SELECT p.upc,
+                s.plu
+            FROM products AS p 
+                INNER JOIN scaleItems AS s ON p.upc=s.linkedPLU
+            WHERE p.default_vendor_id=?
+            GROUP BY p.upc,
+                s.plu');
+        $linkR = $dbc->execute($linkP, array($VENDOR_ID));
+        while ($linkW = $dbc->fetchRow($linkR)) {
+            $LINKED_MAP[$linkW['upc']] = $linkW['plu'];
+        }
+
+        $extraP = $dbc->prepare("update prodExtra set cost=? where upc=?");
         $prodP = $dbc->prepare('
             UPDATE products
             SET cost=?,
@@ -178,63 +175,54 @@ class UnfiUploadPage extends \COREPOS\Fannie\API\FannieUploadPage {
                 ?
             )");
         $srpP = false;
-        if ($dbc->tableExists('vendorSRPs')) {
-            $srpP = $dbc->prepare_statement("INSERT INTO vendorSRPs (vendorID, upc, srp) VALUES (?,?,?)");
+        if (false && $dbc->tableExists('vendorSRPs')) {
+            $srpP = $dbc->prepare("INSERT INTO vendorSRPs (vendorID, upc, srp) VALUES (?,?,?)");
         }
         $updated_upcs = array();
         $rounder = new \COREPOS\Fannie\API\item\PriceRounder();
 
+        $dbc->startTransaction();
+
         foreach($linedata as $data) {
             if (!is_array($data)) continue;
 
-            if (!isset($data[$UPC])) continue;
+            if (!isset($data[$indexes['upc']])) continue;
 
             // grab data from appropriate columns
-            $sku = ($SKU !== false) ? $data[$SKU] : '';
+            $sku = ($indexes['sku'] !== false) ? $data[$indexes['sku']] : '';
             $sku = str_pad($sku, 7, '0', STR_PAD_LEFT);
-            $brand = $data[$BRAND];
-            $description = $data[$DESCRIPTION];
-            $qty = $data[$QTY];
-            $size = ($SIZE1 !== false) ? $data[$SIZE1] : '';
-            $prodInfo = ($FLAGS !== false) ? $data[$FLAGS] : '';
+            $brand = $data[$indexes['brand']];
+            $description = $data[$indexes['desc']];
+            $qty = $data[$indexes['qty']];
+            $size = ($indexes['size'] !== false) ? $data[$indexes['size']] : '';
+            $prodInfo = ($indexes['flags'] !== false) ? $data[$indexes['flags']] : '';
             $flag = 0;
-            $upc = substr($data[$UPC],0,13);
+            $upc = substr($data[$indexes['upc']],0,13);
             // zeroes isn't a real item, skip it
             if ($upc == "0000000000000")
                 continue;
+            $aliases = array(array('upc'=>$upc, 'multiplier'=>1, 'isPrimary'=>1));
             if (isset($SKU_TO_PLU_MAP[$sku])) {
-                $upc = $SKU_TO_PLU_MAP[$sku];
-                if (substr($size, -1) == '#' && substr($upc, 0, 3) == '002') {
-                    $qty = trim($size, '# ');
-                    $size = '#';
-                } elseif (substr($size, -2) == 'LB' && substr($upc, 0, 3) == '002') {
-                    $qty = trim($size, 'LB ');
-                    $size = 'LB';
-                }
+                $aliases = $SKU_TO_PLU_MAP[$sku];
             }
-            $category = $data[$CATEGORY];
-            $reg = trim($data[$REG_COST]);
-            $net = ($NET_COST !== false) ? trim($data[$NET_COST]) : 0.00;
+            $category = $data[$indexes['cat']];
+            $reg = trim($data[$indexes['cost']]);
+            $net = ($indexes['saleCost'] !== false) ? trim($data[$indexes['saleCost']]) : 0.00;
             // blank spreadsheet cell
             if (empty($net)) {
                 $net = 0;
             }
-            $srp = trim($data[$SRP]);
+            $srp = trim($data[$indexes['srp']]);
             // can't process items w/o price (usually promos/samples anyway)
             if (empty($reg) or empty($srp))
                 continue;
 
-            // syntax fixes. kill apostrophes in text fields,
+            // syntax fixes. 
             // trim $ off amounts as well as commas for the
             // occasional > $1,000 item
-            $brand = str_replace("'","",$brand);
-            $description = str_replace("'","",$description);
-            $reg = str_replace('$',"",$reg);
-            $reg = str_replace(",","",$reg);
-            $net = str_replace('$',"",$net);
-            $net = str_replace(",","",$net);
-            $srp = str_replace('$',"",$srp);
-            $srp = str_replace(",","",$srp);
+            $reg = $this->sanitizePrice($reg);
+            $net = $this->sanitizePrice($net);
+            $srp = $this->sanitizePrice($srp);
 
             // sale price isn't really a discount
             if ($reg == $net) {
@@ -249,52 +237,82 @@ class UnfiUploadPage extends \COREPOS\Fannie\API\FannieUploadPage {
                 continue;
             }
 
-            $srp = $rounder->round($srp);
-
-            // set organic flag on OG1 (100%) or OG2 (95%)
-            $organic_flag = 0;
-            if (strstr($prodInfo, 'OG2') || strstr($prodInfo, 'OG1')) {
-                $organic_flag = 17;
-            }
-            // set gluten-free flag on g
-            $gf_flag = 0;
-            if (strstr($prodInfo, 'g')) {
-                $gf_flag = 18;
-            }
+            list($organic_flag, $gf_flag) = $this->getFlags($prodInfo);
 
             // need unit cost, not case cost
             $reg_unit = $reg / $qty;
             $net_unit = $net / $qty;
 
-            $dbc->exec_statement($extraP, array($reg_unit,$upc));
-            $dbc->exec_statement($prodP, array($reg_unit,$organic_flag,$gf_flag,$upc,$VENDOR_ID));
-            $updated_upcs[] = $upc;
+            foreach ($aliases as $alias) {
 
-            $args = array(
-                $brand, 
-                $sku === false ? '' : $sku, 
-                $size === false ? '' : $size,
-                $upc,
-                $qty,
-                $reg_unit,
-                $description,
-                $category,
-                $VENDOR_ID,
-                $net_unit,
-                date('Y-m-d H:i:s'),
-                $srp
-            );
-            $dbc->execute($itemP,$args);
+                if (substr($size, -1) == '#' && substr($alias['upc'], 0, 3) == '002') {
+                    $qty = trim($size, '# ');
+                    $reg_unit = $reg / $qty;
+                    $net_unit = $net / $qty;
+                    $size = '#';
+                } elseif (substr($size, -2) == 'LB' && substr($alias['upc'], 0, 3) == '002') {
+                    $qty = trim($size, 'LB ');
+                    $reg_unit = $reg / $qty;
+                    $net_unit = $net / $qty;
+                    $size = 'LB';
+                }
 
-            if ($srpP) {
-                $dbc->exec_statement($srpP,array($VENDOR_ID,$upc,$srp));
+                $dbc->execute($extraP, array($reg_unit*$alias['multiplier'],$alias['upc']));
+                $dbc->execute($prodP, array($reg_unit*$alias['multiplier'],$organic_flag,$gf_flag,$alias['upc'],$VENDOR_ID));
+                $updated_upcs[] = $alias['upc'];
+
+                $srp = $rounder->round($srp * $alias['multiplier']);
+
+                $args = array(
+                    $brand, 
+                    $alias['isPrimary'] ? $sku : $alias['upc'],
+                    $size === false ? '' : $size,
+                    $alias['upc'],
+                    $qty,
+                    $reg_unit*$alias['multiplier'],
+                    $description,
+                    $category,
+                    $VENDOR_ID,
+                    $net_unit*$alias['multiplier'],
+                    date('Y-m-d H:i:s'),
+                    $srp
+                );
+                $dbc->execute($itemP,$args);
+
+                if ($srpP) {
+                    $dbc->execute($srpP,array($VENDOR_ID,$alias['upc'],$srp));
+                }
             }
         }
 
         $updateModel = new ProdUpdateModel($dbc);
         $updateModel->logManyUpdates($updated_upcs, ProdUpdateModel::UPDATE_EDIT);
 
+        $dbc->commitTransaction();
+
         return true;
+    }
+
+    protected function sanitizePrice($reg)
+    {
+        $reg = str_replace('$',"",$reg);
+        return str_replace(",","",$reg);
+    }
+
+    protected function getFlags($prodInfo)
+    {
+        // set organic flag on OG1 (100%) or OG2 (95%)
+        $organic_flag = 0;
+        if (strstr($prodInfo, 'O2') || strstr($prodInfo, 'O1')) {
+            $organic_flag = (1 << (17 - 1));
+        }
+        // set gluten-free flag on g
+        $gf_flag = 0;
+        if (strstr($prodInfo, 'g')) {
+            $organic_flag = (1 << (18 - 1));
+        }
+
+        return array($organic_flag, $gf_flag);
     }
 
     /* clear tables before processing */
@@ -302,19 +320,16 @@ class UnfiUploadPage extends \COREPOS\Fannie\API\FannieUploadPage {
         global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
 
-        $idP = $dbc->prepare_statement("SELECT vendorID FROM vendors WHERE vendorName='UNFI' ORDER BY vendorID");
-        $idR = $dbc->exec_statement($idP);
-        if ($dbc->num_rows($idR) == 0){
+        $VENDOR_ID = $this->getVendorID();
+        if ($VENDOR_ID === false) {
             $this->error_details = 'Cannot find vendor';
-            return False;
+            return false;
         }
-        $idW = $dbc->fetchRow($idR);
-        $VENDOR_ID = $idW['vendorID'];
 
-        $viP = $dbc->prepare_statement("DELETE FROM vendorItems WHERE vendorID=?");
-        $vsP = $dbc->prepare_statement("DELETE FROM vendorSRPs WHERE vendorID=?");
-        $dbc->exec_statement($viP,array($VENDOR_ID));
-        $dbc->exec_statement($vsP,array($VENDOR_ID));
+        $viP = $dbc->prepare("DELETE FROM vendorItems WHERE vendorID=?");
+        $vsP = $dbc->prepare("DELETE FROM vendorSRPs WHERE vendorID=?");
+        $dbc->execute($viP,array($VENDOR_ID));
+        $dbc->execute($vsP,array($VENDOR_ID));
     }
 
     function preview_content(){
@@ -322,15 +337,14 @@ class UnfiUploadPage extends \COREPOS\Fannie\API\FannieUploadPage {
         return '<input type="checkbox" name="rm_cds" checked /> Remove check digits';
     }
 
-    function results_content(){
-        global $FANNIE_OP_DB;
-        $dbc = FannieDB::get($FANNIE_OP_DB);
+    function results_content()
+    {
         $ret = "<p>Price data import complete</p>";
-        $ret .= '<p><a href="'.$_SERVER['PHP_SELF'].'">Upload Another</a></p>';
+        $ret .= '<p><a href="'.filter_input(INPUT_SEVER, 'PHP_SELF').'">Upload Another</a></p>';
 
         return $ret;
     }
 }
 
-FannieDispatch::conditionalExec(false);
+FannieDispatch::conditionalExec();
 

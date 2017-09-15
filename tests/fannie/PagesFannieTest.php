@@ -11,7 +11,7 @@ class PagesFannieTest extends PHPUnit_Framework_TestCase
         $config = FannieConfig::factory();
         $logger = new FannieLogger();
         $op_db = $config->get('OP_DB');
-        $dbc = FannieDB::get($op_db);
+        $dbc = FannieDB::forceReconnect(FannieConfig::config('OP_DB'));
         $dbc->throwOnFailure(true);
 
         foreach ($reports as $report_class) {
@@ -20,6 +20,7 @@ class PagesFannieTest extends PHPUnit_Framework_TestCase
             $obj->setLogger($logger);
             $dbc->selectDB($op_db);
             $obj->setConnection($dbc);
+            $obj = FannieDispatch::twig($obj);
 
             $pre = $obj->preprocess();
             $this->assertInternalType('boolean',$pre);
@@ -49,23 +50,26 @@ class PagesFannieTest extends PHPUnit_Framework_TestCase
     public function testPages()
     {
         $pages = FannieAPI::listModules('FanniePage', true);
+        $pages[] = 'COREPOS\\Fannie\\API\\FannieCRUDPage';
         $config = FannieConfig::factory();
         $logger = new FannieLogger();
         $op_db = $config->get('OP_DB');
         $dbc = FannieDB::get($op_db);
         $dbc->throwOnFailure(true);
 
+        $speed = array();
         foreach ($pages as $page_class) {
             $obj = new $page_class();
             $obj->setConfig($config);
             $obj->setLogger($logger);
             $dbc->selectDB($op_db);
             $obj->setConnection($dbc);
+            $obj = FannieDispatch::twig($obj);
             if ($page_class == 'WfcHtViewSalaryPage') continue; // header/redirect problem
 
             ob_start();
             $pre = $obj->preprocess();
-            ob_end_clean();
+            ob_get_clean();
             $this->assertInternalType('boolean',$pre);
 
             $help = $obj->helpContent();
@@ -74,8 +78,74 @@ class PagesFannieTest extends PHPUnit_Framework_TestCase
             $auth = $obj->checkAuth();
             $this->assertInternalType('boolean',$pre);
 
+            $t1 = microtime(true);
             $obj->unitTest($this);
+            $elapse = microtime(true)-$t1;
+            $speed[$page_class] = $elapse;
         }
+        arsort($speed);
+        var_dump($speed);
+    }
+
+    public function testBase()
+    {
+        $obj = new FanniePage();
+        $config = FannieConfig::factory();
+        $logger = new FannieLogger();
+        $op_db = $config->get('OP_DB');
+        $dbc = FannieDB::get($op_db);
+        $obj->setConfig($config);
+        $obj->setLogger($logger);
+        $dbc->selectDB($op_db);
+        $obj->setConnection($dbc);
+        
+        $this->assertEquals($obj->getHeader(), $obj->get_header());
+        $this->assertEquals($obj->checkAuth(), $obj->check_auth());
+
+        // lists page-draw time. may differ across runs
+        $this->assertNotEquals(0, $obj->getFooter());
+        $this->assertNotEquals(0, $obj->get_footer());
+
+        $obj = new FannieReportPage();
+        $obj->setConfig($config);
+        $obj->setLogger($logger);
+        $dbc->selectDB($op_db);
+        $obj->setConnection($dbc);
+        $obj->baseUnitTest($this);
+
+        $obj = new COREPOS\Fannie\API\FannieCRUDPage();
+        $obj->setConfig($config);
+        $obj->setLogger($logger);
+        $dbc->selectDB($op_db);
+        $obj->setConnection($dbc);
+        $obj->baseUnitTest($this);
+
+        $obj = new COREPOS\Fannie\API\InstallPage();
+        $obj->setConfig($config);
+        $obj->setLogger($logger);
+        $dbc->selectDB($op_db);
+        $obj->setConnection($dbc);
+        /*
+        $obj->themed = true;
+        $this->assertNotEquals(0, strlen($obj->getHeader()));
+        $this->assertNotEquals(0, strlen($obj->getFooter()));
+        $config->set('FANNIE_WINDOW_DRESSING', true);
+        $obj->themed = false;
+        $this->assertNotEquals(0, strlen($obj->getHeader()));
+        $this->assertNotEquals(0, strlen($obj->getFooter()));
+        $config->set('FANNIE_WINDOW_DRESSING', false);
+        $this->assertNotEquals(0, strlen($obj->getHeader()));
+        $this->assertNotEquals(0, strlen($obj->getFooter()));
+        */
+    }
+
+    public function testMisc()
+    {
+        if (!class_exists('SigImage')) {
+            include(dirname(__FILE__) . '/../../fannie/admin/LookupReceipt/SigImage.php');
+        }
+        $s = new SigImage();
+        $s->unitTest($this);
     }
 }
 

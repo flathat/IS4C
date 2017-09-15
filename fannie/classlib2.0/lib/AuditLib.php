@@ -21,7 +21,10 @@
 
 *********************************************************************************/
 
-namespace COREPOS\Fannie\API\lib {
+namespace COREPOS\Fannie\API\lib;
+use \FannieDB;
+use \FannieConfig;
+use \FannieAuth;
 
 /**
   @class AuditLib
@@ -41,8 +44,8 @@ class AuditLib
     */
     public static function itemUpdate($upc, $likecode=false)
     {
-        $conf = \FannieConfig::factory();
-        $dbc = \FannieDB::getReadOnly($conf->get('OP_DB'));
+        $conf = FannieConfig::factory();
+        $dbc = FannieDB::getReadOnly($conf->get('OP_DB'));
 
         $product = new \ProductsModel($dbc);
         $product->upc($upc);
@@ -53,7 +56,7 @@ class AuditLib
 
         $message = "Item $upc ($desc) has been changed\n";  
         $message .= "Price: " . $product->normal_price() . "\n";
-        $taxQ = $dbc->prepare_statement('SELECT description FROM taxrates WHERE id=?');
+        $taxQ = $dbc->prepare('SELECT description FROM taxrates WHERE id=?');
         $taxR = $dbc->execute($taxQ, array($product->tax()));
         $taxname = 'No Tax';
         if ($dbc->num_rows($taxR) > 0) {
@@ -70,10 +73,10 @@ class AuditLib
         $message .= "\n";
         $message .= "Adjust this item?\n";
         $url = $conf->get('URL');
-        $server_name = filter_input(INPUT_SERVER, 'SERVER_NAME');
+        $server_name = $conf->get('HTTP_HOST');
         $message .= "http://{$server_name}/{$url}item/ItemEditorPage.php?searchupc=$upc\n";
         $message .= "\n";
-        $username = \FannieAuth::checkLogin();
+        $username = FannieAuth::checkLogin();
         if (!$username) {
             $username = 'unknown';
         }
@@ -92,8 +95,8 @@ class AuditLib
 
     static public function batchNotification($batchID, $upc, $type, $is_likecode=false)
     {
-        $conf = \FannieConfig::factory();
-        $dbc = \FannieDB::getReadOnly($conf->get('OP_DB'));
+        $conf = FannieConfig::factory();
+        $dbc = FannieDB::getReadOnly($conf->get('OP_DB'));
 
         $likecode = '';
         $desc = '';
@@ -173,13 +176,13 @@ class AuditLib
         $message .= "\n";
         $message .= "View this batch:\n";
         $url = $conf->get('URL');
-        $server_name = filter_input(INPUT_SERVER, 'SERVER_NAME');
+        $server_name = $conf->get('HTTP_HOST');
         $message .= "http://{$server_name}{$url}batches/newbatch/EditBatchPage.php?id={$batchID}\n";
         $message .= "\n";
         $message .= "View this item:\n";
         $message .= "http://{$server_name}/{$url}item/ItemEditorPage.php?searchupc=$upc\n";
         $message .= "\n";
-        $username = \FannieAuth::checkLogin();
+        $username = FannieAuth::checkLogin();
         if (!$username) {
             $username = 'unknown';
         }
@@ -199,8 +202,8 @@ class AuditLib
     */
     public static function getAddresses($dept)
     {
-        $conf = \FannieConfig::factory();
-        $dbc = \FannieDB::getReadOnly($conf->get('OP_DB'));
+        $conf = FannieConfig::factory();
+        $dbc = FannieDB::getReadOnly($conf->get('OP_DB'));
         
         $query = 'SELECT superID from superdepts WHERE dept_ID=? GROUP BY superID';
         $prep = $dbc->prepare($query);
@@ -223,11 +226,5 @@ class AuditLib
 
         return ($emails === '') ? false : $emails;
     }
-}
-
-}
-
-namespace {
-    class AuditLib extends \COREPOS\Fannie\API\lib\AuditLib {}
 }
 

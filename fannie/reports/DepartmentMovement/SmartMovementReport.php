@@ -63,7 +63,7 @@ class SmartMovementReport extends FannieReportPage
 
         $dates_form = '<form method="post" action="' . $_SERVER['PHP_SELF'] . '">';
         foreach ($_GET as $key => $value) {
-            if ($key != 'date1' && $key != 'date2') {
+            if ($key != 'date1' && $key != 'date2' && $key != 'store') {
                 if (is_array($value)) {
                     foreach ($value as $v) {
                         $dates_form .= sprintf('<input type="hidden" name="%s[]" value="%s" />', $key, $v);
@@ -74,7 +74,7 @@ class SmartMovementReport extends FannieReportPage
             }
         }
         foreach ($_POST as $key => $value) {
-            if ($key != 'date1' && $key != 'date2') {
+            if ($key != 'date1' && $key != 'date2' && $key != 'store') {
                 if (is_array($value)) {
                     foreach ($value as $v) {
                         $dates_form .= sprintf('<input type="hidden" name="%s[]" value="%s" />', $key, $v);
@@ -84,12 +84,14 @@ class SmartMovementReport extends FannieReportPage
                 }
             }
         }
+        $stores = FormLib::storePicker();
         $dates_form .= '
             <label>Start Date</label>
             <input class="date-field" type="text" name="date1" value="' . FormLib::get('date1') . '" /> 
             <label>End Date</label>
             <input class="date-field" type="text" name="date2" value="' . FormLib::get('date2') . '" /> 
             <input type="hidden" name="excel" value="" id="excel" />
+            ' . $stores['html'] . '
             <button type="submit" onclick="$(\'#excel\').val(\'\');return true;">Change Dates</button>
             <button type="submit" onclick="$(\'#excel\').val(\'csv\');return true;">Download</button>
             </form>';
@@ -109,7 +111,7 @@ class SmartMovementReport extends FannieReportPage
             case 'PLU':
                 $query = "
                     SELECT t.upc,
-                        COALESCE(p.brand,'') as brand,
+                        COALESCE(p.brand, '') AS brand,
                         CASE WHEN p.description IS NULL THEN t.description ELSE p.description END as description, 
                         SUM(CASE WHEN trans_status IN('','0') THEN 1 WHEN trans_status='V' THEN -1 ELSE 0 END) as rings,"
                         . DTrans::sumQuantity('t')." as qty,
@@ -117,9 +119,11 @@ class SmartMovementReport extends FannieReportPage
                         t.department,
                         d.dept_name,
                         m.super_name,
-                        COALESCE(v.vendorName,x.distributor) AS distributor
+                        COALESCE(v.vendorName,x.distributor) AS distributor,
+                        i.sku
                     " . $from_where['query'] . "
                     GROUP BY t.upc,
+                        COALESCE(p.brand, ''),
                         CASE WHEN p.description IS NULL THEN t.description ELSE p.description END,
                         CASE WHEN t.trans_status='R' THEN 'Refund' ELSE 'Sale' END,
                         t.department,
@@ -191,6 +195,7 @@ class SmartMovementReport extends FannieReportPage
                         $row['dept_name'],
                         $row['super_name'],
                         $row['distributor'],
+                        $row['sku'] == $row['upc'] ? '' : $row['sku'],
                     );
                     break;
                 case 'Department':
@@ -229,8 +234,8 @@ class SmartMovementReport extends FannieReportPage
         switch ($this->mode) {
             case 'PLU':
                 $this->report_headers = array('UPC','Brand','Description','Rings','Qty','$',
-                    'Dept#','Department','Super','Vendor');
-                $this->sort_column = 5;
+                    'Dept#','Department','Super','Vendor', 'SKU');
+                $this->sort_column = 4;
                 $this->sort_direction = 1;
                 $sumQty = 0.0;
                 $sumSales = 0.0;

@@ -21,6 +21,8 @@
 
 *********************************************************************************/
 
+use COREPOS\Fannie\API\lib\Store;
+
 include(dirname(__FILE__) . '/../../config.php');
 if (!class_exists('FannieAPI')) {
     include($FANNIE_ROOT.'classlib2.0/FannieAPI.php');
@@ -52,7 +54,7 @@ class NonMovementReport extends FannieReportPage {
             $dbc = FannieDB::get($FANNIE_OP_DB);
             $model = new ProductsModel($dbc);
             $model->upc($upc);
-            $model->store_id(1);
+            $model->store_id(Store::getIdByIp());
             $model->delete();
 
             echo 'Deleted';
@@ -62,7 +64,7 @@ class NonMovementReport extends FannieReportPage {
             $dbc = FannieDB::get($FANNIE_OP_DB);
             $model = new ProductsModel($dbc);
             $model->upc($upc);
-            $model->store_id(1);
+            $model->store_id(Store::getIdByIp());
             $model->inUse(0);
             $model->save();
 
@@ -88,21 +90,24 @@ class NonMovementReport extends FannieReportPage {
         $deptStart = FormLib::get_form_value('deptStart',0);
         $deptEnd = FormLib::get_form_value('deptEnd',0);
         $deptMulti = FormLib::get('departments', array());
+        $subs = FormLib::get('subdepts', array());
+        $storeID = FormLib::get('store');
 
         $tempName = "TempNoMove";
         $dlog = DTransactionsModel::selectDlog($date1,$date2);
 
-        $tempQ = $dbc->prepare_statement("CREATE TABLE $tempName (upc varchar(13))");
-        $dbc->exec_statement($tempQ);
+        $tempQ = $dbc->prepare("CREATE TABLE $tempName (upc varchar(13))");
+        $dbc->execute($tempQ);
 
         $insQ = $dbc->prepare("
             INSERT INTO $tempName
             SELECT d.upc FROM $dlog AS d
             WHERE 
                 d.tdate BETWEEN ? AND ?
-                AND d.trans_type='I'
+                AND d.trans_type='I'  
+                AND " . DTrans::isStoreID($storeID, 'd') . "
             GROUP BY d.upc");
-        $dbc->exec_statement($insQ, array($date1.' 00:00:00',$date2.' 23:59:59'));
+        $dbc->execute($insQ, array($date1.' 00:00:00',$date2.' 23:59:59',$storeID));
 
         $where = ' 1=1 ';
         $buyer = FormLib::get('super');
@@ -118,6 +123,10 @@ class NonMovementReport extends FannieReportPage {
         if ($buyer != -1) {
             list($conditional, $args) = DTrans::departmentClause($deptStart, $deptEnd, $deptMulti, $args, 'p');
             $where .= $conditional;
+        }
+        if (count($subs) > 0) {
+            list($inStr, $args) = $dbc->safeInClause($subs, $args);
+            $where .= " AND p.subdept IN ($inStr) ";
         }
 
         $query = "
@@ -138,9 +147,11 @@ class NonMovementReport extends FannieReportPage {
                 )
                 AND $where
                 AND p.inUse=1
+                AND " . DTrans::isStoreID($storeID, 'p') . "
             ORDER BY p.upc";
         $prep = $dbc->prepare($query);
-        $result = $dbc->exec_statement($prep,$args);
+        $args[] = $storeID;
+        $result = $dbc->execute($prep,$args);
 
         /**
           Simple report
@@ -148,45 +159,52 @@ class NonMovementReport extends FannieReportPage {
           Issue a query, build array of results
         */
         $ret = array();
-        while ($row = $dbc->fetch_array($result)){
-            $record = array();
-            $record[] = $row[0];
-            $record[] = $row[1];
-            $record[] = $row[2];
-            $record[] = $row[3];
-            $record[] = $row[4];
-            if ($this->report_format == 'html') {
-                $record[] = sprintf('<a href="" id="del%s"
-                        onclick="backgroundDeactivate(\'%s\');return false;">
-                        Deactivate this item</a>',$row[0],$row[0]);
-            } else {
-                $record[] = '';
-            }
-            if ($this->report_format == 'html'){
-                $record[] = sprintf('<a href="" id="del%s"
-                        onclick="backgroundDelete(\'%s\',\'%s\');return false;">
-                        Delete this item</a>',$row[0],$row[0],$row[1]);
-            } else {
-                $record[] = '';
-            }
-            $ret[] = $record;
+        while ($row = $dbc->fetchRow($result)) {
+            $ret[] = $this->rowToRecord($row);
         }
 
-        $drop = $dbc->prepare_statement("DROP TABLE $tempName");
-        $dbc->exec_statement($drop);
+        $drop = $dbc->prepare("DROP TABLE $tempName");
+        $dbc->execute($drop);
         return $ret;
+    }
+
+    private function rowToRecord($row)
+    {
+        $record = array();
+        $record[] = $row[0];
+        $record[] = $row[1];
+        $record[] = $row[2];
+        $record[] = $row[3];
+        $record[] = $row[4];
+        if ($this->report_format == 'html') {
+            $record[] = sprintf('<a href="" id="del%s"
+                    onclick="nonMovement.backgroundDeactivate(\'%s\');return false;">
+                    Deactivate this item</a>',$row[0],$row[0]);
+        } else {
+            $record[] = '';
+        }
+        if ($this->report_format == 'html'){
+            $record[] = sprintf('<a href="" id="del%s"
+                    onclick="nonMovement.backgroundDelete(\'%s\',\'%s\');return false;">
+                    Delete this item</a>',$row[0],$row[0],$row[1]);
+        } else {
+            $record[] = '';
+        }
+
+        return $record;
     }
     
     function form_content()
     {
         $dbc = $this->connection;
         $dbc->selectDB($this->config->get('OP_DB'));
-        $deptsQ = $dbc->prepare_statement("select dept_no,dept_name from departments order by dept_no");
-        $deptsR = $dbc->exec_statement($deptsQ);
+        $deptsQ = $dbc->prepare("select dept_no,dept_name from departments order by dept_no");
+        $deptsR = $dbc->execute($deptsQ);
         $deptsList = "";
-        while ($deptsW = $dbc->fetch_array($deptsR))
+        while ($deptsW = $dbc->fetchRow($deptsR))
             $deptsList .= "<option value=$deptsW[0]>$deptsW[0] $deptsW[1]</option>";
         ob_start();
+        $stores = FormLib::storePicker();
 ?>
 <form method="get" action="NonMovementReport.php" class="form-horizontal">
     <div class="col-sm-6">
@@ -221,6 +239,12 @@ class NonMovementReport extends FannieReportPage {
             </div>
         </div>
         <div class="form-group">
+            <label class="control-label col-sm-4">Store</label>
+            <div class="col-sm-8">
+                <?php echo $stores['html']; ?>
+            </div>
+        </div>
+        <div class="form-group">
             <?php echo FormLib::date_range_picker(); ?>                            
         </div>
     </div>
@@ -237,6 +261,12 @@ class NonMovementReport extends FannieReportPage {
             <p><em>Netted</em> means total sales is not zero.
             This would exclude items that are rung in then
             voided.</p>';
+    }
+
+    public function unitTest($phpunit)
+    {
+        $data = array('4011', 'test', 'test', 1, 'test');
+        $phpunit->assertInternalType('array', $this->rowToRecord($data));
     }
 }
 

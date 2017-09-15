@@ -70,9 +70,9 @@ class DataCache
         $dbc = \FannieDB::get($FANNIE_ARCHIVE_DB, $current_db);
         $table = $FANNIE_ARCHIVE_DB.$dbc->sep()."reportDataCache";
         $hash = $key ? $key : self::genKey();
-        $query = $dbc->prepare_statement("SELECT report_data FROM $table WHERE
+        $query = $dbc->prepare("SELECT report_data FROM $table WHERE
             hash_key=? AND expires >= ".$dbc->now());
-        $result = $dbc->exec_statement($query,array($hash));
+        $result = $dbc->execute($query,array($hash));
         if (!empty($current_db)) {
             // restore selected database
             $dbc = \FannieDB::get($current_db);
@@ -115,17 +115,17 @@ class DataCache
             $expires = date('Y-m-d',mktime(0,0,0,date('n')+1,date('j'),date('Y')));
         }
 
-        $delQ = $dbc->prepare_statement("DELETE FROM $table WHERE hash_key=?");
-        $dbc->exec_statement($delQ,array($hash));
+        $delQ = $dbc->prepare("DELETE FROM $table WHERE hash_key=?");
+        $dbc->execute($delQ,array($hash));
         $saveStr = gzcompress(serialize($data));
         $ret = true;
         if (strlen($saveStr) > 65535) {
             // too big to store, probably
             $ret = false;
         } else {
-            $upQ = $dbc->prepare_statement("INSERT INTO $table (hash_key, report_data, expires)
+            $upQ = $dbc->prepare("INSERT INTO $table (hash_key, report_data, expires)
                 VALUES (?,?,?)");
-            $dbc->exec_statement($upQ, array($hash, $saveStr, $expires));
+            $dbc->execute($upQ, array($hash, $saveStr, $expires));
         }
 
         if (!empty($current_db)) {
@@ -144,12 +144,8 @@ class DataCache
     */
     static public function getFile($ttl, $key=false)
     {
-        $type = strtolower($ttl);
-        if ($type[0] == 'm') {
-            $type = 'monthly';
-        } else if ($type[0] == 'd') {
-            $type = 'daily';
-        } else {
+        $type = self::validateTTL($ttl);
+        if ($type === false) {
             return false;
         }
 
@@ -172,12 +168,8 @@ class DataCache
     */
     static public function putFile($ttl, $content, $key=false)
     {
-        $type = strtolower($ttl);
-        if ($type[0] == 'm') {
-            $type = 'monthly';
-        } else if ($type[0] == 'd') {
-            $type = 'daily';
-        } else {
+        $type = self::validateTTL($ttl);
+        if ($type === false) {
             return false;
         }
 
@@ -195,6 +187,20 @@ class DataCache
         }
     }
 
+    static private function validateTTL($ttl)
+    {
+        $type = strtolower($ttl);
+        if ($type[0] == 'm') {
+            return 'monthly';
+        } elseif ($type[0] == 'd') {
+            return 'daily';
+        } elseif (strtolower($ttl) == 'forever') {
+            return 'forever';
+        } else {
+            return false;
+        }
+    }
+
     /**
       Get filesystem path for storing cache data
       Auto-creates directories as needed
@@ -203,7 +209,7 @@ class DataCache
     */
     static public function fileCacheDir($type)
     {
-        if ($type !== 'monthly' && $type !== 'daily') {
+        if ($type !== 'monthly' && $type !== 'daily' && $type !== 'forever') {
             return false;
         }
 

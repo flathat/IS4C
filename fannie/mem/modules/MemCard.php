@@ -88,16 +88,9 @@ class MemCard extends \COREPOS\Fannie\API\member\MemberModule {
         $json = array(
             'idCardUPC' => $mcc,
         );
-        $accounts = \COREPOS\Fannie\API\member\MemberREST::search($json, 0, true);
+        $accounts = \COREPOS\Fannie\API\member\MemberREST::search($json, 0);
 
-        $ret = array();
-        foreach ($accounts as $account) {
-            foreach ($account['customers'] as $customer) {
-                $ret[$account['cardNo']] = $customer['firstName'] . ' ' . $customer['lastName'];
-            }
-        }
-
-        return $ret;
+        return $accounts;
     }
 
 
@@ -137,7 +130,8 @@ class MemCard extends \COREPOS\Fannie\API\member\MemberModule {
 
     // Update, insert or delete the Member Card#.
     // Return "" on success or an error message.
-    function saveFormData($memNum){
+    public function saveFormData($memNum, $json=array())
+    {
 
         global $FANNIE_MEMBER_UPC_PREFIX, $FANNIE_ROOT;
         $dbc = $this->db();
@@ -172,4 +166,3 @@ class MemCard extends \COREPOS\Fannie\API\member\MemberModule {
 // MemCard
 }
 
-?>

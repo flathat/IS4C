@@ -21,7 +21,7 @@
 
 *********************************************************************************/
 
-namespace COREPOS\Fannie\API\item {
+namespace COREPOS\Fannie\API\item;
 
 /**
   @class PriceRounder
@@ -58,7 +58,8 @@ class PriceRounder
             return round($price/100.00, 2);
         } else {
         // operate in cents
-        $price = floor($price * 100);        
+        $price = floor($price * 100);    
+        if ($price % 10 == 0 ) $price--;            
         
         // if price < $1.00
         if ($price < 100) {
@@ -121,7 +122,6 @@ class PriceRounder
       This is just an example of what a more complex rounding
       scheme might look like. Nothing should be calling this 
       method. 
-    */
     private function example($price, $extra_parameters=array())
     {
         // operate in cents
@@ -160,6 +160,6 @@ class PriceRounder
             return round($prev/100.00, 2);
         }
     }
+    */
 }
 
-}

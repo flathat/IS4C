@@ -21,6 +21,8 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\parser\Parser;
+
 class QuickMenuLauncher extends Parser {
     
     function check($str){
@@ -65,4 +67,3 @@ class QuickMenuLauncher extends Parser {
     }
 }
 
-?>

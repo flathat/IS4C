@@ -60,15 +60,15 @@ class BatchShelfTags extends FanniePage {
         $ret .= "<label>Select batch(es*) to be printed</label>";
         
         $dbc = FannieDB::getReadOnly($this->config->get('OP_DB'));
-        $fetchQ = $dbc->prepare_statement("select b.batchID,b.batchName
+        $fetchQ = $dbc->prepare("select b.batchID,b.batchName
               from batches as b left join
               batchBarcodes as c on b.batchID = c.batchID
               where c.upc is not null
                   group by b.batchID,b.batchName
                   order by b.batchID desc");
-        $fetchR = $dbc->exec_statement($fetchQ);
+        $fetchR = $dbc->execute($fetchQ);
         $ret .= "<select name=batchID[] multiple class=\"form-control\" size=15>";
-        while($fetchW = $dbc->fetch_array($fetchR))
+        while($fetchW = $dbc->fetchRow($fetchR))
             $ret .= "<option value=$fetchW[0]>$fetchW[1]</option>";
         $ret .= "</select>";
         $ret .= '<p><div class="form-group form-inline">';
@@ -76,7 +76,9 @@ class BatchShelfTags extends FanniePage {
             class=\"form-control\" name=offset value=0 />";
         $ret .= "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;";
         $ret .= "<select name=layout class=\"form-control\">";
+        $tagEnabled = $this->config->get('ENABLED_TAGS');
         foreach($this->layouts as $l){
+            if (!in_array($l, $tagEnabled) && count($tagEnabled) > 0) continue;
             if ($l == $FANNIE_DEFAULT_PDF)
                 $ret .= "<option selected>".$l."</option>";
             else
@@ -94,8 +96,8 @@ class BatchShelfTags extends FanniePage {
 
         $ret .= '<div class="well">';
         $ret .= "<a href={$FANNIE_URL}batches/newbatch/index.php>Back to batch list</a><p />";
-        $ret .= "* Hold the apple key while clicking to select multiple batches ";
-        $ret .= "(or the control key if you're not on a Mac)";
+        $ret .= "* Hold the Ctrl key while clicking to select multiple batches ";
+        $ret .= "(or the apple key if you're on a Macintosh computer)";
         $ret .= '</div>';
 
         return $ret;
@@ -109,6 +111,11 @@ class BatchShelfTags extends FanniePage {
             offset value will leave a number of tags at the beginning of
             the sheet blank. This is intended for re-using partial sheets.</p>
             ';
+    }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->body_content()));
     }
 }
 

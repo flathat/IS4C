@@ -21,10 +21,9 @@
 
 *********************************************************************************/
 
-namespace COREPOS\Fannie\API\webservices 
-{
+namespace COREPOS\Fannie\API\webservices;
 
-class FannieItemLaneSync extends FannieWebService 
+class FannieItemLaneSync extends \COREPOS\Fannie\API\webservices\FannieWebService
 {
     
     public $type = 'json'; // json/plain by default
@@ -42,7 +41,7 @@ class FannieItemLaneSync extends FannieWebService
             // missing required arguments
             $ret['error'] = array(
                 'code' => -32602,
-                'message' => 'Invalid parameters needs type',
+                'message' => 'Invalid parameters needs upc',
             );
             return $ret;
         }
@@ -52,7 +51,7 @@ class FannieItemLaneSync extends FannieWebService
         }
 
         $dbc = \FannieDB::get(\FannieConfig::config('OP_DB'));
-        $storeID = \FannieConfig::get('STORE_ID');
+        $storeID = \FannieConfig::config('STORE_ID');
         /**
           In "fast" mode, look up the items and run UPDATE queries
           on each lane. This reduces overhead substantially but will
@@ -64,40 +63,7 @@ class FannieItemLaneSync extends FannieWebService
           performance becomes an issue.
         */
         if (property_exists($args, 'fast')) {
-            $upc_data = array();
-            $query = '
-                SELECT normal_price,
-                    pricemethod,
-                    quantity,
-                    groupprice,
-                    special_price,
-                    specialpricemethod,
-                    specialquantity,
-                    specialgroupprice,
-                    discounttype,
-                    mixmatchcode,
-                    department,
-                    tax,
-                    foodstamp,
-                    discount,
-                    qttyEnforced,
-                    idEnforced,
-                    inUse,
-                    upc
-                FROM products
-                WHERE store_id=?
-                    AND upc IN ('; 
-            $params = array($storeID);
-            foreach ($args->upc as $upc) {
-                $query .= '?,';
-                $params[] = \BarcodeLib::padUPC($upc);
-            }
-            $query = substr($query, 0, strlen($query)-1);
-            $prep = $dbc->prepare($query);
-            $result = $dbc->execute($prep, $params);
-            while ($w = $dbc->fetchRow($result)) {
-                $upc_data[$w['upc']] = $w;
-            }
+            $upc_data = $this->getItemData($dbc, $args, $storeID);
 
             $updateQ = '
                 UPDATE products AS p SET
@@ -115,9 +81,11 @@ class FannieItemLaneSync extends FannieWebService
                     p.tax = ?,
                     p.foodstamp = ?,
                     p.discount=?,
+                    p.scale=?,
                     p.qttyEnforced=?,
                     p.idEnforced=?,
-                    p.inUse=?
+                    p.inUse=?,
+                    p.wicable = ?
                 WHERE p.upc = ?';
             $FANNIE_LANES = \FannieConfig::config('LANES');
             for ($i = 0; $i < count($FANNIE_LANES); $i++) {
@@ -129,30 +97,7 @@ class FannieItemLaneSync extends FannieWebService
                     // connect failed
                     continue;
                 }
-                $updateP = $lane_sql->prepare($updateQ);
-                foreach ($upc_data as $upc => $data) {
-                    $lane_args = array(
-                        $data['normal_price'],
-                        $data['pricemethod'],
-                        $data['quantity'],
-                        $data['groupprice'],
-                        $data['special_price'],
-                        $data['specialpricemethod'],
-                        $data['specialquantity'],
-                        $data['specialgroupprice'],
-                        $data['discounttype'],
-                        $data['mixmatchcode'],
-                        $data['department'],
-                        $data['tax'],
-                        $data['foodstamp'],
-                        $data['discount'],
-                        $data['qttyEnforced'],
-                        $data['idEnforced'],
-                        $data['inUse'],
-                        $upc,
-                    );
-                    $lane_sql->execute($updateP, $lane_args);
-                }
+                $this->updateLane($lane_sql, $upc_data, $updateQ);
             }
         } else {
             $product = new \ProductsModel($dbc);
@@ -170,13 +115,77 @@ class FannieItemLaneSync extends FannieWebService
 
         return $ret;
     }
-}
 
-}
+    private function getItemData($dbc, $args, $storeID)
+    {
+        $upc_data = array();
+        $query = '
+            SELECT normal_price,
+                pricemethod,
+                quantity,
+                groupprice,
+                special_price,
+                specialpricemethod,
+                specialquantity,
+                specialgroupprice,
+                discounttype,
+                mixmatchcode,
+                department,
+                tax,
+                foodstamp,
+                discount,
+                scale,
+                qttyEnforced,
+                idEnforced,
+                inUse,
+                wicable,
+                upc
+            FROM products
+            WHERE store_id=?
+                AND upc IN ('; 
+        $params = array($storeID);
+        foreach ($args->upc as $upc) {
+            $query .= '?,';
+            $params[] = \BarcodeLib::padUPC($upc);
+        }
+        $query = substr($query, 0, strlen($query)-1) . ')';
+        $prep = $dbc->prepare($query);
+        $result = $dbc->execute($prep, $params);
+        while ($w = $dbc->fetchRow($result)) {
+            $upc_data[$w['upc']] = $w;
+        }
 
-namespace 
-{
-    // global namespace wrapper class
-    class FannieItemLaneSync extends \COREPOS\Fannie\API\webservices\FannieItemLaneSync {}
+        return $upc_data;
+    }
+
+    private function updateLane($lane_sql, $upc_data, $updateQ)
+    {
+        $updateP = $lane_sql->prepare($updateQ);
+        foreach ($upc_data as $upc => $data) {
+            $lane_args = array(
+                $data['normal_price'],
+                $data['pricemethod'],
+                $data['quantity'],
+                $data['groupprice'],
+                $data['special_price'],
+                $data['specialpricemethod'],
+                $data['specialquantity'],
+                $data['specialgroupprice'],
+                $data['discounttype'],
+                $data['mixmatchcode'],
+                $data['department'],
+                $data['tax'],
+                $data['foodstamp'],
+                $data['discount'],
+                $data['scale'],
+                $data['qttyEnforced'],
+                $data['idEnforced'],
+                $data['inUse'],
+                $data['wicable'],
+                $upc,
+            );
+            $lane_sql->execute($updateP, $lane_args);
+        }
+    }
 }
 

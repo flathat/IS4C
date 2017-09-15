@@ -21,25 +21,27 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\lib\adminlogin;
+use COREPOS\pos\lib\MiscLib;
+
 /**
   @class SusResAdminLogin
   adminlogin callback to approve access
   to the suspend/resume/tender report menu
 */
-class SusResAdminLogin 
+class SusResAdminLogin implements AdminLoginInterface
 {
-
-    static public $adminLoginMsg = 'Login to suspend/resume transactions';
-
-    static public $adminLoginLevel = 30;
+    public static function messageAndLevel()
+    {
+        return array(_('Login to suspend/resume transaction'), 30);
+    }
 
     static public function adminLoginCallback($success)
     {
         if ($success) {
-            return MiscLib::base_url().'gui-modules/adminlist.php';
-        } else {
-            return false;
+            return MiscLib::baseURL().'gui-modules/adminlist.php';
         }
+        return false;
     }
 }
 

@@ -42,6 +42,9 @@ class FanniePage extends \COREPOS\common\ui\CorePage
     protected $title = 'Page window title';
     protected $header = 'Page displayed header';
 
+    /** wrapper around $_SESSION superglobal **/
+    protected $session;
+
     /**
       Include javascript necessary to integrate linea
       scanner device
@@ -60,6 +63,9 @@ class FanniePage extends \COREPOS\common\ui\CorePage
         if (isset($coop_id) && $coop_id == 'WEFC_Toronto') {
             $this->auth_classes[] = 'admin';
         }
+
+        $path = realpath(__DIR__ . '/../');
+        $this->session = new COREPOS\common\NamedSession($path);
     }
 
     public function preprocess()
@@ -119,6 +125,8 @@ class FanniePage extends \COREPOS\common\ui\CorePage
         if ($this->enable_linea) {
             $this->addScript($url . 'src/javascript/linea/cordova-2.2.0.js');
             $this->addScript($url . 'src/javascript/linea/ScannerLib-Linea-2.0.0.js');
+            $this->addScript($url . 'src/javascript/linea/WebHub.js');
+            $this->addScript($url . 'src/javascript/linea/core.js');
         }
 
         return ob_get_clean();
@@ -206,6 +214,21 @@ class FanniePage extends \COREPOS\common\ui\CorePage
     {
         ob_start();
         ?>
+function lineaBarcode(upc, selector, callback) {
+    upc = upc.substring(0,upc.length-1);
+    if ($(selector).length > 0){
+        $(selector).val(upc);
+        if (typeof callback === 'function') {
+            callback();
+        } else {
+            $(selector).closest('form').submit();
+        }
+    }
+}
+var IPC_PARAMS = { selector: false, callback: false };
+function ipcWrapper(upc, typeID, typeStr) {
+    lineaBarcode(upc, IPC_PARAMS.selector, IPC_PARAMS.callback);
+}
 /**
   Enable linea scanner on page
   @param selector - jQuery selector for the element where
@@ -219,8 +242,11 @@ class FanniePage extends \COREPOS\common\ui\CorePage
 function enableLinea(selector, callback)
 {
     Device = new ScannerDevice({
-        barcodeData: function (data, type){
+        barcodeData: function(data, type) {
             var upc = data.substring(0,data.length-1);
+            if (upc.length == 6) {
+                upc = '0' + upc;
+            }
             if ($(selector).length > 0){
                 $(selector).val(upc);
                 if (typeof callback === 'function') {
@@ -243,6 +269,28 @@ function enableLinea(selector, callback)
     });
     ScannerDevice.registerListener(Device);
 
+    if (typeof WebBarcode == 'object') {
+        WebBarcode.onBarcodeScan(function(ev) {
+            var data = ev.value;
+            lineaBarcode(data, selector, callback);
+        });
+    }
+
+    // for webhub
+    WebHub.Settings.set({
+        barcodeFunction: function (upc, typeID, typeStr) {
+            upc = upc.substring(0,upc.length-1);
+            if ($(selector).length > 0){
+                $(selector).val(upc);
+                if (typeof callback === 'function') {
+                    callback();
+                } else {
+                    $(selector).closest('form').submit();
+                }
+            }
+        }
+    });
+
     function lineaSilent()
     {
         if (typeof cordova.exec != 'function') {
@@ -255,7 +303,6 @@ function enableLinea(selector, callback)
     }
     lineaSilent();
 }
-
         <?php
 
         return ob_get_clean();
@@ -333,7 +380,33 @@ function enableLinea(selector, callback)
                             </h4>
                         </div>
                         <div class="modal-body">' . $help . '</div>
+                        <div id="help-feedback" class="container col-sm-6 collapse">
+                            <input type="hidden" name="page" class="help-feedback" value="' . filter_input(INPUT_SERVER, 'PHP_SELF') . '" />
+                            <div class="form-group">
+                                <label>Email</label>
+                                <input type="email" name="email" class="help-feedback form-control" 
+                                    placeholder="Optional; if blank you won\'t get a response" />
+                            </div>
+                            <div class="form-group">
+                                <label>How could "Help" on this page be improved</label>
+                                <textarea name="comments" class="form-control help-feedback" rows="10"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <button type="button" class="btn btn-default" onclick="
+                                    $.ajax({ method: \'post\', url: \'' . $this->config->URL . 'admin/HelpPopup.php\',
+                                        data: $(\'.help-feedback\').serialize() })
+                                    .always(function() { $(\'#help-feedback\').hide(); $(\'#help-feedback-done\').show(); });
+                                ">
+                                    Send Feedback
+                                </button>
+                            </div>
+                        </div>
+                        <div id="help-feedback-done" class="collapse">
+                            <div class="alert alert-success">Feedback submitted</div>
+                        </div>
                         <div class="modal-footer">
+                            <button type="button" id="feedback-btn" class="btn btn-default" 
+                                onclick="$(\'#help-feedback\').show();$(this).hide();">Feedback</button>
                             <button type="button" class="btn btn-default" data-dismiss="modal"
                                 onclick="var helpWindow=window.open(\''. $this->config->URL . 'admin/HelpPopup.php\',
                                 \'CORE Help\', \'height=500,width=300,scrollbars=1,resizable=1\');"
@@ -369,18 +442,15 @@ function enableLinea(selector, callback)
         }
     }
 
-    public function postFlight()
-    {
-        if ($this->enable_linea) {
-            echo '<script type="text/javascript">';
-            echo $this->lineaJS();
-            echo '</script>';
-        }
-    }
-
     public function setPermissions($p)
     {
         $this->auth_classes = array($p);
+    }
+
+    protected $twig = null;
+    public function setTwig($t)
+    {
+        $this->twig = $t;
     }
 }
 

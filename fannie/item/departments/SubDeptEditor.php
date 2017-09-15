@@ -73,8 +73,8 @@ class SubDeptEditor extends FanniePage
         global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
 
-        $p = $dbc->prepare_statement("SELECT max(subdept_no) FROM subdepts");
-        $res = $dbc->exec_statement($p);
+        $p = $dbc->prepare("SELECT max(subdept_no) FROM subdepts");
+        $res = $dbc->execute($p);
         $sid = 1;
         if ($dbc->num_rows($res) > 0) {
             $row = $dbc->fetch_row($res);
@@ -84,8 +84,8 @@ class SubDeptEditor extends FanniePage
             }
         }
 
-        $ins = $dbc->prepare_statement('INSERT INTO subdepts VALUES (?,?,?)');  
-        $dbc->exec_statement($ins,array($sid, $name, $deptID));
+        $ins = $dbc->prepare('INSERT INTO subdepts VALUES (?,?,?)');  
+        $dbc->execute($ins,array($sid, $name, $deptID));
     }
 
     private function delete_sub_depts($ids)
@@ -96,9 +96,9 @@ class SubDeptEditor extends FanniePage
         if (!is_array($ids)) {
             $ids = array();
         }
-        $delP = $dbc->prepare_statement('DELETE FROM subdepts WHERE subdept_no=?');
+        $delP = $dbc->prepare('DELETE FROM subdepts WHERE subdept_no=?');
         foreach ($ids as $id) {
-            $dbc->exec_statement($delP, array($id));
+            $dbc->execute($delP, array($id));
         }
     }
 
@@ -107,9 +107,9 @@ class SubDeptEditor extends FanniePage
         global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
 
-        $p = $dbc->prepare_statement("SELECT subdept_no,subdept_name FROM subdepts
+        $p = $dbc->prepare("SELECT subdept_no,subdept_name FROM subdepts
                 WHERE dept_ID=? ORDER BY subdept_name");
-        $r = $dbc->exec_statement($p,array($deptID));
+        $r = $dbc->execute($p,array($deptID));
         
         $ret = '';
         while ($w = $dbc->fetch_row($r)) {
@@ -124,9 +124,9 @@ class SubDeptEditor extends FanniePage
     {
         global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
-        $superQ = $dbc->prepare_statement("SELECT d.dept_no,dept_name FROM departments as d
+        $superQ = $dbc->prepare("SELECT d.dept_no,dept_name FROM departments as d
             ORDER BY d.dept_no");
-        $superR = $dbc->exec_statement($superQ);
+        $superR = $dbc->execute($superQ);
         $opts = "";
         $firstID = False;
         $firstName = "";
@@ -142,7 +142,7 @@ class SubDeptEditor extends FanniePage
         ?>
         <div id="alertarea"></div>
         <label class="control-label">Choose a department</label>
-        <select class="form-control" id=deptselect onchange="showSubsForDept(this.value);">
+        <select class="form-control" id=deptselect onchange="subDept.show(this.value);">
         <?php echo $opts ?>
         </select>
         <hr />
@@ -156,11 +156,11 @@ class SubDeptEditor extends FanniePage
             <label class="control-label">Add Sub Department</label>
             <input type=text class="form-control" id=newname placeholder="New Sub Department Name" /> 
             <p>
-                <button type=submit value=Add onclick="addSub(); return false;"
+                <button type=submit value=Add onclick="subDept.add(); return false;"
                     class="btn btn-default">Add</button>
             </p>
             <p>
-                <button type=submit value="Delete Selected" onclick="deleteSub(); return false;"
+                <button type=submit value="Delete Selected" onclick="subDept.del(); return false;"
                     class="btn btn-default">Delete Selected</button>
             </p>
         </div>
@@ -180,8 +180,12 @@ class SubDeptEditor extends FanniePage
             <p>This field is not supported much in the current release
             although local customizations or plugins may differ.</p>';
     }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->body_content()));
+    }
 }
 
-FannieDispatch::conditionalExec(false);
+FannieDispatch::conditionalExec();
 
-?>

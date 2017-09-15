@@ -1,9 +1,14 @@
 <?php
+use COREPOS\pos\install\conf\Conf;
+use COREPOS\pos\install\conf\FormFactory;
+use COREPOS\pos\install\InstallUtilities;
+use COREPOS\pos\lib\CoreState;
+use COREPOS\pos\lib\MiscLib;
+use COREPOS\pos\plugins\Plugin;
 include(realpath(dirname(__FILE__).'/../lib/AutoLoader.php'));
 AutoLoader::loadMap();
-include('../ini.php');
 CoreState::loadParams();
-include('InstallUtilities.php');
+$form = new FormFactory(InstallUtilities::dbOrFail(CoreLocal::get('pDatabase')));
 ?>
 <html>
 <head>
@@ -14,20 +19,20 @@ body {
 }
 </style>
 <link rel="stylesheet" href="../css/toggle-switch.css" type="text/css" />
-<script type="text/javascript" src="../js/jquery.js"></script>
+<script type="text/javascript" src="../js/<?php echo MiscLib::jqueryFile(); ?>"></script>
 </head>
 <body>
 <?php include('tabs.php'); ?>
 <div id="wrapper">
-<h2>IT CORE Lane Installation: Plugins</h2>
+<h2><?php echo _('IT CORE Lane Installation: Plugins'); ?></h2>
 
-<div class="alert"><?php InstallUtilities::checkWritable('../ini.php', False, 'PHP'); ?></div>
-<div class="alert"><?php InstallUtilities::checkWritable('../ini-local.php', True, 'PHP'); ?></div>
+<div class="alert"><?php Conf::checkWritable('../ini.json', False, 'JSON'); ?></div>
+<div class="alert"><?php Conf::checkWritable('../ini.php', False, 'PHP'); ?></div>
 
 <table id="install" border=0 cellspacing=0 cellpadding=4>
 
 <form action=plugins.php method=post>
-<b>Available plugins</b>:<br />
+<b><?php echo _('Available plugins'); ?></b>:<br />
 <?php
 if (isset($_REQUEST['PLUGINLIST']) || isset($_REQUEST['psubmit'])){
     $oldset = CoreLocal::get('PluginList');
@@ -45,12 +50,12 @@ if (isset($_REQUEST['PLUGINLIST']) || isset($_REQUEST['psubmit'])){
             $obj->pluginDisable();
         }
     }
-    CoreLocal::set('PluginList',$_REQUEST['PLUGINLIST']);
+    CoreLocal::set('PluginList',$_REQUEST['PLUGINLIST'], true);
 }
 $type_check = CoreLocal::get('PluginList');
-if (!is_array($type_check)) CoreLocal::set('PluginList',array());
+if (!is_array($type_check)) CoreLocal::set('PluginList',array(), true);
 
-$mods = AutoLoader::listModules('Plugin');
+$mods = AutoLoader::listModules('COREPOS\\pos\\plugins\\Plugin');
 sort($mods);
 
 foreach($mods as $m){
@@ -91,9 +96,9 @@ foreach($mods as $m){
                     $attributes['multiple'] = 'multiple';
                     $attributes['size'] = 5;
                 }
-                echo InstallUtilities::installSelectField($field, $invert, $default, InstallUtilities::EITHER_SETTING, true, $attributes); 
+                echo $form->selectField($field, $invert, $default, Conf::EITHER_SETTING, true, $attributes); 
             } else {
-                echo InstallUtilities::installTextField($field, $default);
+                echo $form->textField($field, $default);
             }
             if (isset($info['description'])) 
                 echo '<span class="noteTxt" style="width:200px;">'.$info['description'].'</span>';
@@ -109,7 +114,7 @@ echo '</table>';
 InstallUtilities::paramSave('PluginList',CoreLocal::get('PluginList'));
 ?>
 <hr />
-<input type=submit name=psubmit value="Save Changes" />
+<input type=submit name=psubmit value="<?php echo _('Save Changes'); ?>" />
 </form>
 </div> <!--    wrapper -->
 </body>

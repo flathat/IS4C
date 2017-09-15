@@ -23,6 +23,7 @@
 
 include(dirname(__FILE__).'/../../../config.php');
 include_once($FANNIE_ROOT.'classlib2.0/FannieAPI.php');
+//require_once($FANNIE_ROOT."src/select_dlog.php");
 $dbc = FannieDB::get($FANNIE_OP_DB);
 
 class OverShortDayLanePage extends FanniePage {
@@ -71,6 +72,7 @@ class OverShortDayLanePage extends FanniePage {
 		case 'date':
 			$date = FormLib::get_form_value('arg');
             $dlog = DTransactionsModel::selectDlog($date);
+			//$dlog = select_dlog($date);
 			
 			$empsR = null;
 			if (FormLib::get_form_value('emp_no') !== ''){
@@ -78,8 +80,8 @@ class OverShortDayLanePage extends FanniePage {
 				$empsQ = "SELECT e.firstname,e.emp_no FROM "
 					.$FANNIE_OP_DB.$dbc->sep()."employees AS e
 					WHERE emp_no=?";
-				$empsP = $dbc->prepare_statement($empsQ);
-				$empsR = $dbc->exec_statement($empsP,array(FormLib::get_form_value('emp_no')));
+				$empsP = $dbc->prepare($empsQ);
+				$empsR = $dbc->execute($empsP,array(FormLib::get_form_value('emp_no')));
 			}
 			else {
 				/* determine who worked that day (and their first names) */
@@ -100,8 +102,8 @@ class OverShortDayLanePage extends FanniePage {
 										"AND d.register_no = e.emp_no " .
 									"GROUP BY d.register_no,e.firstname " .
 									"ORDER BY e.firstname";
-				$empsP = $dbc->prepare_statement($empsQ);
-				$empsR = $dbc->exec_statement($empsP,array($date.' 00:00:00',$date.' 23:59:59'));
+				$empsP = $dbc->prepare($empsQ);
+				$empsR = $dbc->execute($empsP,array($date.' 00:00:00',$date.' 23:59:59'));
 			}
 
 			$output = "<h3 id=currentdate>$date</h3>";
@@ -120,11 +122,11 @@ class OverShortDayLanePage extends FanniePage {
 						AND d.trans_subtype = t.TenderCode
 						GROUP BY d.trans_subtype, t.TenderName, t.tenderID
 						ORDER BY t.TenderID";
-			$tP = $dbc->prepare_statement($tQ);
-			$tR=$dbc->exec_statement($tP,array($date.' 00:00:00',$date.' 23:59:59'));
+			$tP = $dbc->prepare($tQ);
+			$tR=$dbc->execute($tP,array($date.' 00:00:00',$date.' 23:59:59'));
 
 			$tender_info = array();
-			while($tW = $dbc->fetch_row($tR)){
+			while($tW = $dbc->fetchRow($tR)){
 				if ($tW['trans_subtype'] == 'AX')
 					continue; // group AMEX w/ other credit
 				$record = array(
@@ -173,40 +175,40 @@ class OverShortDayLanePage extends FanniePage {
 			$q .= "GROUP BY register_no,
 				CASE WHEN trans_subtype IN ('CC','AX') THEN 'CC' ELSE trans_subtype END";
 
-			$p = $dbc->prepare_statement($q);
-			$r = $dbc->exec_statement($p, $args);
+			$p = $dbc->prepare($q);
+			$r = $dbc->execute($p, $args);
 			$posttl = array();
-			while($w = $dbc->fetch_row($r)){
+			while($w = $dbc->fetchRow($r)){
 				$tender_info[$w['trans_subtype']]['perEmp'][$w['register_no']] = $w['total'];
 				//was: $tender_info[$w['trans_subtype']]['perEmp'][$w['emp_no']] = $w['total'];
 			}
 
-			$noteP = $dbc->prepare_statement('SELECT note FROM dailyNotes WHERE emp_no=? AND date=?');
-			$scaP = $dbc->prepare_statement('SELECT amt FROM dailyCounts WHERE date=? AND emp_no=?
+			$noteP = $dbc->prepare('SELECT note FROM dailyNotes WHERE emp_no=? AND date=?');
+			$scaP = $dbc->prepare('SELECT amt FROM dailyCounts WHERE date=? AND emp_no=?
 							AND tender_type=\'SCA\'');
-			$countP = $dbc->prepare_statement("select amt from dailyCounts where date=? and emp_no=? and tender_type=?");
+			$countP = $dbc->prepare("select amt from dailyCounts where date=? and emp_no=? and tender_type=?");
 
-			while ($row = $dbc->fetch_array($empsR)){
+			while ($row = $dbc->fetchArray($empsR)){
 				// EL prefer: $emp_no = $row[emp_no];
 				$emp_no = $row[1];
 				$perCashierTotal = 0;
 				$perCashierCountTotal = 0;
 				$perCashierOSTotal = 0;
 
-				$noteR = $dbc->exec_statement($noteP, array($emp_no, $date));	
-				$noteW = $dbc->fetch_array($noteR);
+				$noteR = $dbc->execute($noteP, array($emp_no, $date));	
+				$noteW = $dbc->fetchArray($noteR);
 				$note = stripslashes($noteW[0]);
 
 				$output .= "<input type=hidden class=\"cashier\" value=\"$row[1]\" />";
       
 				$output .= "<tr><td><a href=OverShortDayLanePage.php?action=date&arg=$date&emp_no=$row[1] target={$date}_{$row[1]}>$row[0]</a></td>";
 				$output .= "<td>Starting cash</td><td>n/a</td>";
-				$fetchR = $dbc->exec_statement($scaP, array($date, $emp_no));
+				$fetchR = $dbc->execute($scaP, array($date, $emp_no));
 				$startcash = 0;
-				if ($dbc->num_rows($fetchR) == 0)
+				if ($dbc->numRows($fetchR) == 0)
 					$output .= "<td><input type=text id=startingCash$row[1] class=startingCash onchange=\"calcOS('Cash',$row[1]);\" /></td><td>n/a</td></tr>";
 				else {
-					$startcash = array_pop($dbc->fetch_array($fetchR));
+					$startcash = array_pop($dbc->fetchArray($fetchR));
 					$output .= "<td><input type=text id=startingCash$row[1] class=startingCash value=\"";
 					$output .= $startcash;
 					$output .= "\" onchange=\"calcOS('Cash',$row[1]);\" /></td><td>n/a</td></tr>";
@@ -222,8 +224,8 @@ class OverShortDayLanePage extends FanniePage {
 						<td id=dlog$code$row[1]>$posAmt</td>";
 					$output .= "<input type=\"hidden\" class=\"tcode$emp_no\" value=\"$code\" />";
 
-					$fetchR = $dbc->exec_statement($countP, array($date, $emp_no, $code));
-					if ($dbc->num_rows($fetchR) == 0){
+					$fetchR = $dbc->execute($countP, array($date, $emp_no, $code));
+					if ($dbc->numRows($fetchR) == 0){
 						$output .= "<td><input type=text id=count$code$row[1] 
 							class=\"countT$code countEmp$emp_no\" 
 							onchange=\"calcOS('$code',$row[1]);\" /></td>";
@@ -232,7 +234,7 @@ class OverShortDayLanePage extends FanniePage {
 							id=os$code$row[1]Hidden />";
 					}
 					else {
-						$cash = array_pop($dbc->fetch_array($fetchR));
+						$cash = array_pop($dbc->fetchArray($fetchR));
 						$output .= "<td><input type=text id=count$code$row[1] 
 							class=\"countT$code countEmp$emp_no\"
 							onchange=\"calcOS('$code',$row[1]);\" value=\"$cash\"/></td>";
@@ -300,8 +302,8 @@ class OverShortDayLanePage extends FanniePage {
 			$output .= "<td id=overallCountTotal>$overallCountTotal</td>";
 			$output .= "<td id=overallOSTotal>$overallOSTotal</td></tr>";
 
-			$noteR = $dbc->exec_statement($noteP, array(-1, $date));
-			$noteW = $dbc->fetch_array($noteR);
+			$noteR = $dbc->execute($noteP, array(-1, $date));
+			$noteW = $dbc->fetchArray($noteR);
 			$note = $noteW[0];
 			$output .= "<tr><td>&nbsp;</td><td>Notes</td><td colspan=3</td>";
 			$output .= "<textarea rows=5 cols=35 id=totalsnote>$note</textarea></td></tr>";

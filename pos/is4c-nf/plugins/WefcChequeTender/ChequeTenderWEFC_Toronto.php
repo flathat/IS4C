@@ -22,6 +22,11 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\Tenders\TenderModule;
+use COREPOS\pos\lib\DisplayLib;
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\MiscLib;
+
 /**
   @class ChequeTenderWEFC_Toronto  
   Tender module for cheques

@@ -29,7 +29,7 @@ if (isset($_POST['add'])){
     
     $namesQ = $sql->prepare("select FirstName,LastName from is4c_op.custdata where CardNo=? and personNum=1");
     $namesR = $sql->execute($namesQ, array($cardno));
-    $namesW = $sql->fetch_array($namesR);
+    $namesW = $sql->fetchRow($namesR);
     $fname = $namesW[0];
     $lname = $namesW[1];
     
@@ -49,6 +49,8 @@ if (isset($_POST['add'])){
     $adpID = $_POST['adpID'];
     // the user provided an adp id
     if ($adpID != 'None of these'){
+        $delQ = $sql->prepare("delete from staffID where cardno=?");
+        $delR = $sql->execute($delQ, array($cardno));
         $insQ = $sql->prepare("insert into staffID values (?,?,1)");
         $insR = $sql->execute($insQ, array($cardno, $adpID));
         balance($cardno);

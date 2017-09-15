@@ -45,7 +45,7 @@ class FannieDB
     */
     public static function get($db_name, &$previous_db=null)
     {
-        if (!self::dbIsConfigured()) {
+        if (!is_string($db_name) || !self::dbIsConfigured()) {
             return false;
         } else if (self::$db == null) {
             $previous_db = $db_name;
@@ -60,6 +60,20 @@ class FannieDB
         self::$db->setDefaultDB($db_name);
 
         return self::$db;
+    }
+
+    /**
+      This method exists to support unit testing where test runs
+      that take several minutes may run into issues with the
+      single database connection timing out.
+    */
+    public static function forceReconnect($db_name)
+    {
+        if (self::$db !== null) {
+            self::$db->close('', true);
+            self::$db = null;
+        }
+        return self::get($db_name);
     }
 
     private static function dbIsConfigured()

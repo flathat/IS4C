@@ -21,6 +21,8 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\lib\FooterBoxes;
+
 class PatronagePts extends FooterBox {
 
     public $header_css_class = 'coloredText';
@@ -34,12 +36,11 @@ class PatronagePts extends FooterBox {
 
     function display_content()
     {
-        if (CoreLocal::get("isMember") == 1) {
-            return number_format(CoreLocal::get("discountableTotal"), 2);
-        } else {
-            return "n/a";
+        if ($this->session->get("isMember") == 1) {
+            return number_format($this->session->get("discountableTotal"), 2);
         }
+
+        return "n/a";
     }
 }
 
-?>

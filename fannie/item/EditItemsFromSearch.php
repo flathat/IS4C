@@ -34,6 +34,8 @@ class EditItemsFromSearch extends FannieRESTfulPage
     public $description = '[Edit Search Results] takes a set of advanced search items and allows
     editing some fields on all items simultaneously. Must be accessed via Advanced Search.';
     public $themed = true;
+    protected $must_authenticate = true;
+    protected $auth_classes = array('pricechange');
 
     private $upcs = array();
     private $save_results = array();
@@ -59,76 +61,124 @@ class EditItemsFromSearch extends FannieRESTfulPage
         $local = FormLib::get('local');
         $brand = FormLib::get('brand');
         $vendor = FormLib::get('vendor');
+        $discount = FormLib::get('discount');
 
         $dbc = FannieDB::get($FANNIE_OP_DB);
         $vlookup = new VendorsModel($dbc);
-        for($i=0; $i<count($upcs); $i++) {
-            $model = new ProductsModel($dbc);
+        $model = new StoresModel($dbc);
+        $model->hasOwnItems(1);
+        $stores = $model->find();
+        $model = new ProductsModel($dbc);
+        $extra = new ProdExtraModel($dbc);
+        for ($i=0; $i<count($upcs); $i++) {
             $upc = BarcodeLib::padUPC($upcs[$i]);
+            $model->reset();
             $model->upc($upc);
-            $model->store_id(1);
             
-            if (isset($dept[$i])) {
-                $model->department($dept[$i]);
-            }
-            if (isset($tax[$i])) {
-                $model->tax($tax[$i]);
-            }
-            if (isset($local[$i])) {
-                $model->local($local[$i]);
-            }
-            if (isset($brand[$i])) {
-                $model->brand($brand[$i]);
-            }
+            $model = $this->setArrayValue($model, 'department', $dept, $i);
+            $model = $this->setArrayValue($model, 'tax', $tax, $i);
+            $model = $this->setArrayValue($model, 'local', $local, $i);
+            $model = $this->setArrayValue($model, 'brand', $brand, $i);
             if (isset($vendor[$i])) {
-                $vlookup->reset();
-                $vlookup->vendorName($vendor[$i]);
-                foreach ($vlookup->find('vendorID') as $obj) {
-                    $model->default_vendor_id($obj->vendorID());
-                    break;
-                }
+                $model = $this->setVendorByName($model, $vlookup, $vendor[$i]);
             }
+            $model = $this->setDiscounts($model, $discount, $i);
 
-            if (in_array($upc, FormLib::get('fs', array()))) {
-                $model->foodstamp(1);
-            } else {
-                $model->foodstamp(0);
-            }
-            if (in_array($upc, FormLib::get('disc', array()))) {
-                $model->discount(1);
-            } else {
-                $model->discount(0);
-            }
-            if (in_array($upc, FormLib::get('scale', array()))) {
-                $model->scale(1);
-            } else {
-                $model->scale(0);
-            }
+            $model = $this->setBinaryFlag($model, $upc, 'fs', 'foodstamp');
+            $model = $this->setBinaryFlag($model, $upc, 'scale', 'scale');
+            $model = $this->setBinaryFlag($model, $upc, 'inUse', 'inUse');
             $model->modified(date('Y-m-d H:i:s'));
 
-            $try = $model->save();
-            if ($try) {
-                $model->pushToLanes();
+            if ($this->config->get('STORE_MODE') == 'HQ') {
+                foreach ($stores as $store) {
+                    $model->store_id($store->storeID());
+                    $try = $model->save();
+                }
             } else {
+                $try = $model->save();
+            }
+            if ($try && count($upcs) <= 10) {
+                $model->pushToLanes();
+            } elseif (!$try) {
                 $this->save_results[] = 'Error saving item '.$upc;    
             }
 
             if ((isset($vendor[$i]) && $vendor[$i] != '') || (isset($brand[$i]) && $brand[$i] != '')) {
-                $extra = new ProdExtraModel($dbc);
-                $extra->upc($upc);
-                if (isset($vendor[$i]) && $vendor[$i] != '') {
-                    $extra->distributor($vendor[$i]);
-                }
-                if (isset($brand[$i]) && $brand[$i] != '') {
-                    $extra->manufacturer($brand[$i]);
-                }
-                $extra->save();
+                $this->updateProdExtra($extra, $upc,
+                    isset($brand[$i]) ? $brand[$i] : '',
+                    isset($vendor[$i]) ? $vendor[$i] : '');
             }
 
             $this->upcs[] = $upc;
         }
 
         return true;
+    }
+
+    private function setDiscounts($pmodel, $arr, $index)
+    {
+        if (!isset($arr[$index])) {
+            return $pmodel;
+        }
+
+        if ($arr[$index] == 1 || $arr[$index] == 2) {
+            $pmodel->discount(1);
+        } else {
+            $pmodel->discount(0);
+        }
+        if ($arr[$index] == 1 || $arr[$index] == 3) {
+            $pmodel->line_item_discountable(1);
+        } else {
+            $pmodel->line_item_discountable(0);
+        }
+
+        return $pmodel;
+    }
+
+    private $vcache = array();
+    private function setVendorByName($pmodel, $vmodel, $name)
+    {
+        if (isset($this->vcache[$name])) {
+            $pmodel->default_vendor_id($this->vcache[$name]);
+        } else {
+            $vmodel->reset();
+            $vmodel->vendorName($name);
+            foreach ($vmodel->find('vendorID') as $obj) {
+                $pmodel->default_vendor_id($obj->vendorID());
+                $this->vcache[$name] = $obj->vendorID();
+                break;
+            }
+        }
+
+        return $pmodel;
+    }
+
+    private function setArrayValue($model, $column, $arr, $index)
+    {
+        if (isset($arr[$index])) {
+            $model->$column($arr[$index]);
+        }
+
+        return $model;
+    }
+
+    private function setBinaryFlag($model, $upc, $field, $column)
+    {
+        if (in_array($upc, FormLib::get($field, array()))) {
+            $model->$column(1);
+        } else {
+            $model->$column(0);
+        }
+
+        return $model;
+    }
+
+    private function updateProdExtra($extra, $upc, $brand, $vendor)
+    {
+        $extra->upc($upc);
+        $extra->distributor($vendor);
+        $extra->manufacturer($brand);
+        $extra->save();
     }
 
     function post_save_view()
@@ -166,52 +216,31 @@ class EditItemsFromSearch extends FannieRESTfulPage
         }
     }
 
-    function post_u_view()
+    private function getTaxes($dbc)
     {
-        global $FANNIE_OP_DB, $FANNIE_URL;
-        $ret = '';
-
-        $dbc = FannieDB::get($FANNIE_OP_DB);
         $taxes = array(0 => 'NoTax');
         $taxerates = $dbc->query('SELECT id, description FROM taxrates');
         while($row = $dbc->fetch_row($taxerates)) {
             $taxes[$row['id']] = $row['description'];
         }
 
-        $locales = array(0 => 'No');
-        $origin = new OriginsModel($dbc);
-        $locales = array_merge($locales, $origin->getLocalOrigins());
+        return $taxes;
+    } 
 
+    private function getDepts($dbc)
+    {
         $depts = array();
         $deptlist = $dbc->query('SELECT dept_no, dept_name FROM departments ORDER BY dept_no');
         while($row = $dbc->fetch_row($deptlist)) {
             $depts[$row['dept_no']] = $row['dept_name'];
         }
 
-        $ret .= '<form action="EditItemsFromSearch.php" method="post">';
-        $ret .= '<table class="table small">';
-        $ret .= '<tr>
-                <th>UPC</th>
-                <th>Description</th>
-                <th>Brand</th>
-                <th>Vendor</th>
-                <th>Department</th>
-                <th>Tax</th>
-                <th>FS</th>
-                <th>Scale</th>
-                <th>%Disc</th>
-                <th>Local</th>
-                </tr>';
-        $ret .= '<tr><th colspan="2">Change All &nbsp;&nbsp;&nbsp;<button type="reset" 
-                class="btn btn-default">Reset</button></th>';
+        return $depts;
+    }
 
-        /**
-          List known brands from vendorItems as a drop down selection
-          rather than free text entry. prodExtra remains an imperfect
-          solution but this can at least start normalizing that data
-        */
-        $ret .= '<td><select class="form-control input-sm" onchange="updateAll(this.value, \'.brandField\');">';
-        $ret .= '<option value=""></option>';
+    private function getBrandOpts($dbc)
+    {
+        $ret = '<option value=""></option>';
         $brands = $dbc->query('
             SELECT brand 
             FROM vendorItems 
@@ -230,6 +259,73 @@ class EditItemsFromSearch extends FannieRESTfulPage
         while($row = $dbc->fetch_row($brands)) {
             $ret .= '<option>' . $row['brand'] . '</option>';
         }
+
+        return $ret;
+    }
+
+    private function arrayToOpts($arr, $selected=-999, $id_label=false)
+    {
+        $opts = '';
+        foreach ($arr as $num => $name) {
+            if ($id_label === true) {
+                $name = $num . ' ' . $name;
+            }
+            $opts .= sprintf('<option %s value="%d">%s</option>',
+                                ($num == $selected ? 'selected' : ''),
+                                $num, $name);
+        }
+
+        return $opts;
+    }
+
+    function post_u_view()
+    {
+        global $FANNIE_OP_DB, $FANNIE_URL;
+        $ret = '';
+
+        $dbc = FannieDB::get($FANNIE_OP_DB);
+
+        $locales = array(0 => 'No');
+        $origin = new OriginsModel($dbc);
+        $locales = array_merge($locales, $origin->getLocalOrigins());
+        $taxes = $this->getTaxes($dbc);
+        $depts = $this->getDepts($dbc);
+
+        $hidden = implode("\n", array_map(function ($i) { return '<input name="u[]" type="hidden" value="' .$i . '" />'; }, $this->u)); 
+        $ret .= <<<HTML
+<form action="EditFieldFromSearch.php" method="post">
+    {$hidden}
+    <button type="submit" class="btn btn-default">Edit A Different Field</button>
+</form>
+<br />
+HTML;
+
+
+        $ret .= '<form action="EditItemsFromSearch.php" method="post">';
+        $ret .= '<table class="table small">';
+        $ret .= '<tr>
+                <th>UPC</th>
+                <th>Description</th>
+                <th>Brand</th>
+                <th>Vendor</th>
+                <th>Department</th>
+                <th>Tax</th>
+                <th>FS</th>
+                <th>Scale</th>
+                <th>%Disc</th>
+                <th>Local</th>
+                <th>InUse</th>
+                </tr>';
+        $ret .= '<tr><th colspan="2">Change All &nbsp;&nbsp;&nbsp;<button type="reset" 
+                class="btn btn-default">Reset</button></th>';
+
+        /**
+          List known brands from vendorItems as a drop down selection
+          rather than free text entry. prodExtra remains an imperfect
+          solution but this can at least start normalizing that data
+        */
+        $ret .= '<td><select class="form-control input-sm" onchange="updateAll(this.value, \'.brandField\');">';
+        $ret .= $this->getBrandOpts($dbc);
         $ret .= '</select></td>';
 
         /**
@@ -237,41 +333,38 @@ class EditItemsFromSearch extends FannieRESTfulPage
         */
         $ret .= '<td><select class="form-control input-sm" onchange="updateAll(this.value, \'.vendorField\');">';
         $ret .= '<option value=""></option><option>DIRECT</option>';
-        $vendors = $dbc->query('SELECT vendorName FROM vendors
-                        GROUP BY vendorName ORDER BY vendorName');
-        while($row = $dbc->fetch_row($vendors)) {
+        $res = $dbc->query('SELECT vendorName FROM vendors ORDER BY vendorName');
+        while ($row = $dbc->fetchRow($res)) {
             $ret .= '<option>' . $row['vendorName'] . '</option>';
         }
         $ret .= '</select></td>';
 
         $ret .= '<td><select class="form-control input-sm" onchange="updateAll(this.value, \'.deptSelect\');">';
-        foreach($depts as $num => $name) {
-            $ret .= sprintf('<option value="%d">%d %s</option>', $num, $num, $name);
-        }
+        $ret .= $this->arrayToOpts($depts, -999, true);
         $ret .= '</select></td>';
 
         $ret .= '<td><select class="form-control input-sm" onchange="updateAll(this.value, \'.taxSelect\');">';
-        foreach($taxes as $num => $name) {
-            $ret .= sprintf('<option value="%d">%s</option>', $num, $name);
-        }
+        $ret .= $this->arrayToOpts($taxes);
         $ret .= '</select></td>';
 
         $ret .= '<td><input type="checkbox" onchange="toggleAll(this, \'.fsCheckBox\');" /></td>';
         $ret .= '<td><input type="checkbox" onchange="toggleAll(this, \'.scaleCheckBox\');" /></td>';
-        $ret .= '<td><input type="checkbox" onchange="toggleAll(this, \'.discCheckBox\');" /></td>';
+        $ret .= '<td><select class="form-control input-sm" onchange="updateAll(this.value, \'.discSelect\');">';
+        $ret .= $this->discountOpts(0, 0);
+        $ret .= '</select></td>';
 
         $ret .= '<td><select class="form-control input-sm" onchange="updateAll(this.value, \'.localSelect\');">';
-        foreach($locales as $num => $name) {
-            $ret .= sprintf('<option value="%d">%s</option>', $num, $name);
-        }
+        $ret .= $this->arrayToOpts($locales);
         $ret .= '</select></td>';
+        $ret .= '<td><input type="checkbox" onchange="toggleAll(this, \'.inUseCheckBox\');" /></td>';
 
         $ret .= '</tr>';
 
         list($in_sql, $args) = $dbc->safeInClause($this->upcs);
         $query = 'SELECT p.upc, p.description, p.department, d.dept_name,
                     p.tax, p.foodstamp, p.discount, p.scale, p.local,
-                    x.manufacturer, x.distributor
+                    x.manufacturer, x.distributor, p.line_item_discountable,
+                    p.inUse
                   FROM products AS p
                   LEFT JOIN departments AS d ON p.department=d.dept_no
                   LEFT JOIN prodExtra AS x ON p.upc=x.upc
@@ -279,25 +372,10 @@ class EditItemsFromSearch extends FannieRESTfulPage
                   ORDER BY p.upc';
         $prep = $dbc->prepare($query);
         $result = $dbc->execute($prep, $args);
-        while($row = $dbc->fetch_row($result)) {
-            $deptOpts = '';
-            foreach($depts as $num => $name) {
-                $deptOpts .= sprintf('<option %s value="%d">%d %s</option>',
-                                    ($num == $row['department'] ? 'selected' : ''),
-                                    $num, $num, $name);
-            }
-            $taxOpts = '';
-            foreach($taxes as $num => $name) {
-                $taxOpts .= sprintf('<option %s value="%d">%s</option>',
-                                    ($num == $row['tax'] ? 'selected' : ''),
-                                    $num, $name);
-            }
-            $localOpts = '';
-            foreach($locales as $num => $name) {
-                $localOpts .= sprintf('<option %s value="%d">%s</option>',
-                                    ($num == $row['local'] ? 'selected' : ''),
-                                    $num, $name);
-            }
+        while ($row = $dbc->fetch_row($result)) {
+            $deptOpts = $this->arrayToOpts($depts, $row['department'], true);
+            $taxOpts = $this->arrayToOpts($taxes, $row['tax']);
+            $localOpts = $this->arrayToOpts($locales, $row['local']);
             $ret .= sprintf('<tr>
                             <td>
                                 <a href="ItemEditorPage.php?searchupc=%s" target="_edit%s">%s</a>
@@ -310,8 +388,9 @@ class EditItemsFromSearch extends FannieRESTfulPage
                             <td><select name="tax[]" class="taxSelect form-control input-sm">%s</select></td>
                             <td><input type="checkbox" name="fs[]" class="fsCheckBox" value="%s" %s /></td>
                             <td><input type="checkbox" name="scale[]" class="scaleCheckBox" value="%s" %s /></td>
-                            <td><input type="checkbox" name="disc[]" class="discCheckBox" value="%s" %s /></td>
+                            <td><select class="form-control input-sm discSelect" name="discount[]">%s</select></td>
                             <td><select name="local[]" class="localSelect form-control input-sm">%s</select></td>
+                            <td><input type="checkbox" name="inUse[]" class="inUseCheckBox" value="%s" %s /></td>
                             </tr>',
                             $row['upc'], $row['upc'], $row['upc'],
                             $row['upc'],
@@ -322,8 +401,9 @@ class EditItemsFromSearch extends FannieRESTfulPage
                             $taxOpts,
                             $row['upc'], ($row['foodstamp'] == 1 ? 'checked' : ''),
                             $row['upc'], ($row['scale'] == 1 ? 'checked' : ''),
-                            $row['upc'], ($row['discount'] == 1 ? 'checked' : ''),
-                            $localOpts
+                            $this->discountOpts($row['discount'], $row['line_item_discountable']),
+                            $localOpts,
+                            $row['upc'], ($row['inUse'] == 1 ? 'checked' : '')
             );
         }
         $ret .= '</table>';
@@ -335,15 +415,36 @@ class EditItemsFromSearch extends FannieRESTfulPage
         return $ret;
     }
 
+    private function discountOpts($reg, $line)
+    {
+        $opts = array('No', 'Yes', 'Trans Only', 'Line Only');
+        $index = 0;
+        if ($reg == 1 && $line == 1) {
+            $index = 1;
+        } elseif ($reg == 1 && $line == 0) {
+            $index = 2;
+        } elseif ($reg == 0 && $line == 1) {
+            $index = 3;
+        }
+
+        $ret = '';
+        foreach ($opts as $key => $val) {
+            $ret .= sprintf('<option %s value="%d">%s</option>',
+                ($index == $key ? 'selected' : ''), $key, $val);
+        }
+
+        return $ret;
+    }
+
     function javascript_content()
     {
         ob_start();
         ?>
 function toggleAll(elem, selector) {
     if (elem.checked) {
-        $(selector).attr('checked', true);
+        $(selector).prop('checked', true);
     } else {
-        $(selector).attr('checked', false);
+        $(selector).prop('checked', false);
     }
 }
 function updateAll(val, selector) {
@@ -366,6 +467,17 @@ function updateAll(val, selector) {
             only change the product. Changes are not instantaneous.
             Clicking the save button when finished is required.
             </p>';
+    }
+    
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->javascript_content()));
+        $this->u = 'foo';
+        $phpunit->assertEquals(false, $this->post_u_handler());
+        $this->u = '4011';
+        $phpunit->assertEquals(true, $this->post_u_handler());
+        $phpunit->assertNotEquals(0, strlen($this->post_u_view()));
+        $phpunit->assertNotEquals(0, strlen($this->post_save_view()));
     }
 }
 

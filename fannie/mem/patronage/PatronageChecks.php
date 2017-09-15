@@ -91,8 +91,8 @@ class PatronageChecks extends FannieRESTfulPage
     {
         global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
-        $fy = FormLib::get('fy');
-        $per_page = FormLib::get('per_page');
+        $fiscal_year = FormLib::get('fy', '2016');
+        $per_page = FormLib::get('per_page', 3000);
 
         $custdata = new CustdataModel($dbc);
         $meminfo = new MeminfoModel($dbc);
@@ -100,16 +100,22 @@ class PatronageChecks extends FannieRESTfulPage
         $query = $dbc->prepare('
             SELECT p.cardno,
                 p.cash_pat,
+                p.equit_pat,
+                p.net_purch,
                 m.zip,
-                p.check_number
+                p.check_number,
+                c.LastName,
+                c.FirstName
             FROM patronage AS p
                 INNER JOIN meminfo AS m ON p.cardno=m.card_no
                 INNER JOIN custdata AS c ON p.cardno=c.CardNo AND c.personNum=1
             WHERE p.FY=?
-            ORDER BY m.zip,
-                c.LastName,
-                c.FirstName');
-        $result = $dbc->execute($query, array($fy));
+                AND p.cash_pat > 0
+
+            ORDER BY zip,
+                LastName,
+                FirstName');
+        $result = $dbc->execute($query, array($fiscal_year));
         $pdf = new FPDF('P', 'mm', 'Letter');
         $pdf->SetMargins(6.35, 6.35, 6.35); // quarter-inch margins
         $pdf->SetAutoPageBreak(false);
@@ -117,34 +123,43 @@ class PatronageChecks extends FannieRESTfulPage
         $this->files = array();
         $filenumber = 1;
         set_time_limit(0);
-        while ($w = $dbc->fetch_row($result)) {
+        $barcoder = new COREPOS\Fannie\API\item\FannieSignage();
+        $count = 1;
+        $ttl = $dbc->numRows($result);
+        while ($row = $dbc->fetch_row($result)) {
+            echo "Processing {$row['cardno']} ({$count}/{$ttl})\n";
+            $count++;
             if (empty($filename)) {
-                $filename = $filenumber . '-' . substr($w['zip'], 0, 5);
+                $filename = $filenumber . '-' . substr($row['zip'], 0, 5);
             }
             $dbc = FannieDB::get($FANNIE_OP_DB);
-            $custdata->CardNo($w['cardno']);
+            $custdata->CardNo($row['cardno']);
             $custdata->personNum(1);
             $custdata->load();
-            $meminfo->card_no($w['cardno']);
+            $meminfo->card_no($row['cardno']);
             $meminfo->load();
 
-            if ($w['check_number'] == '') {
+            if ($row['check_number'] == '') {
                 $patronage = new PatronageModel($dbc);
-                $patronage->cardno($w['cardno']);
-                $patronage->FY($fy);
-                $number = GumLib::allocateCheck($patronage, false);
+                $patronage->cardno($row['cardno']);
+                $patronage->FY($fiscal_year);
+                $number = GumLib::allocateCheck($patronage, false, 'PATRONAGE', "PAT-{$fiscal_year}-{$row['card_no']}");
                 $dbc = FannieDB::get($FANNIE_OP_DB);
                 $patronage->check_number($number);
                 $patronage->save();
-                $w['check_number'] = $number;
+                $row['check_number'] = $number;
             }
 
             $pdf->AddPage();
             $pdf->Image('rebate_body.png', 10, 0, 190);
-            $check = new GumCheckTemplate($custdata, $meminfo, $w['cash_pat'], 'Rebate ' . $fy, $w['check_number']);
+            if ($row['cash_pat'] < 0.05) {
+                $row['cash_pat'] = 0.05;
+            }
+            $check = new GumCheckTemplate($custdata, $meminfo, $row['cash_pat'], 'Rebate ' . $fiscal_year, $row['check_number']);
             $check->renderAsPDF($pdf);
+            $barcoder->drawBarcode('0049999900131', $pdf, 85, 240, array('height'=>9));
             if ($pdf->PageNo() == $per_page) {
-                $filename .= '-' . substr($w['zip'], 0, 5) . '.pdf';
+                $filename .= '-' . substr($row['zip'], 0, 5) . '.pdf';
                 $filenumber++;
                 $pdf->Output('/tmp/' . $filename, 'F');
                 $this->files[] = $filename;
@@ -177,13 +192,13 @@ class PatronageChecks extends FannieRESTfulPage
     {
         global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
-        $ret .= '<form action="' . $_SERVER['PHP_SELF'] . '" method="post">
+        $ret .= '<form action="' . filter_input(INPUT_SERVER, 'PHP_SELF') . '" method="post">
             <div class="form-group">
                 <label>Fiscal Year</label>
                 <select class="form-control" name="fy">';
         $result = $dbc->query('SELECT FY FROM patronage GROUP BY FY ORDER BY FY DESC');
-        while ($w = $dbc->fetch_row($result)) {
-            $ret .= '<option>' . $w['FY'] . '</option>';
+        while ($row = $dbc->fetchRow($result)) {
+            $ret .= '<option>' . $row['FY'] . '</option>';
         }
         $ret .= '</select>
             </div>
@@ -204,5 +219,4 @@ class PatronageChecks extends FannieRESTfulPage
 }
 
 FannieDispatch::conditionalExec();
-
 

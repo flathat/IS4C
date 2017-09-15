@@ -171,5 +171,3 @@ class DateCountPage extends FannieRESTfulPage
 
 FannieDispatch::conditionalExec();
 
-
-

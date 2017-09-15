@@ -21,6 +21,9 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\lib\ReceiptBuilding\Messages;
+use COREPOS\pos\lib\ReceiptLib;
+
 /**
   @class ReceiptMessage
 */
@@ -41,7 +44,7 @@ class BarcodeTransIdentifierMessage extends ReceiptMessage
     */
     public function message($val, $ref, $reprint=false)
     {
-        list($emp,$reg,$trans) = explode('-', $ref, 3);
+        list($emp, $reg, $trans) = ReceiptLib::parseRef($ref);
 
         // full identier:
         // YYYY-MM-DD emp_no-register_no-trans_no

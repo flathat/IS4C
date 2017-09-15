@@ -21,25 +21,28 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\lib\adminlogin;
+use COREPOS\pos\lib\MiscLib;
+
 /**
   @class PriceOverrideAdminLogin
   adminlogin callback for adjusting
   the price of an already-rung item
 */
-class PriceOverrideAdminLogin 
+class PriceOverrideAdminLogin implements AdminLoginInterface
 {
-
-    static public $adminLoginMsg = 'Login to alter price';
-
-    static public $adminLoginLevel = 30;
+    public static function messageAndLevel()
+    {
+        return array(_('Login to alter price'), 30);
+    }
 
     static public function adminLoginCallback($success)
     {
         if ($success) {
-            return MiscLib::base_url().'gui-modules/priceOverride.php';
-        } else {
-            return false;
+            return MiscLib::baseURL().'gui-modules/priceOverride.php';
         }
+
+        return false;
     }
 }
 

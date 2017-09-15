@@ -48,61 +48,107 @@ class AutoParsTask extends FannieTask
                   MAX(discounttype) AS onSale
                 FROM ' . $FANNIE_TRANS_DB . $dbc->sep() . 'dlog_90_view AS d
                 WHERE d.upc=?
+                    AND d.store_id=?
                     AND charflag <> \'SO\'
                     AND trans_status <> \'R\'
+                    AND quantity BETWEEN -1000 AND 1000
                 GROUP BY year(tdate), month(tdate), day(tdate)
                 ORDER BY year(tdate), month(tdate), day(tdate) DESC';
         $salesP = $dbc->prepare($salesQ);
-        $prodP = $dbc->prepare('UPDATE products SET auto_par=? WHERE upc=?');
+        $prodP = $dbc->prepare('UPDATE products SET auto_par=? WHERE upc=? AND store_id=?');
 
-        $product = new ProductsModel($dbc);
-        $product->inUse(1);
-        $prodR = $dbc->query('
-            SELECT upc
+        $date = date('Y-m-d', strtotime('1 month ago'));
+        $lookupP = $dbc->prepare('
+            SELECT upc,store_id
             FROM products
-            WHERE inUse=1
+            WHERE (inUse=1 OR last_sold >= ?)
         ');
+        $prodR = $dbc->execute($lookupP, array($date));
         $lambda = 0.25;
         // average daily sales for items at retail price
         // sale days are discarded from both quantity sold
         // and number of days
         while ($prodW = $dbc->fetchRow($prodR)) {
             $upc = $prodW['upc'];
-            $salesR = $dbc->execute($salesP, array($upc));
+            $store = $prodW['store_id'];
+            $salesR = $dbc->execute($salesP, array($upc, $store));
             if ($dbc->numRows($salesR) == 0) {
-                $dbc->execute($prodP, array(0, $upc));
-                continue;
-            }
-            $max = 0;
-            $days = array();
-            $last_nonsale_qty = 0.1;
-            $nonsale_qty = 0.1;
-            $nonsale_count = 0;
-            while ($w = $dbc->fetchRow($salesR)) {
-                $index = $w['diff'];
-                if ($index > $max) {
-                    $max = $index;
-                }
-                $days[$index] = $w['qty'];
-                if ($w['onSale']) {
-                    $days[$index] = ($nonsale_count == 0 ? $nonsale_qty : $nonsale_qty/$nonsale_count);
+                $dbc->execute($prodP, array(0, $upc, $store));
+                if ($this->test_mode) {
+                    break;
                 } else {
-                    $nonsale_qty += $w['qty'];
-                    $nonsale_count++;
-                }
-            }
-            $sum = 0;
-            $count = 0;
-            for ($i=1; $i<=$max; $i++) {
-                if (isset($days[$i]) && $days[$i] == 'skip') {
                     continue;
                 }
-                $sum += (isset($days[$i]) ? $days[$i] : 0);
-                $count++;
             }
-            $avg = ($count == 0) ? 0 : $sum/$count;
-            $dbc->execute($prodP, array($avg, $upc));
+            $avg = $this->getAverage($dbc, $salesR);
+            $dbc->execute($prodP, array($avg, $upc, $store));
         }
+
+        $salesQ = 'SELECT ' 
+                . DTrans::sumQuantity('d') . ' AS qty, '
+                . $dbc->datediff($dbc->now(), 'MIN(tdate)') . ' AS diff,
+                  MAX(discounttype) AS onSale
+                FROM ' . $FANNIE_TRANS_DB . $dbc->sep() . 'dlog_90_view AS d
+                    INNER JOIN upcLike AS u ON d.upc=u.upc
+                WHERE u.likeCode=?
+                    AND d.store_id=?
+                    AND charflag <> \'SO\'
+                    AND trans_status <> \'R\'
+                    AND quantity BETWEEN -1000 AND 1000
+                GROUP BY year(tdate), month(tdate), day(tdate)
+                ORDER BY year(tdate), month(tdate), day(tdate) DESC';
+        $salesP = $dbc->prepare($salesQ);
+        $prodR = $dbc->query("SELECT l.likeCode, s.storeID FROM likeCodes AS l, Stores AS s WHERE s.hasOwnItems=1");
+        $model = new LikeCodeParsModel($dbc);
+        while ($prodW = $dbc->fetchRow($prodR)) {
+            $like = $prodW['likeCode'];
+            $store = $prodW['storeID'];
+            $salesR = $dbc->execute($salesP, array($like, $store));
+            $model->likeCode($like);
+            $model->storeID($store);
+            if ($dbc->numRows($salesR) == 0) {
+                $model->par(0);
+                $model->save();
+            } else {
+                $avg = $this->getAverage($dbc, $salesR);
+                $model->par($avg);
+                $model->save();
+            }
+            if ($this->test_mode) {
+                break;
+            }
+        }
+    }
+
+    private function getAverage($dbc, $salesR)
+    {
+        $max = 0;
+        $days = array();
+        $last_nonsale_qty = 0.1;
+        $nonsale_qty = 0.1;
+        $nonsale_count = 0;
+        while ($salesW = $dbc->fetchRow($salesR)) {
+            $index = $salesW['diff'];
+            if ($index > $max) {
+                $max = $index;
+            }
+            $days[$index] = $salesW['qty'];
+            if ($salesW['onSale']) {
+                $days[$index] = ($nonsale_count == 0 ? $nonsale_qty : $nonsale_qty/$nonsale_count);
+            } else {
+                $nonsale_qty += $salesW['qty'];
+                $nonsale_count++;
+            }
+        }
+        $sum = 0;
+        $count = 0;
+        for ($i=1; $i<=$max; $i++) {
+            $sum += (isset($days[$i]) ? $days[$i] : 0);
+            $count++;
+        }
+        $avg = ($count == 0) ? 0 : $sum/$count;
+
+        return $avg;
     }
 
     // Box-Cox

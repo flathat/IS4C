@@ -39,9 +39,9 @@ function forceBatch($batchID)
     global $FANNIE_OP_DB,$FANNIE_SERVER_DBMS, $FANNIE_LANES;
     $dbc = FannieDB::get($FANNIE_OP_DB);
 
-    $batchInfoQ = $dbc->prepare_statement("SELECT batchType,discountType FROM batches WHERE batchID = ?");
-    $batchInfoR = $dbc->exec_statement($batchInfoQ,array($batchID));
-    $batchInfoW = $dbc->fetch_array($batchInfoR);
+    $batchInfoQ = $dbc->prepare("SELECT batchType,discountType FROM batches WHERE batchID = ?");
+    $batchInfoR = $dbc->execute($batchInfoQ,array($batchID));
+    $batchInfoW = $dbc->fetchRow($batchInfoR);
 
     $forceQ = "";
     $forceLCQ = "";
@@ -169,10 +169,10 @@ function forceBatch($batchID)
         }
     }
 
-    $forceP = $dbc->prepare_statement($forceQ);
-    $forceR = $dbc->exec_statement($forceP,array($batchID));
-    $forceLCP = $dbc->prepare_statement($forceLCQ);
-    $forceR = $dbc->exec_statement($forceLCP,array($batchID));
+    $forceP = $dbc->prepare($forceQ);
+    $forceR = $dbc->execute($forceP,array($batchID));
+    $forceLCP = $dbc->prepare($forceLCQ);
+    $forceR = $dbc->execute($forceLCP,array($batchID));
 
     $columnsP = $dbc->prepare('
         SELECT p.upc,
@@ -271,4 +271,3 @@ function forceBatch($batchID)
     $update->logManyUpdates(array_keys($upcs), $updateType);
 }
 
-?>

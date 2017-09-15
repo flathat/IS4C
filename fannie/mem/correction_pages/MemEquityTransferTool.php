@@ -91,8 +91,8 @@ class MemEquityTransferTool extends FanniePage {
         $dlist = substr($dlist,0,strlen($dlist)-1).")";
 
         $dbc = FannieDB::get($FANNIE_OP_DB);
-        $q = $dbc->prepare_statement("SELECT dept_no,dept_name FROM departments WHERE dept_no IN $dlist");
-        $r = $dbc->exec_statement($q,$dArgs);
+        $q = $dbc->prepare("SELECT dept_no,dept_name FROM departments WHERE dept_no IN $dlist");
+        $r = $dbc->execute($q,$dArgs);
         if ($dbc->num_rows($r) == 0){
             $this->errors .= '<div class="alert alert-danger">Error: department(s) don\'t exist.</div>';
             return true;
@@ -320,8 +320,28 @@ class MemEquityTransferTool extends FanniePage {
             <em>increase</em> Bob\'s balance by $20.
             </p>';
     }
+
+    public function unitTest($phpunit)
+    {
+        $this->errors = 'foo';
+        $this->mode = 'init';
+        $phpunit->assertEquals('foo', $this->body_content());
+        $this->errors = '';
+        $this->depts = array(1 => 'Dept', 2 => 'Other Dept');
+        $phpunit->assertNotEquals(0, strlen($this->body_content()));
+        $this->errors = 'foo';
+        $this->mode = 'confirm';
+        $phpunit->assertEquals('foo', $this->body_content());
+        $this->errors = '';
+        $this->amount = 1;
+        $this->dept = 1;
+        $this->cn1 = 1;
+        $this->cn2 = 2;
+        $this->name1 = 'JoeyJoeJoe';
+        $this->name2 = 'JoeyJoeJoe';
+        $phpunit->assertNotEquals(0, strlen($this->body_content()));
+    }
 }
 
-FannieDispatch::conditionalExec(false);
+FannieDispatch::conditionalExec();
 
-?>

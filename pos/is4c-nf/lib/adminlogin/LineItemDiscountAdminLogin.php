@@ -21,26 +21,29 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\lib\adminlogin;
+use COREPOS\pos\lib\MiscLib;
+use \CoreLocal;
+
 /**
   @class LineItemDiscountAdminLogin
   adminlogin callback for approving
   line item discounts.
 */
-class LineItemDiscountAdminLogin 
+class LineItemDiscountAdminLogin implements AdminLoginInterface
 {
-
-    static public $adminLoginMsg = 'Login to give discount';
-
-    static public $adminLoginLevel = 30;
+    public static function messageAndLevel()
+    {
+        return array(_('Login to give discount'), 30);
+    }
 
     static public function adminLoginCallback($success)
     {
         if ($success) {
             $inp = urlencode(CoreLocal::get('strEntered'));
             return MiscLib::baseURL() . 'gui-modules/pos2.php?reginput=' . $inp . '&repeat=1';
-        } else {
-            return false;
         }
+        return false;
     }
 }
 

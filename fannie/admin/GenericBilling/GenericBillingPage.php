@@ -39,47 +39,12 @@ class GenericBillingPage extends FannieRESTfulPage
     private $EMP_NO=1001;
     private $DEPT=703;
 
-    function javascript_content(){
-        ob_start();
-        ?>
-function getMemInfo(){
-    $.ajax({
-        url: 'GenericBillingPage.php?id='+$('#memnum').val(),
-        type: 'get',
-        success: function(resp){
-            $('#contentArea').html(resp);
-            $('#resultArea').html('');
-        }
-    });
-}
-function postBilling(){
-    var data = 'id='+$('#form_memnum').val();
-    data += '&amount='+$('#amount').val();
-    data += '&desc='+$('#desc').val();
-    $.ajax({
-        url: 'GenericBillingPage.php',
-        type: 'post',
-        data: data,
-        dataType: 'json',
-        success: function(resp) {
-            if (resp.billed) {
-                $('#contentArea').html('');
-                showBootstrapAlert('#resultArea', 'success', resp.msg);
-            } else {
-                showBootstrapAlert('#resultArea', 'danger', resp.msg);
-            }
-        }
-    });
-}
-        <?php
-        return ob_get_clean();
-    }
-
     function get_view()
     {
         $value = FormLib::get_form_value('id');
         $this->add_onload_command('$(\'#memnum\').val($(\'#sel\').val());');
-        $ret = "<form onsubmit=\"getMemInfo(); return false;\">
+        $this->addScript('billing.js');
+        $ret = "<form onsubmit=\"genericBilling.getMemInfo(); return false;\">
             <div class=\"form-group form-inline\">
             <label>Member #</label>:
             <input type=text id=memnum name=id 
@@ -92,7 +57,9 @@ function postBilling(){
                 'customers' => array(
                     array('accountHolder'=>1),
                 ), 
-            )
+            ),
+            0,
+            true
         );
         foreach ($accounts as $account) {
             $ret .= sprintf('<option %s value="%d">%d %s</option>',
@@ -110,17 +77,17 @@ function postBilling(){
 
     function get_id_handler(){
         global $FANNIE_TRANS_DB;
-        $sql = FannieDB::getReadOnly($ths->config->get('OP_DB'));
+        $sql = FannieDB::getReadOnly($this->config->get('OP_DB'));
 
         $account = \COREPOS\Fannie\API\member\MemberREST::get($this->id);
         $query = "SELECT n.balance
             FROM  " . $FANNIE_TRANS_DB.$sql->sep()."ar_live_balance AS n 
             WHERE n.card_no=?";
-        $prep = $sql->prepare_statement($query);
-        $result = $sql->exec_statement($prep, array($this->id));
+        $prep = $sql->prepare($query);
+        $result = $sql->execute($prep, array($this->id));
         $row = $sql->fetch_row($result);
 
-        printf("<form onsubmit=\"postBilling();return false;\">
+        printf("<form onsubmit=\"genericBilling.postBilling();return false;\">
             <div class=\"col-sm-6\">
             <table class=\"table\">
             <tr>
@@ -193,6 +160,12 @@ function postBilling(){
         $params['total'] = -1*$amount;
         DTrans::addItem($sql, $trans_no, $params);
 
+        $params['description'] = $desc;
+        $params['trans_type'] = 'C';
+        $params['trans_subtype'] = 'CM';
+        $params['total'] = 0;
+        DTrans::addItem($sql, $trans_no, $params);
+
         $json['msg'] = sprintf("Member <b>%d</b> billed <b>$%.2f</b>.<br />
                 Receipt is %d-%d-%d.",$this->id,$amount,
                 $this->EMP_NO,$this->LANE_NO,$t_no);
@@ -209,6 +182,15 @@ function postBilling(){
             involves billing business customers for random services
             that lack specialized tooling.
             </p>'; 
+    }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->get_view()));
+        $this->id = 1;
+        ob_start();
+        $phpunit->assertEquals(false, $this->get_id_handler());
+        $phpunit->assertNotEquals(0, strlen(ob_get_clean()));
     }
 }
 

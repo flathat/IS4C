@@ -50,6 +50,7 @@ class ReportMetricsTask extends FannieTask
             return false;
         }
 
+        $msg .= $this->versionInfo();
         $free = disk_free_space(dirname(__FILE__));
         $total = disk_total_space(dirname(__FILE__));
         $msg .= sprintf('Disk space available: %d/%d (%.2f)%%', $free, $total, ($free/$total)*100) 
@@ -82,35 +83,6 @@ class ReportMetricsTask extends FannieTask
         $msg .= $this->archiveStatus($dbc);
         $msg .= $this->custdataStats($dbc);
         $msg .= $this->productStats($dbc);
-
-        $dbc->selectDB($this->config->get('OP_DB'));
-        $res = $dbc->query('
-            SELECT COUNT(*) AS total,
-                COUNT(DISTINCT userHash) AS users,
-                COUNT(DISTINCT ipHash) AS hosts
-            FROM usageStats
-            WHERE tdate >= \'' . date('Y-m-d') . '\'');
-        $row = $dbc->fetchRow($res);
-        $msg .= 'Pages served: ' . $row['total'] . "\n";
-        $msg .= 'Unique users: ' . $row['users'] . "\n";
-        $msg .= 'Unique IPs: ' . $row['hosts'] . "\n";
-        $res = $dbc->query('
-            SELECT COUNT(*) AS total,
-                pageName
-            FROM usageStats
-            WHERE tdate >= \'' . date('Y-m-d') . '\'
-            GROUP BY pageName
-            ORDER BY COUNT(*) DESC');
-        $msg .= 'Most popular pages: ' . "\n";
-        $page_list = 0;
-        while ($w = $dbc->fetchRow($res)) {
-            $msg .= $w['total'] . ' ' . $w['pageName'] . "\n";
-            $page_list++;
-            if ($page_list > 9) {
-                break;
-            }
-        }
-        $msg .= "\n";
 
         $LOG_MAX = 100;
         $syslog_date = date('M j ');
@@ -159,6 +131,15 @@ class ReportMetricsTask extends FannieTask
         } else {
             mail($settings['ReportMetricsEmail'], 'CORE Metrics', $msg);
         }
+    }
+
+    private function versionInfo()
+    {
+        $msg = 'OS Version: ' . php_uname() . "\n";
+        $msg .= 'PHP Version: ' . phpversion() . "\n";
+        $msg .= 'CORE Version: ' . file_get_contents(dirname(__FILE__) . '/../../../../VERSION') . "\n";
+
+        return $msg;
     }
 
     private function tail($filename, $num=500)

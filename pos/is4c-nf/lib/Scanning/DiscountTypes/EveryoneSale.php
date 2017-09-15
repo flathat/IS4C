@@ -21,10 +21,16 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\lib\Scanning\DiscountTypes;
+use COREPOS\pos\lib\Scanning\DiscountType;
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\MiscLib;
+use COREPOS\pos\lib\TransRecord;
+
 class EveryoneSale extends DiscountType 
 {
 
-    public function priceInfo($row,$quantity=1)
+    public function priceInfo(array $row, $quantity=1)
     {
         if (is_array($this->savedInfo)) {
             return $this->savedInfo;
@@ -51,8 +57,8 @@ class EveryoneSale extends DiscountType
         $ret['discount'] = ($ret['regPrice'] - $row['special_price']) * $quantity;
         $ret['memDiscount'] = 0;
 
-        if ($row['line_item_discountable'] == 1 && CoreLocal::get("itemPD") > 0) {
-            $discount = $row['special_price'] * ((CoreLocal::get("itemPD")/100));
+        if ($row['line_item_discountable'] == 1 && $this->session->get("itemPD") > 0) {
+            $discount = $row['special_price'] * (($this->session->get("itemPD")/100));
             $ret["unitPrice"] = $row['special_price'] - $discount;
             $ret["discount"] += ($discount * $quantity);
         }
@@ -68,7 +74,8 @@ class EveryoneSale extends DiscountType
             $chkR = $tdb->query($chkQ);
             $prevSales = 0;
             if ($tdb->num_rows($chkR) > 0) {
-                $prevSales = array_pop($tdb->fetch_row($chkR));
+                $chkW = $tdb->fetchRow($chkR);
+                $prevSales = $chkW[0];
             }
 
             if ($prevSales >= $row['specialquantity']) {

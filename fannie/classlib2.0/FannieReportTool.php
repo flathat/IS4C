@@ -21,8 +21,7 @@
 
 *********************************************************************************/
 
-namespace COREPOS\Fannie\API 
-{
+namespace COREPOS\Fannie\API;
 
 /**
   @class FannieReportTool
@@ -54,12 +53,5 @@ class FannieReportTool extends \FanniePage
 
     public $discoverable = true;
 
-}
-
-}
-
-namespace
-{
-    class FannieReportTool extends \COREPOS\Fannie\API\FannieReportTool {}
 }
 

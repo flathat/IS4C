@@ -36,10 +36,10 @@ class AR extends \COREPOS\Fannie\API\member\MemberModule
         $dbc = $this->db();
         $trans = $FANNIE_TRANS_DB.$dbc->sep();
         
-        $infoQ = $dbc->prepare_statement("SELECT n.balance
+        $infoQ = $dbc->prepare("SELECT n.balance
                 FROM {$trans}ar_live_balance AS n 
                 WHERE n.card_no=?");
-        $infoR = $dbc->exec_statement($infoQ,array($memNum));
+        $infoR = $dbc->execute($infoQ,array($memNum));
         $infoW = $dbc->fetch_row($infoR);
 
         $account = self::getAccount();
@@ -75,43 +75,15 @@ class AR extends \COREPOS\Fannie\API\member\MemberModule
         return $ret;
     }
 
-    function saveFormData($memNum)
+    public function saveFormData($memNum, $json=array())
     {
         $limit = FormLib::get_form_value('AR_limit',0);
-        $json = array(
-            'cardNo' => $memNum,
-            'chargeLimit' => $limit,
-            'customers' => array(),
-        );
-        $account = self::getAccount();
-        $json['customerAccountID'] = $account['customerAccountID'];
-        foreach ($account['customers'] as $c) {
-            if ($c['accountHolder']) {
-                $json['customers'][] = array(
-                    'customerID' => $c['customerID'],
-                    'customerAccountID' => $account['customerAccountID'],
-                    'chargeAllowed' => ($limit == 0 ? 0 : 1),
-                    'accountHolder' => 1,
-                    'cardNo' => $memNum,
-                );
-            } elseif ($c['customerID']) {
-                // unnecessary to specify all customers in old schema
-                // new schema will only update correctly if IDs exist
-                $json['customers'][] = array(
-                    'customerID' => $c['customerID'],
-                    'cardNo' => $memNum,
-                    'chargeAllowed' => ($limit == 0 ? 0 : 1),
-                    'accountHolder' => 0,
-                );
-            }
+        $json['chargeLimit'] = $limit;
+        foreach (array_keys($json['customers']) as $c) {
+            $json['customers'][$c]['chargeAllowed'] = $limit > 0 ? 1 : 0;
         }
-        $resp = \COREPOS\Fannie\API\member\MemberREST::post($memNum, $json);
-        
-        if ($resp['errors'] > 0) {
-            return 'Error: Problem saving A/R limit<br />';
-        } else {
-            return '';
-        }
+
+        return $json;
     }
 }
 

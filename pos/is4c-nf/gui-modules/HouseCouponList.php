@@ -21,24 +21,25 @@
 
 *********************************************************************************/
 
-use COREPOS\pos\lib\FormLib;
+use COREPOS\pos\lib\gui\NoInputCorePage;
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\DisplayLib;
 
 include_once(dirname(__FILE__).'/../lib/AutoLoader.php');
 
 class HouseCouponList extends NoInputCorePage 
 {
-
     function preprocess()
     {
-        if (FormLib::get('selectlist', false) !== false) {
+        try {
             $qstr = '';
-            if (FormLib::get('selectlist', false) != '') {
-                $qstr .= '?reginput=' . urlencode(FormLib::get('selectlist')) . '&repeat=1';
+            if ($this->form->selectlist != '') {
+                $qstr .= '?reginput=' . urlencode($this->form->selectlist) . '&repeat=1';
             }
             $this->change_page($this->page_url."gui-modules/pos2.php" . $qstr);
 
             return false;
-        }
+        } catch (Exception $ex) {}
 
         return true;
     }
@@ -54,7 +55,7 @@ class HouseCouponList extends NoInputCorePage
     
     function body_content()
     {
-        $prefix = CoreLocal::get('houseCouponPrefix');
+        $prefix = $this->session->get('houseCouponPrefix');
         if ($prefix == '') {
             $prefix = '00499999';
         }
@@ -63,25 +64,27 @@ class HouseCouponList extends NoInputCorePage
         $query = "SELECT h.coupID, h.description
                 FROM houseCoupons AS h
                 WHERE h.description <> ''
+                    AND h.description NOT LIKE '%*'
+                    AND h.startDate <= " . $dbc->now() . "
                     AND " . $dbc->datediff('endDate', $dbc->now()) . " >= 0
                 ORDER BY h.description";
     
         $result = $dbc->query($query);
-        $num_rows = $dbc->num_rows($result);
+        $numRows = $dbc->numRows($result);
         ?>
 
         <div class="baseHeight">
         <div class="listbox">
         <form name="selectform" method="post" id="selectform" 
-            action="<?php echo $_SERVER['PHP_SELF']; ?>" >
+            action="<?php echo filter_input(INPUT_SERVER, 'PHP_SELF'); ?>" >
         <select name="selectlist" size="15" id="selectlist"
             style="min-width: 200px;"
             onblur="$('#selectlist').focus()" >
 
         <?php
         $selected = "selected";
-        for ($i = 0; $i < $num_rows; $i++) {
-            $row = $dbc->fetch_array($result);
+        for ($i = 0; $i < $numRows; $i++) {
+            $row = $dbc->fetchRow($result);
             printf('<option value="%s" %s>%d. %s</option>',
                     ($prefix . str_pad($row['coupID'], 5, '0', STR_PAD_LEFT)),
                     $selected, ($i+1), $row['description']
@@ -93,7 +96,7 @@ class HouseCouponList extends NoInputCorePage
         </select>
         </div>
         <?php
-        if (CoreLocal::get('touchscreen')) {
+        if ($this->session->get('touchscreen')) {
             echo '<div class="listbox listboxText">'
                 . DisplayLib::touchScreenScrollButtons('#selectlist')
                 . '</div>';
@@ -103,13 +106,13 @@ class HouseCouponList extends NoInputCorePage
         <?php echo _("use arrow keys to navigate"); ?><br />
         <p>
             <button type="submit" class="pos-button wide-button coloredArea">
-            Reprint <span class="smaller">[enter]</span>
+            <?php echo _('Reprint'); ?> <span class="smaller"><?php echo _('[enter]'); ?></span>
             </button>
         </p>
         <p>
             <button type="submit" class="pos-button wide-button errorColoredArea"
             onclick="$('#selectlist').append($('<option>').val(''));$('#selectlist').val('');">
-            Cancel <span class="smaller">[clear]</span>
+            <?php echo _('Cancel'); ?> <span class="smaller"><?php echo _('[clear]'); ?></span>
         </button></p>
         </div>
         </form>
@@ -118,6 +121,18 @@ class HouseCouponList extends NoInputCorePage
 
         <?php
     } // END body_content() FUNCTION
+
+    public function unitTest($phpunit)
+    {
+        $debug = $this->session->Debug_Redirects;
+        $this->session->Debug_Redirects = 1;
+        $this->form = new COREPOS\common\mvc\ValueContainer();
+        $this->form->selectlist = '9999';
+        ob_start();
+        $phpunit->assertEquals(false, $this->preprocess());
+        ob_end_clean();
+        $this->session->Debug_Redirects = $debug;
+    }
 }
 
 AutoLoader::dispatch();

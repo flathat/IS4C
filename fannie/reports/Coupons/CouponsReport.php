@@ -29,12 +29,11 @@ if (!class_exists('FannieAPI')) {
 class CouponsReport extends FannieReportPage {
 
     public $description = '[Manufacturer Coupons] lists coupons totals by UPC for a given date range.';
-    public $themed = true;
     public $report_set = 'Tenders';
 
     protected $title = "Fannie : Coupons Report";
     protected $header = "Coupons Report";
-    protected $report_headers = array('UPC', 'Qty', '$ Total');
+    protected $report_headers = array('UPC', 'Brand', 'Qty', '$ Total');
     protected $required_fields = array('date1', 'date2');
 
     public function calculate_footers($data)
@@ -46,7 +45,7 @@ class CouponsReport extends FannieReportPage {
             $sum2 += $row[2];
         }
 
-        return array('Total', sprintf('%.2f', $sum), sprintf('%.2f',$sum2));
+        return array('Total', null, sprintf('%.2f', $sum), sprintf('%.2f',$sum2));
     }
 
     public function fetch_report_data()
@@ -59,7 +58,7 @@ class CouponsReport extends FannieReportPage {
 
         $dlog = DTransactionsModel::selectDlog($d1,$d2);
 
-        $query = $dbc->prepare_statement("SELECT 
+        $query = $dbc->prepare("SELECT 
             CASE WHEN upc='0' THEN 'NOT SCANNED' ELSE upc END as upc, 
             sum(CASE WHEN upc='0' THEN 1 ELSE quantity END) as qty,
             sum(-total) as ttl FROM $dlog
@@ -67,18 +66,33 @@ class CouponsReport extends FannieReportPage {
             AND tdate BETWEEN ? AND ?
             GROUP BY upc
             ORDER BY upc");
-        $result = $dbc->exec_statement($query, array($d1.' 00:00:00', $d2.' 23:59:59'));
+        $result = $dbc->execute($query, array($d1.' 00:00:00', $d2.' 23:59:59'));
+
+        $brandP = $dbc->prepare('
+            SELECT p.brand
+            FROM products AS p
+            WHERE upc LIKE ?
+            GROUP BY p.brand
+            ORDER BY COUNT(*) DESC');
 
         $data = array();
-        while($row = $dbc->fetch_row($result)){
-            $data[] = array(
-                        $row['upc'],
-                        sprintf('%.2f', $row['qty']),
-                        sprintf('%.2f', $row['ttl'])
-                        );
+        while ($row = $dbc->fetchRow($result)) {
+            $prefix = substr($row['upc'], 3, 5);
+            $row['brand'] = $dbc->getValue($brandP, array('%' . $prefix . '%'));
+            $data[] = $this->rowToRecord($row);
         }
 
         return $data;
+    }
+
+    private function rowToRecord($row)
+    {
+        return array(
+            $row['upc'],
+            $row['brand'],
+            sprintf('%.2f', $row['qty']),
+            sprintf('%.2f', $row['ttl'])
+        );
     }
 
     public function form_content()
@@ -125,6 +139,12 @@ class CouponsReport extends FannieReportPage {
             </p>';
     }
 
+    public function unitTest($phpunit)
+    {
+        $data = array('upc'=>'4011', 'qty'=>1, 'ttl'=>1, 'brand'=>'n/a');
+        $phpunit->assertInternalType('array', $this->rowToRecord($data));
+        $phpunit->assertInternalType('array', $this->calculate_footers($this->dekey_array(array($data))));
+    }
 }
 
 FannieDispatch::conditionalExec();

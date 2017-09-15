@@ -21,52 +21,45 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\gui\NoInputCorePage;
+use COREPOS\pos\lib\MiscLib;
+use COREPOS\pos\lib\PrehLib;
 include_once(dirname(__FILE__).'/../lib/AutoLoader.php');
 
 class fsTotalConfirm extends NoInputCorePage 
 {
+    private $tendertype = '';
 
-    private $tendertype;
+    private function subtotal($choice)
+    {
+        if ($choice == 'EF') {
+            $chk = PrehLib::fsEligible();
+        } else {
+            $chk = PrehLib::ttl();
+        }
+
+        if ($chk !== true) {
+            $this->change_page($chk);
+        } else {
+            $this->tendertype = $choice;
+            $this->change_page($this->page_url."gui-modules/pos2.php");
+        }
+
+        return false;
+    }
 
     function preprocess()
     {
-        $this->tendertype = "";
-        if (isset($_REQUEST["selectlist"])) {
-            $choice = $_REQUEST["selectlist"];
-            if ($choice == "EF") {
-                $chk = PrehLib::fsEligible();
-                if ($chk !== true) {
-                    $this->change_page($chk);
-
-                    return false;
-                }
-                // 13Feb13 Andy
-                // Disable option to enter tender here by returning immediately    
-                // to pos2.php. Should be conigurable or have secondary
-                // functionality removed entirely
-                $this->tendertype = 'EF';
-                $this->change_page($this->page_url."gui-modules/pos2.php");
-
-                return false;
-            } else if ($choice == "EC") {
-                $chk = PrehLib::ttl();
-                if ($chk !== true) {
-                    $this->change_page($chk);
-
-                    return false;
-                }
-                // 13Feb13 Andy
-                // Disabled option; see above
-                $this->tendertype = 'EC';
-                $this->change_page($this->page_url."gui-modules/pos2.php");
-
-                return false;
-            } else if ($choice == '') {
+        try {
+            $choice = $this->form->selectlist;
+            if ($choice == "EF" || $choice == 'EC') {
+                return $this->subtotal($choice);
+            } elseif ($choice == '') {
                 $this->change_page($this->page_url."gui-modules/pos2.php");
 
                 return false;
             }
-        }
+        } catch (Exception $ex) {}
 
         return true;
     }
@@ -80,62 +73,49 @@ class fsTotalConfirm extends NoInputCorePage
 
     function body_content() 
     {
-        $default = '';
-        if (CoreLocal::get('fntlDefault') === '' || CoreLocal::get('fntlDefault') == 1) {
+        $default = 'EF';
+        if ($this->session->get('fntlDefault') === '' || $this->session->get('fntlDefault') == 1) {
             $default = 'EC';
-        } else if (CoreLocal::get('fntlDefault') == 0) {
-            $default = 'EF';
         }
         ?>
         <div class="baseHeight">
         <div class="centeredDisplay colored rounded">
-        <?php if (empty($this->tendertype)) { ?>
-        <span class="larger">Customer is using the</span>
-        <?php } ?>
-        <form id="selectform" method="post" action="<?php echo $_SERVER['PHP_SELF']; ?>">
+        <span class="larger"><?php _('Customer is using the'); ?></span>
+        <form id="selectform" method="post" action="<?php echo filter_input(INPUT_SERVER, 'PHP_SELF'); ?>">
 
-        <?php if (empty($this->tendertype)) { ?>
-            <?php $stem = MiscLib::baseURL() . 'graphics/'; ?>
-            <?php if (CoreLocal::get('touchscreen')) { ?>
-            <button type="button" class="pos-button coloredArea"
-                onclick="scrollDown('#selectlist');">
-                <img src="<?php echo $stem; ?>down.png" width="16" height="16" />
-            </button>
-            <?php } ?>
-            <select size="2" name="selectlist" 
-                id="selectlist" onblur="$('#selectlist').focus();">
-            <option value='EC' <?php echo ($default == 'EC') ? 'selected' : ''; ?>>Cash Portion
-            <option value='EF' <?php echo ($default == 'EF') ? 'selected' : ''; ?>>Food Portion
-            </select>
-            <?php if (CoreLocal::get('touchscreen')) { ?>
-            <button type="button" class="pos-button coloredArea"
-                onclick="scrollUp('#selectlist');">
-                <img src="<?php echo $stem; ?>up.png" width="16" height="16" />
-            </button>
-            <?php } ?>
+        <?php $stem = MiscLib::baseURL() . 'graphics/'; ?>
+        <?php if ($this->session->get('touchscreen')) { ?>
+        <button type="button" class="pos-button coloredArea"
+            onclick="scrollDown('#selectlist');">
+            <img src="<?php echo $stem; ?>down.png" width="16" height="16" />
+        </button>
+        <?php } ?>
+        <select size="2" name="selectlist" 
+            id="selectlist" onblur="$('#selectlist').focus();">
+        <option value='EC' <?php echo ($default == 'EC') ? 'selected' : ''; ?>><?php echo _('Cash Portion'); ?>
+        <option value='EF' <?php echo ($default == 'EF') ? 'selected' : ''; ?>><?php echo _('Food Portion'); ?>
+        </select>
+        <?php if ($this->session->get('touchscreen')) { ?>
+        <button type="button" class="pos-button coloredArea"
+            onclick="scrollUp('#selectlist');">
+            <img src="<?php echo $stem; ?>up.png" width="16" height="16" />
+        </button>
         <?php } ?>
         <p>
-            <button class="pos-button" type="submit">Select [enter]</button>
+            <button class="pos-button" type="submit"><?php echo _('Select [enter]'); ?></button>
             <button class="pos-button" type="submit" 
                 onclick="$('#selectlist').append($('<option>').val(''));$('#selectlist').val('');">
-                Cancel [clear]
+                <?php echo _('Cancel [clear]'); ?>
             </button>
         </p>
         </div>
         </form>
         </div>
         <?php
-        if (empty($this->tendertype)) {
-            $this->add_onload_command("\$('#selectlist').focus();\n");
-            $this->add_onload_command("selectSubmit('#selectlist', '#selectform')\n");
-        } else {
-            $this->add_onload_command("\$('#tenderamt').focus();\n");
-        }
+        $this->add_onload_command("\$('#selectlist').focus();\n");
+        $this->add_onload_command("selectSubmit('#selectlist', '#selectform')\n");
     } // END body_content() FUNCTION
 }
 
-if (basename(__FILE__) == basename($_SERVER['PHP_SELF'])) {
-    new fsTotalConfirm();
-}
+AutoLoader::dispatch();
 
-?>

@@ -57,21 +57,12 @@ class InstallIndexPage extends \COREPOS\Fannie\API\InstallPage {
     Creates databases and tables, creates and re-creates views.
     Should be run after every upgrade.
     ";
-    public $themed = true;
 
     // This replaces the __construct() in the parent.
     public function __construct() {
 
         // To set authentication.
         FanniePage::__construct();
-
-        // Link to a file of CSS by using a function.
-        $this->add_css_file("../src/javascript/jquery-ui.css");
-        $this->add_css_file("../src/css/install.css");
-
-        // Link to a file of JS by using a function.
-        $this->add_script("../src/javascript/jquery.js");
-        $this->add_script("../src/javascript/jquery-ui.js");
 
         $this->add_script('../src/javascript/syntax-highlighter/scripts/jquery.syntaxhighlighter.min.js');
         $this->add_onload_command('
@@ -182,7 +173,7 @@ class InstallIndexPage extends \COREPOS\Fannie\API\InstallPage {
                 }
             }
             if ($missing) {
-                echo '<div class="well">Install dependencies by running';
+                echo '<div class="well">Install dependencies by running <a href="https://getcomposer.org/">composer</a>';
                 echo "<pre>";
                 echo '$ cd "' . substr($FANNIE_ROOT, 0, strlen($FANNIE_ROOT)-7) . "\"\n";
                 echo '$ /path/to/composer.phar update';
@@ -195,7 +186,7 @@ class InstallIndexPage extends \COREPOS\Fannie\API\InstallPage {
     {
         return array_reduce(
             array_filter($arr, function($i) { return $i['error'] != 0; }),
-            function ($carry, $item) { return $carry . $item . '<br />'; }
+            function ($carry, $item) { return $carry . $item['error_msg'] . '<br />'; }
         );
     }
 
@@ -204,6 +195,7 @@ class InstallIndexPage extends \COREPOS\Fannie\API\InstallPage {
         if (FormLib::get($prefix . $i) !== '') {
             $FANNIE_LANES[$i][$field] = FormLib::get($prefix . $i);
         }
+
         return $FANNIE_LANES;
     }
 
@@ -534,7 +526,16 @@ class InstallIndexPage extends \COREPOS\Fannie\API\InstallPage {
         <?php
         echo installTextField('FANNIE_HOME_PAGE', $FANNIE_HOME_PAGE, 'item/ItemEditorPage.php');
         ?>
-
+        <br />Host name of this server
+        <br />Used primarily to include links in email notifications. This can't always be autodetected
+        in some environments and configurations.
+        <?php
+        echo installTextField('FANNIE_HTTP_HOST', $FANNIE_HTTP_HOST, filter_input(INPUT_SERVER, 'HTTP_HOST'));
+        ?>
+        <br />Adminsitrator email address
+        <?php
+        echo installTextField('FANNIE_ADMIN_EMAIL', $FANNIE_ADMIN_EMAIL);
+        ?>
         <hr />
         <h4 class="install">Locale</h4>
         Set the Country and Language where Fannie will run.
@@ -551,6 +552,12 @@ class InstallIndexPage extends \COREPOS\Fannie\API\InstallPage {
         //Use I18N language codes.
         $langs = array("en"=>"English", "fr"=>"French", "sp"=>"Spanish");
         echo installSelectField('FANNIE_LANGUAGE', $FANNIE_LANGUAGE, $langs, '');
+        
+        echo '<br />Week Start Date:  ';
+        $weekStartDay = array("7"=>"Sunday","1"=>"Monday","2"=>"Tuesday","3"=>"Wednesday","4"=>"Thursday",
+            "5"=>"Friday","6"=>"Saturday");
+        echo installSelectField('FANNIE_WEEK_START', $FANNIE_WEEK_START, $weekStartDay, '1');
+        
         ?>
         <hr />
         <h4 class="install">Back Office Transactions</h4>
@@ -604,12 +611,13 @@ class InstallIndexPage extends \COREPOS\Fannie\API\InstallPage {
     private $op_models = array(
         // TABLES
         'AutoCouponsModel',
+        'AutoOrderMapModel',
         'BatchesModel',
         'BatchListModel',
         'BatchCutPasteModel',
         'BatchBarcodesModel',
         'BatchTypeModel',
-        'BatchMergeTableModel',
+        'BrandsModel',
         'ConsistentProductRulesModel',
         'CoopDealsItemsModel',
         'CronBackupModel',
@@ -618,6 +626,8 @@ class InstallIndexPage extends \COREPOS\Fannie\API\InstallPage {
         'CustAvailablePrefsModel',
         'CustPreferencesModel',
         'CustReceiptMessageModel',
+        'CustomerAccountsModel',
+        'CustomersModel',
         'CustomerAccountSuspensionsModel',
         'CustomerNotificationsModel',
         'CustomReceiptModel',
@@ -629,9 +639,13 @@ class InstallIndexPage extends \COREPOS\Fannie\API\InstallPage {
         'EquityPaymentPlansModel',
         'EquityPaymentPlanAccountsModel',
         'FloorSectionsModel',
+        'FloorSectionProductMapModel',
+        'FloorSectionsListViewModel',
         'HouseCouponsModel',
         'HouseCouponItemsModel',
         'HouseVirtualCouponsModel',
+        'IgnoredBarcodesModel',
+        'InventoryCacheModel',
         'InventoryCountsModel',
         'LikeCodesModel',
         'UpcLikeModel',
@@ -642,6 +656,8 @@ class InstallIndexPage extends \COREPOS\Fannie\API\InstallPage {
         'MemtypeModel',
         'MemContactModel',
         'MemContactPrefsModel',
+        'MetaProductRulesModel',
+        'NarrowTagsModel',
         'OriginsModel',
         'OriginCountryModel',
         'OriginStateProvModel',
@@ -657,6 +673,7 @@ class InstallIndexPage extends \COREPOS\Fannie\API\InstallPage {
         'ProductOriginsMapModel',
         'ProdExtraModel',
         'ProdFlagsModel',
+        'ProductAttributesModel',
         'ProdPhysicalLocationModel',
         'ProdUpdateModel',
         'ProdDepartmentHistoryModel',
@@ -664,6 +681,7 @@ class InstallIndexPage extends \COREPOS\Fannie\API\InstallPage {
         'ProdPriceHistoryModel',
         'PurchaseOrderModel',
         'PurchaseOrderItemsModel',
+        'PurchaseOrderNotesModel',
         'PurchaseOrderSummaryModel',
         'ReasoncodesModel',
         'ScaleItemsModel',
@@ -684,7 +702,6 @@ class InstallIndexPage extends \COREPOS\Fannie\API\InstallPage {
         'SuspensionHistoryModel',
         'TaxRatesModel',
         'TendersModel',
-        'UsageStatsModel',
         'VendorsModel',
         'VendorContactModel',
         'VendorDeliveriesModel',
@@ -694,6 +711,9 @@ class InstallIndexPage extends \COREPOS\Fannie\API\InstallPage {
         'VendorSKUtoPLUModel',
         'VendorBreakdownsModel',
         'VendorDepartmentsModel',
+        'VendorAliasesModel',
+        'UpdateAccountLogModel',
+        'UpdateCustomerLogModel',
         'UsersModel',
         'UserPrivsModel',
         'UserKnownPrivsModel',
@@ -721,6 +741,24 @@ class InstallIndexPage extends \COREPOS\Fannie\API\InstallPage {
             $rules->save();
         }
 
+        $stores = new StoresModel($con);
+        if (count($stores->find()) == 0) {
+            $stores->storeID(1);
+            $stores->description('DEFAULT STORE');
+            $stores->hasOwnItems(1);
+            $stores->save();
+        }
+
+        $aliases = new VendorAliasesModel($con);
+        if (count($aliases->find()) == 0) {
+            $con->query("INSERT INTO VendorAliases
+                (upc, vendorID, sku, multiplier, isPrimary)
+                SELECT upc, vendorID, sku, 1 , 1 FROM vendorSKUtoPLU");
+            $con->query("INSERT INTO VendorAliases
+                (upc, vendorID, sku, multiplier, isPrimary)
+                SELECT upc, vendorID, sku, 1/units, 0 FROM VendorBreakdowns");
+        }
+
         $ret[] = dropDeprecatedStructure($con, $op_db_name, 'expingMems', true);
         $ret[] = dropDeprecatedStructure($con, $op_db_name, 'expingMems_thisMonth', true);
 
@@ -741,15 +779,12 @@ class InstallIndexPage extends \COREPOS\Fannie\API\InstallPage {
         'ArEomSummaryModel',
         'CapturedSignatureModel',
         'CashPerformDayModel',
-        'EfsnetRequestModel',
-        'EfsnetRequestModModel',
-        'EfsnetResponseModel',
-        'EfsnetTokensModel',
         'EquityHistorySumModel',
         'PaycardTransactionsModel',
         'SpecialOrdersModel',
         'SpecialOrderDeptMapModel',
         'SpecialOrderHistoryModel',
+        'SpecialOrderMemDiscountsModel',
         'PendingSpecialOrderModel',
         'CompleteSpecialOrderModel',
         'StockpurchasesModel',
@@ -759,7 +794,6 @@ class InstallIndexPage extends \COREPOS\Fannie\API\InstallPage {
         'DLog90ViewModel',
         'ArHistoryTodayModel', // requires dlog
         'ArHistoryTodaySumModel', //requires dlog
-        'CcReceiptViewModel',
         'StockSumTodayModel', // requires dlog
         'SuspendedTodayModel',
         'TenderTapeGenericModel', // requires dlog
@@ -810,6 +844,7 @@ class InstallIndexPage extends \COREPOS\Fannie\API\InstallPage {
         'WeeksLastQuarterModel',
         'ProductWeeklyLastQuarterModel',
         'ProductSummaryLastQuarterModel',
+        'ProductAttributeMapModel',
     );
 
     private function getArchiveModels($archive_method)
@@ -840,6 +875,17 @@ class InstallIndexPage extends \COREPOS\Fannie\API\InstallPage {
         return $ret;
 
     // create_archive_dbs()
+    }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->css_content()));
+        list($path, $url) = $this->detectPath();
+        $phpunit->assertNotEquals(0, strlen($this->runningAs()));
+        ob_start();
+        $phpunit->assertInternalType('boolean', $this->canSave($path, $url));
+        $this->checkComposer($path);
+        ob_end_clean();
     }
 
 // InstallIndexPage

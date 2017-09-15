@@ -152,7 +152,7 @@ class GeneralDayDiscountReport extends FannieReportPage
 
         /* Tenders */
         $dlog = DTransactionsModel::selectDlog($d1);
-        $tenderQ = $dbc->prepare_statement("SELECT 
+        $tenderQ = $dbc->prepare("SELECT 
             TenderName,count(d.total),sum(d.total) as total
             FROM $dlog as d,
                 {$FANNIE_OP_DB}.tenders as t 
@@ -160,9 +160,9 @@ class GeneralDayDiscountReport extends FannieReportPage
                 AND d.trans_subtype = t.TenderCode
                 AND d.total <> 0{$this->shrinkageUsers}
             GROUP BY t.TenderName ORDER BY TenderName");
-        $tenderR = $dbc->exec_statement($tenderQ,$dates);
+        $tenderR = $dbc->execute($tenderQ,$dates);
         $report = array();
-        while($tenderW = $dbc->fetch_row($tenderR)){
+        while($tenderW = $dbc->fetchRow($tenderR)){
             $record = array($tenderW['TenderName'],$tenderW[1],
                     sprintf('%.2f',$tenderW['total']));
             $report[] = $record;
@@ -254,9 +254,9 @@ class GeneralDayDiscountReport extends FannieReportPage
                 break;
         }
         $salesP = $dbc->prepare($salesQ);
-        $salesR = $dbc->exec_statement($salesP,$dates);
+        $salesR = $dbc->execute($salesP,$dates);
         $report = array();
-        while($salesW = $dbc->fetch_row($salesR)){
+        while($salesW = $dbc->fetchRow($salesR)){
             $record = array($salesW['category'],
                     sprintf('%.2f',$salesW['qty']),
                     sprintf('%.2f',$salesW['total']));
@@ -266,16 +266,16 @@ class GeneralDayDiscountReport extends FannieReportPage
         $data[] = $report;
 
         /* Discounts */
-        $discQ = $dbc->prepare_statement("SELECT m.memDesc, SUM(d.total) AS Discount,count(*)
+        $discQ = $dbc->prepare("SELECT m.memDesc, SUM(d.total) AS Discount,count(*)
                 FROM $dlog d 
                     INNER JOIN memtype m ON d.memType = m.memtype
                 WHERE d.tdate BETWEEN ? AND ?
                    AND d.upc = 'DISCOUNT'{$this->shrinkageUsers}
                 AND total <> 0
                 GROUP BY m.memDesc ORDER BY m.memDesc");
-        $discR = $dbc->exec_statement($discQ,$dates);
+        $discR = $dbc->execute($discQ,$dates);
         $report = array();
-        while($discW = $dbc->fetch_row($discR)){
+        while($discW = $dbc->fetchRow($discR)){
             $record = array($discW['memDesc'],$discW[2],$discW[1]);
             $report[] = $record;
             $reconciliation['Discounts'] += $discW['Discount'];
@@ -296,21 +296,21 @@ class GeneralDayDiscountReport extends FannieReportPage
             );
 //$dbc->logger("e: $lineItemQ" . print_r($dates,true));
         $lineItemR = $dbc->execute($lineItemQ, $dates);
-        while ($lineItemW = $dbc->fetch_row($lineItemR)) {
+        while ($lineItemW = $dbc->fetchRow($lineItemR)) {
             $record = array($lineItemW['description'] . ' (est. owed)',
                 sprintf('%.2f', $lineItemW['ttl']));
             $report[] = $record;
         }
 
         /* Tax: total */
-        $taxSumQ = $dbc->prepare_statement("SELECT  sum(total) as tax_collected
+        $taxSumQ = $dbc->prepare("SELECT  sum(total) as tax_collected
             FROM $dlog as d 
             WHERE d.tdate BETWEEN ? AND ?
                 AND (d.upc = 'tax'){$this->shrinkageUsers}
             GROUP BY d.upc");
 //$dbc->logger("t: $taxSumQ" . print_r($dates,true));
-        $taxR = $dbc->exec_statement($taxSumQ,$dates);
-        while($taxW = $dbc->fetch_row($taxR)){
+        $taxR = $dbc->execute($taxSumQ,$dates);
+        while($taxW = $dbc->fetchRow($taxR)){
             $record = array('Total Tax Collected',
                 sprintf("%.2f",$taxW['tax_collected']));
             $report[] = $record;
@@ -341,7 +341,7 @@ class GeneralDayDiscountReport extends FannieReportPage
         } else {
             $totalColumn = ' total';
         }
-        $transQ = $dbc->prepare_statement("SELECT q.trans_num,
+        $transQ = $dbc->prepare("SELECT q.trans_num,
             sum(q.quantity) as items,
             transaction_type, sum(q.total)
             FROM
@@ -355,9 +355,9 @@ class GeneralDayDiscountReport extends FannieReportPage
                 AND upc <> 'RRR'{$this->shrinkageUsers}
             ) as q 
             GROUP BY q.trans_num,q.transaction_type");
-        $transR = $dbc->exec_statement($transQ,$dates);
+        $transR = $dbc->execute($transQ,$dates);
         $transinfo = array();
-        while($row = $dbc->fetch_array($transR)){
+        while($row = $dbc->fetchArray($transR)){
             if (!isset($transinfo[$row[2]]))
                 $transinfo[$row[2]] = array(0,0.0,0.0,0.0,0.0);
             $transinfo[$row[2]][0] += 1;
@@ -395,15 +395,15 @@ class GeneralDayDiscountReport extends FannieReportPage
             }
             $dlist = substr($dlist,0,strlen($dlist)-1).")";
 
-            $equityQ = $dbc->prepare_statement("SELECT d.card_no,t.dept_name, sum(total) as total 
+            $equityQ = $dbc->prepare("SELECT d.card_no,t.dept_name, sum(total) as total 
                 FROM $dlog as d
                 LEFT JOIN {$FANNIE_OP_DB}.departments as t ON d.department = t.dept_no
                 WHERE d.tdate BETWEEN ? AND ?
                     AND d.department IN $dlist{$this->shrinkageUsers}
                 GROUP BY d.card_no, t.dept_name ORDER BY d.card_no, t.dept_name");
-            $equityR = $dbc->exec_statement($equityQ,$dates);
+            $equityR = $dbc->execute($equityQ,$dates);
             $report = array();
-            while($equityW = $dbc->fetch_row($equityR)){
+            while($equityW = $dbc->fetchRow($equityR)){
                 $record = array($equityW['card_no'],$equityW['dept_name'],
                         sprintf('%.2f',$equityW['total']));
                 $report[] = $record;

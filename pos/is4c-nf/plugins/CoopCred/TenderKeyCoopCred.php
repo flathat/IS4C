@@ -21,6 +21,9 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\MiscLib;
+use COREPOS\pos\parser\Parser;
+
 class TenderKeyCoopCred extends Parser 
 {
 
@@ -73,4 +76,3 @@ class TenderKeyCoopCred extends Parser
     }
 }
 
-?>

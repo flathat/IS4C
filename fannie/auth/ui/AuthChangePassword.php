@@ -25,7 +25,7 @@ if (!class_exists('FannieAPI')) {
     include_once(dirname(__FILE__) . '/../../classlib2.0/FannieAPI.php');
 }
 if (!function_exists('checkLogin')) {
-    require('../login.php');
+    require(dirname(__FILE__) . '/../login.php');
 }
 
 class AuthChangePassword extends FannieRESTfulPage 
@@ -115,6 +115,14 @@ class AuthChangePassword extends FannieRESTfulPage
                 <br />They may not contain special characters such as "#" and "%".
                 </p>';
         return $ret;
+    }
+
+    public function unitTest($phpunit)
+    {
+        $this->changed = false;
+        $phpunit->assertNotEquals(0, strlen($this->post_view()));
+        $this->changed = true;
+        $phpunit->assertNotEquals(0, strlen($this->post_view()));
     }
 
 }

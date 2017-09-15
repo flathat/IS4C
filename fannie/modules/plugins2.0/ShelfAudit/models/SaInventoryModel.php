@@ -28,6 +28,7 @@ class SaInventoryModel extends BasicModel
 {
 
     protected $name = "sa_inventory";
+    protected $preferred_db = 'plugin:ShelfAuditDB';
 
     protected $columns = array(
     'id' => array('type'=>'INT', 'increment'=>true, 'primary_key'=>true),
@@ -36,6 +37,7 @@ class SaInventoryModel extends BasicModel
     'clear' => array('type'=>'TINYINT'),
     'quantity' => array('type'=>'DOUBLE'),
     'section' => array('type'=>'INT'),
+    'storeID' => array('type'=>'SMALLINT', 'default'=>1),
     );
 }
 

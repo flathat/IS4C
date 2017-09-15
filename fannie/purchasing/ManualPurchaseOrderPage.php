@@ -28,10 +28,8 @@ if (!class_exists('FannieAPI')) {
 
 class ManualPurchaseOrderPage extends FannieRESTfulPage 
 {
-
     protected $header = 'Purchase Orders';
     protected $title = 'Purchase Orders';
-    public $themed = true;
 
     public $description = '[Manual Purchase Order] is a tool for entering purchase order info
         in a grid from existing paperwork.';
@@ -125,15 +123,6 @@ class ManualPurchaseOrderPage extends FannieRESTfulPage
             $units = $caseSize[$i];
             $qty = $cases[$i];
             $unitCost = $total[$i] / $qty / $units;
-            /**
-              Multiple same-SKU records
-              Sum the quantities and costs to merge
-              into a single record
-            */
-            if ($pitem->load()) {
-                $qty += $pitem->receivedQty();
-                $total[$i] += $pitem->receivedTotalCost();
-            }
 
             $pitem->quantity($qty);
             $pitem->caseSize($units);
@@ -243,7 +232,7 @@ class ManualPurchaseOrderPage extends FannieRESTfulPage
                 <label>Inv. #</label>
                 <input type="text" name="inv-number" class="form-control" />
             </div>';
-        $ret .= '<div class="collapse" id="delete-html">' . FannieUI::deleteIcon() . '</div>';
+        $ret .= '<div class="collapse" id="delete-html">' . COREPOS\Fannie\API\lib\FannieUI::deleteIcon() . '</div>';
         $ret .= '<div class="form-group">
             <button type="button" class="btn btn-default" onclick="addInvoiceLine();">Add Line</button>
             &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
@@ -301,6 +290,15 @@ class ManualPurchaseOrderPage extends FannieRESTfulPage
             one line at a time. Auto completion is available
             via both product UPC and vendor item SKU.
             </p>';
+    }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->get_view()));
+        $this->id = 1;
+        $phpunit->assertNotEquals(0, strlen($this->get_id_view()));
+        $this->adjust = 1;
+        $phpunit->assertNotEquals(0, strlen($this->get_id_adjust_view()));
     }
 }
 

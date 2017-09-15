@@ -21,6 +21,10 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\lib\Kickers;
+use COREPOS\pos\lib\Database;
+use \CoreLocal;
+
 /**
   @class Kicker
   Base class for opening cash drawer
@@ -28,6 +32,30 @@
 */
 class Kicker 
 {
+
+    private static $builtin = array(
+        'AlwaysKick',
+        'Harvest_Kicker',
+        'Kicker',
+        'MCC_Kicker',
+        'NoKick',
+        'RAFC_Kicker',
+        'WEFC_Toronto_Kicker',
+        'WFC_Kicker',
+        'YPSI_Kicker',
+    );
+
+    public static function factory($class)
+    {
+        if ($class != '' && in_array($class, self::$builtin)) {
+            $class = 'COREPOS\\pos\\lib\Kickers\\' . $class;
+            return new $class();
+        } elseif ($class != '' && class_exists($class)) {
+            return new $class();
+        }
+
+        return new self();
+    }
 
     /**
       Determine whether to open the drawer
@@ -39,7 +67,7 @@ class Kicker
         if (CoreLocal::get('training') == 1) {
             return false;
         }
-        $db = Database::tDataConnect();
+        $dbc = Database::tDataConnect();
 
         $query = "SELECT trans_id   
                   FROM localtranstoday 
@@ -47,17 +75,17 @@ class Kicker
                     (trans_subtype = 'CA' and total <> 0)
                     AND " . $this->refToWhere($trans_num);
 
-        $result = $db->query($query);
-        $num_rows = $db->num_rows($result);
+        $result = $dbc->query($query);
+        $numRows = $dbc->numRows($result);
 
-        return ($num_rows > 0) ? true : false;
+        return ($numRows > 0) ? true : false;
     }
 
     protected function refToWhere($ref)
     {
-        list($e, $r, $t) = explode('-', $ref, 3);
+        list($emp, $reg, $trans) = explode('-', $ref, 3);
         return sprintf(' emp_no=%d AND register_no=%d AND trans_no=%d ',
-                        $e, $r, $t);
+                        $emp, $reg, $trans);
     }
 
     /**
@@ -86,6 +114,17 @@ class Kicker
         }
 
         return true;
+    }
+
+    protected function sessionOverride()
+    {
+        // use session to override default behavior
+        // based on specific cashier actions rather
+        // than transaction state
+        $override = CoreLocal::get('kickOverride');
+        CoreLocal::set('kickOverride',false);
+
+        return $override ? true : false;
     }
 }
 

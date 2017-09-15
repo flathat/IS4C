@@ -15,6 +15,22 @@ class CashierBarGraphs extends FannieRESTfulPage
     public $themed = true;
     private $session_key = '';
 
+    protected function readinessCheck()
+    {
+        $path = realpath(dirname(__FILE__));
+        $path = rtrim($path, '/') . '/image_area';
+        if (!is_dir($path)) {
+            $this->error_text = 'Missing required directory ' . $path 
+                . '; create it to use this report';
+            return false;
+        } elseif (!is_writable($path)) {
+            $this->error_text = 'Directory ' . $path . ' must be writable by web server';
+            return false;
+        } else {
+            return true;
+        }
+    }
+
     private function avg($array)
     {
         $count = 0;
@@ -87,7 +103,7 @@ class CashierBarGraphs extends FannieRESTfulPage
         if ($dbc->isView('CashPerformDay') && $dbc->tableExists('CashPerformDay_cache')) {
             $query = str_replace('CashPerformDay', 'CashPerformDay_cache', $query);
         }
-        $result = $dbc->exec_statement($query,$args);
+        $result = $dbc->execute($query,$args);
 
         $this->rpm = array(); // rings per minute
         $this->ipm = array(); // items per minute
@@ -100,7 +116,7 @@ class CashierBarGraphs extends FannieRESTfulPage
         calculate rates
         remove the time from the week
         */
-        while ($row = $dbc->fetch_array($result)){
+        while ($row = $dbc->fetchRow($result)){
             $temp = explode(" ",$row[8]);
             $temp = explode("-",$temp[0]);
             $week[$i] = $temp[0]." ".$temp[1]." ".$temp[2];

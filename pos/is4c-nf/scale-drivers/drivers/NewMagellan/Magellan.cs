@@ -53,6 +53,11 @@ public class Magellan : DelegateForm
 {
     private List<SerialPortHandler> sph;
     private UDPMsgBox u;
+    private bool asyncUDP = true;
+    private bool disableRBA = false;
+    private bool disableButtons = false;
+    private Object msgLock = new Object();
+    private ushort msgCount = 0;
 
     private bool mq_enabled = false;
     private bool full_udp = false;
@@ -82,6 +87,8 @@ public class Magellan : DelegateForm
                     SerialPortHandler s = (SerialPortHandler)Activator.CreateInstance(type, new Object[]{ pair.port });
                     s.SetParent(this);
                     s.SetVerbose(verbosity);
+                    s.SetConfig("disableRBA", this.disableRBA ? "true" : "false");
+                    s.SetConfig("disableButtons", this.disableButtons ? "true" : "false");
                     sph.Add(s);
                 } else {
                     throw new Exception("unknown module: " + pair.module);
@@ -136,7 +143,7 @@ public class Magellan : DelegateForm
 
     private void UdpListen()
     {
-        u = new UDPMsgBox(9450);
+        u = new UDPMsgBox(9450, this.asyncUDP);
         u.SetParent(this);
         u.My_Thread.Start();
     }
@@ -157,9 +164,22 @@ public class Magellan : DelegateForm
             mq_enabled = true;
         } else if (msg == "mq_down") {
             mq_enabled = false;
+        } else if (msg == "status") {
+            byte[] body = System.Text.Encoding.ASCII.GetBytes(Status());
+            getClient().Send(body, body.Length); 
         } else {
             sph.ForEach(s => { s.HandleMsg(msg); });
         }
+    }
+
+    private string Status()
+    {
+        string ret = "";
+        foreach (var s in sph) {
+            ret += s.Status() + "\n";
+        }
+
+        return ret;
     }
 
     public void MsgSend(string msg)
@@ -173,21 +193,30 @@ public class Magellan : DelegateForm
             rabbit_channel.BasicPublish("", "core-pos", null, body);
             #endif
         } else {
-            int ticks = Environment.TickCount;
-            string my_location = AppDomain.CurrentDomain.BaseDirectory;
-            char sep = Path.DirectorySeparatorChar;
-            while (File.Exists(my_location + sep + "ss-output/"  + sep + ticks)) {
-                ticks++;
+            lock (msgLock) {
+                string filename = System.Guid.NewGuid().ToString();
+                string my_location = AppDomain.CurrentDomain.BaseDirectory;
+                char sep = Path.DirectorySeparatorChar;
+                /**
+                  Depending on msg rate I may replace "1" with a bigger value
+                  as long as the counter resets at least once per 65k messages
+                  there shouldn't be sequence issues. But real world disk I/O
+                  may be trivial with a serial message source
+                */
+                if (msgCount % 1 == 0 && Directory.GetFiles(my_location+sep+"ss-output/").Length == 0) {
+                    msgCount = 0;
+                }
+                filename = msgCount.ToString("D5") + filename;
+                msgCount++;
+
+                TextWriter sw = new StreamWriter(my_location + sep + "ss-output/" +sep+"tmp"+sep+filename);
+                sw = TextWriter.Synchronized(sw);
+                sw.WriteLine(msg);
+                sw.Close();
+                File.Move(my_location+sep+"ss-output/" +sep+"tmp"+sep+filename,
+                      my_location+sep+"ss-output/" +sep+filename);
             }
-
-            TextWriter sw = new StreamWriter(my_location + sep + "ss-output/" +sep+"tmp"+sep+ticks);
-            sw = TextWriter.Synchronized(sw);
-            sw.WriteLine(msg);
-            sw.Close();
-            File.Move(my_location+sep+"ss-output/" +sep+"tmp"+sep+ticks,
-                  my_location+sep+"ss-output/" +sep+ticks);
         }
-
     }
 
     public void ShutDown()
@@ -212,8 +241,8 @@ public class Magellan : DelegateForm
             return conf;
         }
 
+        string ini_json = File.ReadAllText(ini_file);
         try {
-            string ini_json = File.ReadAllText(ini_file);
             JObject o = JObject.Parse(ini_json);
             // filter list to valid entries
             var valid = o["NewMagellanPorts"].Where(p=> p["port"] != null && p["module"] != null);
@@ -239,6 +268,21 @@ public class Magellan : DelegateForm
             // unexpected exception
             Console.WriteLine(ex);
         }
+        try {
+            JObject o = JObject.Parse(ini_json);
+            var ua = (bool)o["asyncUDP"];
+            this.asyncUDP = ua;
+        } catch (Exception) {}
+        try {
+            JObject o = JObject.Parse(ini_json);
+            var drb = (bool)o["disableRBA"];
+            this.disableRBA = drb;
+        } catch (Exception) {}
+        try {
+            JObject o = JObject.Parse(ini_json);
+            var dbt = (bool)o["disableButtons"];
+            this.disableButtons = dbt;
+        } catch (Exception) {}
 
         return conf;
     }

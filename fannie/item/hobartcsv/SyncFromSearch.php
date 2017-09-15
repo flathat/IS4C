@@ -73,6 +73,7 @@ class SyncFromSearch extends FannieRESTfulPage
         // go through scales one at a time
         // check whether item is present on that
         // scale and do write or change as appropriate
+        $dbc->startTransaction();
         foreach ($scales as $scale) {
 
             foreach ($upcs as $upc) {
@@ -91,6 +92,7 @@ class SyncFromSearch extends FannieRESTfulPage
                     // batch out changes @ 10 items / file
                     if (count($all_items) >= 10) {
                         \COREPOS\Fannie\API\item\HobartDgwLib::writeItemsToScales($all_items, array($scale));
+                        \COREPOS\Fannie\API\item\EpScaleLib::writeItemsToScales($all_items, array($scale));
                         $all_items = array();
                     }
                 } else {
@@ -101,8 +103,10 @@ class SyncFromSearch extends FannieRESTfulPage
 
             if (count($all_items) > 0) {
                 \COREPOS\Fannie\API\item\HobartDgwLib::writeItemsToScales($all_items, array($scale));
+                \COREPOS\Fannie\API\item\EpScaleLib::writeItemsToScales($all_items, array($scale));
             }
         } // end loop on scales
+        $dbc->commitTransaction();
         $this->sent_status = ob_get_clean();
 
         return true;
@@ -152,6 +156,7 @@ class SyncFromSearch extends FannieRESTfulPage
                 }
 
                 \COREPOS\Fannie\API\item\HobartDgwLib::writeItemsToScales($item_info, array($scale));
+                \COREPOS\Fannie\API\item\EpScaleLib::writeItemsToScales($item_info, array($scale));
             }
 
             echo '{error:0}';
@@ -201,6 +206,8 @@ class SyncFromSearch extends FannieRESTfulPage
             'Label' => $model->label(),
             'ExpandedText' => $model->text(),
             'ByCount' => $model->bycount(),
+            'OriginText' => $model->originText(),
+            'MOSA' => $model->mosaStatement(),
         );
         if ($model->netWeight() != 0) {
             $item_info['NetWeight'] = $model->netWeight();
@@ -312,14 +319,13 @@ class SyncFromSearch extends FannieRESTfulPage
             }
             $.ajax({
                 type: 'post',
-                data: 'sendupc='+upc+'&'+scaleStr,
-                success: function(result) {
-                    if (result.error) {
-                        showBootstrapAlert('#alert-area', 'danger', 'Error sending item ' + upc);
-                    } else {
-                        showBootstrapAlert('#alert-area', 'success', 'Sent item ' + upc);
-                        $('#row'+upc).remove();
-                    }
+                data: 'sendupc='+upc+'&'+scaleStr
+            }).done(function(result) {
+                if (result.error) {
+                    showBootstrapAlert('#alert-area', 'danger', 'Error sending item ' + upc);
+                } else {
+                    showBootstrapAlert('#alert-area', 'success', 'Sent item ' + upc);
+                    $('#row'+upc).remove();
                 }
             });
         }
@@ -337,6 +343,18 @@ class SyncFromSearch extends FannieRESTfulPage
             in the list of items.
             </p>';
 
+    }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->javascriptContent()));
+        $this->u = 'foo';
+        ob_start();
+        $phpunit->assertEquals(false, $this->post_u_handler());
+        $this->u = '4011';
+        $phpunit->assertEquals(true, $this->post_u_handler());
+        ob_get_clean();
+        $phpunit->assertNotEquals(0, strlen($this->post_u_view()));
     }
 }
 

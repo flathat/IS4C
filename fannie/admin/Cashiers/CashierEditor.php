@@ -38,55 +38,67 @@ class CashierEditor extends FanniePage {
 
     private $messages = '';
 
-    function preprocess(){
-        global $FANNIE_OP_DB;
-        $emp_no = FormLib::get_form_value('emp_no',0);
+    public function preprocess()
+    {
+        $emp_no = FormLib::get('emp_no',0);
 
-        if (FormLib::get_form_value('fname') !== '') {
-            $fname = FormLib::get_form_value('fname');
-            $lname = FormLib::get_form_value('lname');
-            $passwd = FormLib::get_form_value('passwd');
-            $fes = FormLib::get_form_value('fes');
-            $active = FormLib::get_form_value('active') !== '' ? 1 : 0;
-            $dob = FormLib::get_form_value('birthdate');
+        if (FormLib::get('fname') !== '') {
+            $dbc = FannieDB::get($this->config->get('OP_DB'));
 
-            $dbc = FannieDB::get($FANNIE_OP_DB);
+            // avoid duplicate passwords
+            $chkP = $dbc->prepare("
+                SELECT emp_no
+                FROM employees
+                WHERE (CashierPassword=? OR AdminPassword=?)
+                    AND emp_no <> ?");
+            $passwdInUse = $dbc->getValue($chkP, array(FormLib::get('passwd'), FormLib::get('passwd'), $emp_no));
+            if ($passwdInUse !== false) {
+                $this->addOnloadCommand("showBootstrapAlert('#alert-area', 'danger', 'Password already in use');\n");
+                return true;
+            }
+
             $employee = new EmployeesModel($dbc);
             $employee->emp_no($emp_no);
-            $employee->FirstName($fname);
-            $employee->LastName($lname);
-            $employee->CashierPassword($passwd);
-            $employee->AdminPassword($passwd);
-            $employee->frontendsecurity($fes);
-            $employee->backendsecurity($fes);
+            $employee->FirstName(FormLib::get('fname'));
+            $employee->LastName(FormLib::get('lname'));
+            $employee->CashierPassword(FormLib::get('passwd'));
+            $employee->AdminPassword(FormLib::get('passwd'));
+            $employee->frontendsecurity(FormLib::get('fes'));
+            $employee->backendsecurity(FormLib::get('fes'));
+            $active = FormLib::get('active') !== '' ? 1 : 0;
             $employee->EmpActive($active);
-            $employee->birthdate($dob);
+            $employee->birthdate(FormLib::get('birthdate'));
             $saved = $employee->save();
 
-            $map = new StoreEmployeeMapModel($dbc);
-            $map->empNo($emp_no);
-            $stores = FormLib::get('store', array());
-            foreach ($stores as $s) {
-                $map->storeID($s);
-                $map->save();
-            }
-            $map->reset();
-            $map->empNo($emp_no);
-            foreach ($map->find() as $obj) {
-                if (!in_array($obj->storeID(), $stores)) {
-                    $obj->delete();
-                }
-            }
+            $this->saveStoreMapping($dbc, $emp_no);
 
             if ($saved) {
                 $message = "Cashier Updated. <a href=ViewCashiersPage.php>Back to List of Cashiers</a>";
-                $this->add_onload_command("showBootstrapAlert('#alert-area', 'success', '$message');\n");
+                $this->addOnloadCommand("showBootstrapAlert('#alert-area', 'success', '$message');\n");
             } else {
-                $this->add_onload_command("showBootstrapAlert('#alert-area', 'danger', 'Error saving cashier');\n");
+                $this->addOnloadCommand("showBootstrapAlert('#alert-area', 'danger', 'Error saving cashier');\n");
             }
         }
 
         return true;
+    }
+
+    private function saveStoreMapping($dbc, $emp_no)
+    {
+        $map = new StoreEmployeeMapModel($dbc);
+        $map->empNo($emp_no);
+        $stores = FormLib::get('store', array());
+        foreach ($stores as $s) {
+            $map->storeID($s);
+            $map->save();
+        }
+        $map->reset();
+        $map->empNo($emp_no);
+        foreach ($map->find() as $obj) {
+            if (!in_array($obj->storeID(), $stores)) {
+                $obj->delete();
+            }
+        }
     }
 
     function body_content()
@@ -181,6 +193,14 @@ class CashierEditor extends FanniePage {
             depends on local lane configuration. Only <em>Active</em> cashiers are allowed
             to log into lanes.</p>'
             ;
+    }
+
+    public function unitTest($phpunit)
+    {
+        $this->config->set('FANNIE_STORE_MODE', 'HQ');
+        $this->messages = 'Test Message';
+        $phpunit->assertNotEquals(0, strlen($this->body_content()));
+        $this->config->set('FANNIE_STORE_MODE', 'STORE');
     }
 }
 

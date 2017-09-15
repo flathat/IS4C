@@ -21,6 +21,11 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\DisplayLib;
+use COREPOS\pos\lib\TransRecord;
+use COREPOS\pos\parser\Parser;
+
 class WfcMadCouponParser extends Parser {
 
     function check($str){
@@ -69,4 +74,3 @@ class WfcMadCouponParser extends Parser {
 
 }
 
-?>

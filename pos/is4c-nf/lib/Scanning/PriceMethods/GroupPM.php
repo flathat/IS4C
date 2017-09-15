@@ -21,6 +21,11 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\lib\Scanning\PriceMethods;
+use COREPOS\pos\lib\Scanning\PriceMethod;
+use COREPOS\pos\lib\MiscLib;
+use COREPOS\pos\lib\TransRecord;
+
 /** 
    @class GroupPM
    
@@ -33,14 +38,14 @@
 
 class GroupPM extends PriceMethod {
 
-    function addItem($row,$quantity,$priceObj)
+    public function addItem(array $row, $quantity, $priceObj)
     {
         if ($quantity == 0) return false;
 
         $pricing = $priceObj->priceInfo($row,$quantity);
 
         // enforce limit on discounting sale items
-        $dsi = CoreLocal::get('DiscountableSaleItems');
+        $dsi = $this->session->get('DiscountableSaleItems');
         if ($dsi == 0 && $dsi !== '' && $priceObj->isSale()) {
             $row['discount'] = 0;
         }
@@ -87,4 +92,3 @@ class GroupPM extends PriceMethod {
     }
 }
 
-?>

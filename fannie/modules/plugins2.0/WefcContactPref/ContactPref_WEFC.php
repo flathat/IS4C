@@ -162,8 +162,11 @@ class ContactPref_WEFC extends \COREPOS\Fannie\API\member\MemberModule {
 
     /* Update or insert the Contact Preference and Email Opt-In Choice.
      * Return "" on success or an error message.
+     * 2.7? wants $json, maybe also prefer public as in the parent.
+     * was: function saveFormData($memNum){ \\}
      */
-    function saveFormData($memNum){
+    function saveFormData($memNum, $json=array())
+    {
         $dbc = $this->db();
 
         $formPref = FormLib::get_form_value('MemContactPref_WEFC',-1);

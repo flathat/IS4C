@@ -21,6 +21,8 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\Tenders\TenderModule;
+
 class ManufacturerCouponTender extends TenderModule 
 {
     protected $amount_tendered;

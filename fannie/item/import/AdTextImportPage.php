@@ -40,51 +40,36 @@ class AdTextImportPage extends \COREPOS\Fannie\API\FannieUploadPage
 
     protected $preview_opts = array(
         'upc' => array(
-            'name' => 'upc',
             'display_name' => 'UPC*',
             'default' => 5,
             'required' => true
         ),
         'brand' => array(
-            'name' => 'brand',
             'display_name' => 'Brand',
             'default' => 0,
-            'required' => false
         ),
         'desc' => array(
-            'name' => 'desc',
             'display_name' => 'Description',
             'default' => 1,
-            'required' => false
         ),
         'size' => array(
-            'name' => 'size',
             'display_name' => 'Unit Size',
             'default' => 3,
-            'required' => false
         ),
         'sku' => array(
-            'name' => 'sku',
             'display_name' => 'Vendor SKU',
             'default' => 4,
-            'required' => false
         ),
     );
 
     private $stats = array('total'=>0, 'here'=>0);
 
-    public function process_file($linedata)
+    public function process_file($linedata, $indexes)
     {
         global $FANNIE_OP_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
 
-        $upc_index = $this->get_column_index('upc');
-        $desc_index = $this->get_column_index('desc');
-        $size_index = $this->get_column_index('size');
-        $brand_index = $this->get_column_index('brand');
-        $sku_index = $this->get_column_index('sku');
-
-        if ($desc_index === false && $brand_index === false) {
+        if ($indexes['desc'] === false && $indexes['brand'] === false) {
             $this->error_details = 'Neither brand nor description provided; nothing to import!';
 
             return false;
@@ -92,8 +77,9 @@ class AdTextImportPage extends \COREPOS\Fannie\API\FannieUploadPage
 
         $ret = true;
 
-        $checks = (FormLib::get_form_value('checks')=='yes') ? true : false;
-        $normalize = (FormLib::get_form_value('norm')=='yes') ? true : false;
+        $checks = (FormLib::get('checks')=='yes') ? true : false;
+        $normalize = (FormLib::get('norm')=='yes') ? true : false;
+        $overwrite = (FormLib::get('overwrite')=='yes') ? true : false;
 
         $model = new ProductUserModel($dbc);
 
@@ -111,7 +97,7 @@ class AdTextImportPage extends \COREPOS\Fannie\API\FannieUploadPage
         ');
 
         foreach ($linedata as $line) {
-            $upc = $line[$upc_index];
+            $upc = $line[$indexes['upc']];
             // upc cleanup
             $upc = str_replace(" ","",$upc);
             $upc = str_replace("-","",$upc);
@@ -126,8 +112,8 @@ class AdTextImportPage extends \COREPOS\Fannie\API\FannieUploadPage
 
             $verifyR = $dbc->execute($verifyP, array($upc));
             if ($dbc->num_rows($verifyR) == 0) {
-                if ($sku_index !== false) {
-                    $skuR = $dbc->execute($skuP, array($line[$sku_index]));
+                if ($indexes['sku'] !== false) {
+                    $skuR = $dbc->execute($skuP, array($line[$indexes['sku']]));
                     if ($dbc->num_rows($skuR) == 0) {
                         // no UPC match, no vendor sku match
                         continue;
@@ -145,27 +131,24 @@ class AdTextImportPage extends \COREPOS\Fannie\API\FannieUploadPage
             $model->upc($upc);
             $model->load();
             $changed = false;
-            if ($model->brand() == '' && $brand_index !== false && !empty($line[$brand_index])) {
-                $brand = $line[$brand_index];
+            if (($model->brand() == '' || $overwrite) && $indexes['brand'] !== false && !empty($line[$indexes['brand']])) {
+                $brand = $line[$indexes['brand']];
                 if ($normalize) {
                     $brand = ucwords(strtolower($brand));
                 }
                 $model->brand($brand);
                 $changed = true;
             }
-            if ($model->description() == '' && $desc_index !== false && !empty($line[$desc_index])) {
-                $desc = $line[$desc_index];
+            if (($model->description() == '' || $overwrite) && $indexes['desc'] !== false && !empty($line[$indexes['desc']])) {
+                $desc = $line[$indexes['desc']];
                 if ($normalize) {
                     $desc = ucwords(strtolower($desc));
                 }
                 $model->description($desc);
-                if ($upc == '0002529300278') {
-                    var_dump($model->description());
-                }
                 $changed = true;
             }
-            if ($model->sizing() == '' && $size_index !== false && !empty($line[$size_index])) {
-                $size = $line[$size_index];
+            if (($model->sizing() == '' || $overwrite) && $indexes['size'] !== false && !empty($line[$indexes['size']])) {
+                $size = $line[$indexes['size']];
                 $model->sizing($size);
                 $changed = true;
             }
@@ -198,6 +181,9 @@ class AdTextImportPage extends \COREPOS\Fannie\API\FannieUploadPage
                 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
                 <input type="checkbox" id="norm" name="norm" value="yes" checked />
                 <label for="norm">Normalize Capitalization</label>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                <input type="checkbox" id="overwrite" name="overwrite" value="yes" />
+                <label for="norm">Overwrite Existing Values</label>
                 ';
     }
 
@@ -223,6 +209,15 @@ class AdTextImportPage extends \COREPOS\Fannie\API\FannieUploadPage
             <p>The default column layout matches NCGA Co+op Deal sign data
             spreadsheets.</p>'
             . parent::helpContent();
+    }
+
+    public function unitTest($phpunit)
+    {
+        $this->stats = array('total'=>0, 'here'=>0);
+        $phpunit->assertNotEquals(0, strlen($this->results_content()));
+        $data = array('4011', 'Nature', 'Bananas', 'per LB', '4011');
+        $indexes = array('upc'=>0, 'brand'=>1, 'desc'=>2, 'size'=>3, 'sku'=>4);
+        $phpunit->assertEquals(true, $this->process_file(array($data), $indexes));
     }
 }
 

@@ -30,7 +30,6 @@ class TenderInOutReport extends FannieReportPage
 {
     public $description = '[Tender Usages] lists each transaction for a given tender in a given date range.';
     public $report_set = 'Tenders';
-    public $themed = true;
 
     protected $title = "Fannie : Tender Usage";
     protected $header = "Tender Usage Report";
@@ -58,29 +57,33 @@ class TenderInOutReport extends FannieReportPage
 
         $dlog = DTransactionsModel::selectDlog($date1,$date2);
 
-        $query = $dbc->prepare_statement("select tdate,trans_num,-total as total,emp_no, register_no
+        $query = $dbc->prepare("select tdate,trans_num,-total as total,emp_no, register_no
               FROM $dlog as t 
               where t.trans_subtype = ? AND
               trans_type='T' AND
               tdate BETWEEN ? AND ?
               AND total <> 0
               order by tdate");
-        $result = $dbc->exec_statement($query,array($code,$date1.' 00:00:00',$date2.' 23:59:59'));
+        $result = $dbc->execute($query,array($code,$date1.' 00:00:00',$date2.' 23:59:59'));
 
 
         $data = array();
-        while ($row = $dbc->fetch_array($result)) {
-            $record = array(
-                date('Y-m-d', strtotime($row['tdate'])),
-                $row['trans_num'],
-                $row['emp_no'],
-                $row['register_no'],
-                $row['total'],
-            );
-            $data[] = $record;
+        while ($row = $dbc->fetchRow($result)) {
+            $data[] = $this->rowToRecord($row);
         }
 
         return $data;
+    }
+
+    private function rowToRecord($row)
+    {
+        return array(
+            date('Y-m-d', strtotime($row['tdate'])),
+            $row['trans_num'],
+            $row['emp_no'],
+            $row['register_no'],
+            $row['total'],
+        );
     }
 
     public function calculate_footers($data)
@@ -98,8 +101,8 @@ class TenderInOutReport extends FannieReportPage
         $dbc = $this->connection;
         $dbc->selectDB($this->config->get('OP_DB'));
         $tenders = array();
-        $p = $dbc->prepare_statement("SELECT TenderCode,TenderName FROM tenders ORDER BY TenderName");
-        $r = $dbc->exec_statement($p);
+        $p = $dbc->prepare("SELECT TenderCode,TenderName FROM tenders ORDER BY TenderName");
+        $r = $dbc->execute($p);
         while($w = $dbc->fetch_row($r)) {
             $tenders[$w['TenderCode']] = $w['TenderName'];
         }
@@ -109,7 +112,7 @@ class TenderInOutReport extends FannieReportPage
 <form method = "get" action="TenderInOutReport.php">
 <div class="col-sm-4">
     <div class="form-group"> 
-        <label>Reason</label>
+        <label>Tender</label>
         <select name="tendercode" class="form-control">
             <?php foreach($tenders as $code=>$name) {
                 printf('<option value="%s">%s</option>',$code,$name);
@@ -153,8 +156,15 @@ class TenderInOutReport extends FannieReportPage
             during the selected date range.
             </p>';
     }
+
+    public function unitTest($phpunit)
+    {
+        $data = array('tdate'=>'2000-01-01', 'trans_num'=>'1-1-1', 'emp_no'=>1,
+            'register_no'=>1, 'total'=>10);
+        $phpunit->assertInternalType('array', $this->rowToRecord($data));
+        $phpunit->assertInternalType('array', $this->calculate_footers($this->dekey_array(array($data))));
+    }
 }
 
 FannieDispatch::conditionalExec();
 
-?>

@@ -21,6 +21,8 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\gui\NoInputCorePage;
+use COREPOS\pos\lib\Database;
 include_once(dirname(__FILE__).'/../lib/AutoLoader.php');
 
 // based upon RefundComment class
@@ -31,43 +33,40 @@ class DDDReason extends NoInputCorePage
     public function preprocess()
     {
         // pre-emptively lookup available reasons
-        $db = Database::pDataConnect();
-        $result = $db->query('SELECT shrinkReasonID, description
+        $dbc = Database::pDataConnect();
+        $result = $dbc->query('SELECT shrinkReasonID, description
                               FROM ShrinkReasons');
-        if ($db->num_rows($result) == 0) {
-            // no reasons configured. skip the 
-            // this page and continue to next step.
-            CoreLocal::set('shrinkReason', 0);
-            $this->change_page($this->page_url."gui-modules/adminlogin.php?class=DDDAdminLogin");
-
-            return false;
-        } else if ($db->num_rows($result) == 1) {
-            // exactly one reason configured. 
-            // just use that reason and continue
-            // to next step
-            $row = $db->fetch_row($result);
-            CoreLocal::set('shrinkReason', $row['shrinkReasonID']);
-            $this->change_page($this->page_url."gui-modules/adminlogin.php?class=DDDAdminLogin");
-
-            return false;
-        } else {
-            while($row = $db->fetch_row($result)) {
-                $this->reasons[$row['shrinkReasonID']] = $row['description'];
+        if ($dbc->numRows($result) <= 1) {
+            // zero or one reasons
+            $this->session->set('shrinkReason', 0);
+            $row = $dbc->fetchRow($result);
+            if ($row) {
+                // exactly one reason configured. 
+                // just use that reason and continue
+                // to next step
+                $this->session->set('shrinkReason', $row['shrinkReasonID']);
             }
-        }
-
-        if (isset($_REQUEST["selectlist"])) {
-            $input = $_REQUEST["selectlist"];
-            if ($input == "CL" || $input == '') {
-                CoreLocal::set("shrinkReason", 0);
-                $this->change_page($this->page_url."gui-modules/pos2.php");
-            } else {
-                CoreLocal::set("shrinkReason", (int)$input);
-                $this->change_page($this->page_url."gui-modules/adminlogin.php?class=DDDAdminLogin");
-            }
+            $this->change_page($this->page_url."gui-modules/adminlogin.php?class=COREPOS-pos-lib-adminlogin-DDDAdminLogin");
 
             return false;
         }
+
+        while($row = $dbc->fetchRow($result)) {
+            $this->reasons[$row['shrinkReasonID']] = $row['description'];
+        }
+
+        try {
+            $input = $this->form->selectlist;
+            $this->session->set("shrinkReason", 0);
+            $url = $this->page_url . "gui-modules/pos2.php";
+            if ($input != "CL" && $input == '') {
+                $this->session->set("shrinkReason", (int)$input);
+                $url = $this->page_url . "gui-modules/adminlogin.php?class=COREPOS-pos-lib-adminlogin-DDDAdminLogin";
+            }
+            $this->change_page($url);
+
+            return false;
+        } catch (Exception $ex) {}
 
         return true;
     }
@@ -82,9 +81,9 @@ class DDDReason extends NoInputCorePage
         ?>
         <div class="baseHeight">
         <div class="centeredDisplay colored">
-                <span class="larger">Why are these items being marked as shrink/unsellable?</span>
+                <span class="larger"><?php echo _('Why are these items being marked as shrink/unsellable?'); ?></span>
         <form name="selectform" method="post" 
-            id="selectform" action="<?php echo $_SERVER['PHP_SELF']; ?>">
+            id="selectform" action="<?php echo filter_input(INPUT_SERVER, 'PHP_SELF'); ?>">
             <select name="selectlist" id="selectlist"
                 onblur="$('#selectlist').focus();">
             <?php
@@ -95,16 +94,26 @@ class DDDReason extends NoInputCorePage
             </select>
         </form>
         <p>
-        <span class="smaller">[clear] to cancel</span>
+        <span class="smaller"><?php echo _('[clear] to cancel'); ?></span>
         </p>
         </div>
         </div>    
         <?php
-        $this->add_onload_command("\$('#selectlist').focus();\n");
-        $this->add_onload_command("selectSubmit('#selectlist', '#selectform')\n");
+        $this->addOnloadCommand("\$('#selectlist').focus();\n");
+        $this->addOnloadCommand("selectSubmit('#selectlist', '#selectform')\n");
     } // END body_content() FUNCTION
+
+    public function unitTest($phpunit)
+    {
+        ob_start();
+        $this->head_content();
+        $phpunit->assertNotEquals(0, strlen(ob_get_clean()));
+        $this->reasons = array(1 => 'test');
+        ob_start();
+        $this->body_content();
+        $phpunit->assertNotEquals(0, strlen(ob_get_clean()));
+    }
 }
 
-if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
-    new DDDReason();
-?>
+AutoLoader::dispatch();
+

@@ -31,7 +31,7 @@ class WicSalesReport extends FannieReportPage
     protected $required_fields = array('date1', 'date2');
 
     public $description = '[WIC Movement] lists sales for products eligible for WIC over a given date range.';
-    public $report_set = 'Movement Reports';
+    public $report_set = 'WIC';
     public $themed = true;
 
     protected $new_tablesorter = true;
@@ -125,18 +125,18 @@ class WicSalesReport extends FannieReportPage
             break;
         }
 
-        $prep = $dbc->prepare_statement($query);
-        $result = $dbc->exec_statement($prep,$args);
+        $prep = $dbc->prepare($query);
+        $result = $dbc->execute($prep,$args);
         $ret = array();
-        while ($row = $dbc->fetch_array($result)) {
+        while ($row = $dbc->fetchRow($result)) {
             $record = array();
             if ($groupby == "date") {
                 $record[] = $row['month'] . '/' . $row['day'] . '/' . $row['year'];
                 $record[] = number_format($row['qty'], 2);
                 $record[] = number_format($row['ttl'], 2);
             } else {
-                for ($i=0;$i<$dbc->num_fields($result);$i++) {
-                    if ($dbc->field_name($result, $i) == 'qty' || $dbc->field_name($result, $i) == 'ttl') {
+                for ($i=0;$i<$dbc->numFields($result);$i++) {
+                    if ($dbc->fieldName($result, $i) == 'qty' || $dbc->fieldName($result, $i) == 'ttl') {
                         $row[$i] = sprintf('%.2f', $row[$i]);
                     }
                     $record[] .= $row[$i];
@@ -263,4 +263,3 @@ class WicSalesReport extends FannieReportPage
 
 FannieDispatch::conditionalExec();
 
-?>

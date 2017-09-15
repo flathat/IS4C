@@ -21,11 +21,19 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\lib;
+use COREPOS\pos\lib\CoreState;
+use COREPOS\pos\lib\Database;
+use COREPOS\pos\lib\MiscLib;
+use COREPOS\pos\lib\FooterBoxes\FooterBox;
+use \CoreLocal;
+
 /**
   @class DisplayLib
   Functions for drawing display elements
 */
-class DisplayLib extends LibraryClass {
+class DisplayLib 
+{
 
 /**
   Get the standard footer with total and
@@ -50,7 +58,7 @@ static public function printfooter($readOnly=False)
         );
     }
     
-    $modchain = array_map(function($class){ return new $class(); }, $FOOTER_MODULES);
+    $modchain = array_map(function($class){ return FooterBox::factory($class); }, $FOOTER_MODULES);
 
     if (!$readOnly) {
         CoreLocal::set("runningTotal",CoreLocal::get("amtdue"));
@@ -58,10 +66,9 @@ static public function printfooter($readOnly=False)
     if (CoreLocal::get("End") == 1 && !$readOnly) {
         CoreLocal::set("runningTotal",-1 * CoreLocal::get("change"));
     }
+    $weight = "_ _ _ _";
     if (CoreLocal::get("scale") == 1) {
         $weight = number_format(CoreLocal::get("weight"), 2)."lb.";
-    } else {
-        $weight = "_ _ _ _";
     }
 
     $ret = "<table>";
@@ -116,6 +123,9 @@ static public function printfooter($readOnly=False)
     }
     $ret .= "</tr>";
     $ret .= "</table>";
+    if (CoreLocal::get('Debug_JS')) {
+        $ret .= '<div id="jsErrorLog"></div>';
+    }
 
     return $ret;
 }
@@ -148,6 +158,7 @@ static public function plainmsg($strmsg)
   This function will include the header
   printheaderb(). 
 */
+    // @hintable
 static public function msgbox($strmsg, $icon, $noBeep=false, $buttons=array()) 
 {
     $ret = self::printheaderb();
@@ -204,6 +215,7 @@ static public function msgbox($strmsg, $icon, $noBeep=false, $buttons=array())
 
   An alias for msgbox().
 */
+    // @hintable
 static public function xboxMsg($strmsg, $buttons=array()) 
 {
     return self::msgbox($strmsg, MiscLib::base_url()."graphics/crossD.gif", false, $buttons);
@@ -219,6 +231,7 @@ static public function xboxMsg($strmsg, $buttons=array())
 
   An alias for msgbox().
 */
+    // @hintable
 static public function boxMsg($strmsg, $header="", $noBeep=false, $buttons=array()) 
 {
     $default = CoreLocal::get('alertBar');
@@ -249,7 +262,7 @@ static public function inputUnknown()
 
 static public function standardClearButton()
 {
-    return array('[Clear]' => 'parseWrapper(\'CL\');');
+    return array(_('[Clear]') => 'parseWrapper(\'CL\');');
 }
 
 //--------------------------------------------------------------------//
@@ -263,9 +276,7 @@ static public function printheaderb()
 {
 
     $strmemberID = "";
-    if (CoreLocal::get("memberID") == "0") {
-        $strmemberID = "";
-    } else {
+    if (CoreLocal::get("memberID") != "0") {
         $strmemberID = CoreLocal::get("memMsg");
         if (CoreLocal::get("isMember") == 0) {
             $strmemberID = str_replace("(0)", "(n/a)", $strmemberID);
@@ -292,15 +303,15 @@ static public function printheaderb()
     return $ret;
 }
 
-static private function itemOnClick($trans_id)
+static private function itemOnClick($transID)
 {
     $onclick = "";
-    if ($trans_id != -1) {
+    if ($transID != -1) {
         $curID = CoreLocal::get("currentid");
-        $diff = $trans_id - $curID;
+        $diff = $transID - $curID;
         if ($diff > 0) {
             $onclick="onclick=\"parseWrapper('D$diff');\"";
-        } else if ($diff < 0){
+        } elseif ($diff < 0){
             $diff *= -1;
             $onclick="onclick=\"parseWrapper('U$diff');\"";
         }
@@ -314,14 +325,15 @@ static private function itemOnClick($trans_id)
 /**
   Get a transaction line item
   @param $fields [array] of entries (left-to-right)
-  @param $trans_id value from localtemptrans. Including
-   the trans_id makes the lines selectable via mouseclick
+  @param $transID value from localtemptrans. Including
+   the transID makes the lines selectable via mouseclick
    (or touchscreen).
   @return An HTML string
 */
-static public function printItem($fields, $trans_id=-1) 
+    // @hintable
+static public function printItem($fields, $transID=-1) 
 {
-    $onclick = self::itemOnClick($trans_id);
+    $onclick = self::itemOnClick($transID);
 
     $total = self::displayableText($fields[2], false, true);
     $description = self::displayableText($fields[0], false, false);
@@ -346,8 +358,8 @@ static public function printItem($fields, $trans_id=-1)
   @param $color is a hex color code (do not include a '#')
     (see CSS notes)
   @param $fields [array] of entries (left-to-right)
-  @param $trans_id value from localtemptrans. Including
-   the trans_id makes the lines selectable via mouseclick
+  @param $transID value from localtemptrans. Including
+   the transID makes the lines selectable via mouseclick
    (or touchscreen).
   @return An HTML string
 
@@ -360,9 +372,10 @@ static public function printItem($fields, $trans_id=-1)
   - 000000 => totalLine
   - 800080 => fsLine
 */
-static public function printItemColor($color, $fields, $trans_id=-1) 
+    // @hintable
+static public function printItemColor($color, $fields, $transID=-1) 
 {
-    $onclick = self::itemOnClick($trans_id);
+    $onclick = self::itemOnClick($transID);
 
     $total = self::displayableText($fields[2], true, true);
     $description = self::displayableText($fields[0], true, false);
@@ -394,9 +407,8 @@ private static function colorToCSS($color, $text=true)
         return array($text ? 'lightColorText' : 'lightColorArea', '');
     } elseif ($text) {
         return array('', "style=\"color:#$color;\"");
-    } else {
-        return array('', "style=\"background:#$color;color:#ffffff;\"");
     }
+    return array('', "style=\"background:#$color;color:#ffffff;\"");
 }
 
 //----------------------------------------------------------------//
@@ -417,6 +429,7 @@ private static function colorToCSS($color, $text=true)
   - 000000 => totalArea
   - 800080 => fsArea
 */
+    // @hintable
 static public function printItemColorHilite($color, $fields)
 {
     $total = self::displayableText($fields[2], true, true);
@@ -445,9 +458,8 @@ private static function displayableText($field, $color=true, $total=true)
         return "&nbsp;";
     } elseif (is_numeric($field) && strlen($field) > 0) {
         return number_format($field, 2);
-    } else {
-        return $field;
     }
+    return $field;
 }
 
 //----------------------------------------------------------------//
@@ -480,12 +492,11 @@ static public function scaledisplaymsg($input="")
     if (strlen($reginput) == 0) {
         if (is_numeric(CoreLocal::get("weight"))) {
             return number_format(CoreLocal::get("weight"), 2)." lb";
-        } else {
-            return CoreLocal::get("weight")." lb";
         }
+        return CoreLocal::get("weight")." lb";
     }
 
-    $display_weight = "";
+    $display_weight = "? ? ? ?";
     $weight = 0;
     CoreLocal::set("scale",0);
     CoreLocal::set("weight",0);
@@ -493,7 +504,7 @@ static public function scaledisplaymsg($input="")
     $prefix = "NonsenseThatWillNotEverHappen";
     if (substr($reginput, 0, 3) == "S11")
         $prefix = "S11";
-    else if (substr($reginput,0,4)=="S144")    
+    elseif (substr($reginput,0,4)=="S144")    
         $prefix = "S144";
 
     if (strpos($reginput, $prefix) === 0) {
@@ -516,11 +527,9 @@ static public function scaledisplaymsg($input="")
     } elseif (substr($reginput, 0, 4) == "S141") {
         $display_weight = "_ _ _ _";
     } elseif (substr($reginput, 0, 4) == "S145") {
-        $display_weight = "err -0";
+        $display_weight = _("err -0");
     } elseif (substr($reginput, 0, 4) == "S142") {
-        $display_weight = "error";
-    } else {
-        $display_weight = "? ? ? ?";
+        $display_weight = _("error");
     }
 
     $ret = array('display'=>$display_weight);
@@ -554,7 +563,7 @@ static public function drawNotifications()
 
 /**
   Get the items currently on screen
-  @param $top_item is trans_id (localtemptrans)
+  @param $topItem is trans_id (localtemptrans)
    of the first item to display
   @param $highlight is the trans_id (localtemptrans)
    of the currently selected item
@@ -563,12 +572,9 @@ static public function drawNotifications()
   If you just want to show the most recently
   scanned items, use lastpage().
 */
-static public function listItems($top_item, $highlight) 
+static public function listItems($topItem, $highlight) 
 {
-    $lines = CoreLocal::get('screenLines');
-    if (!$lines === '' || !is_numeric($lines)) {
-        $lines = 11;
-    }
+    $lines = self::screenLines();
 
     Database::getsubtotals();
     $LastID = CoreLocal::get("LastID");
@@ -577,29 +583,29 @@ static public function listItems($top_item, $highlight)
 
     if ($highlight < 1) {
         $highlight = 1;
-        $top_item = 1;
+        $topItem = 1;
     }
     
     if ($highlight > $LastID) {
         $highlight = $LastID;
     }
 
-    if ($highlight < $top_item) {
-        $top_item = $highlight;
+    if ($highlight < $topItem) {
+        $topItem = $highlight;
     }
 
-    if ($highlight > ($top_item + $lines)) {
-        $top_item = ($highlight - $lines);
+    if ($highlight > ($topItem + $lines)) {
+        $topItem = ($highlight - $lines);
     }
 
-    CoreLocal::set("currenttopid",$top_item);
+    CoreLocal::set("currenttopid",$topItem);
     CoreLocal::set("currentid",$highlight);
 
 //------------------Boundary Bottom----------------
 
     CoreLocal::set("currentid",$highlight);
 
-    return self::drawItems($top_item, $lines, $highlight);
+    return self::drawItems($topItem, $lines, $highlight);
 }
 
 
@@ -619,15 +625,14 @@ static public function printReceiptfooter($readOnly=False)
     if (!$readOnly) {
         Database::getsubtotals();
     }
-    $last_id = CoreLocal::get("LastID");
+    $lastID = CoreLocal::get("LastID");
 
-    if (($last_id - 7) < 0) {
-        $top_id = 1;
-    } else {
-        $top_id = $last_id - 7;
+    $topID = $lastID - 7;
+    if (($lastID - 7) < 0) {
+        $topID = 1;
     }
 
-    $ret = self::drawitems($top_id, 7, 0);
+    $ret = self::drawitems($topID, 7, 0);
 
     $ret .= "<div class=\"farewellMsg coloredText\">";
     for($i=0;$i<=CoreLocal::get("farewellMsgCount");$i++) {
@@ -648,7 +653,7 @@ static public function printReceiptfooter($readOnly=False)
 
 /**
   Get the currently displayed items
-  @param $top_item is the trans_id of the first item to display
+  @param $topItem is the trans_id of the first item to display
   @param $rows is the number of items to display
   @param $highlight is the trans_id of the selected item
   @return An HTML string
@@ -656,14 +661,14 @@ static public function printReceiptfooter($readOnly=False)
   This function probably shouldn't be used directly.
   Call listitems() or lastpage() instead.
 */
-static public function drawItems($top_item, $rows, $highlight) 
+static public function drawItems($topItem, $rows, $highlight) 
 {
     $ret = self::printheaderb();
 
     $query = "select count(*) as count from localtemptrans";
     $dbc = Database::tDataConnect();
     $result = $dbc->query($query);
-    $row = $dbc->fetch_array($result);
+    $row = $dbc->fetchRow($result);
     $rowCount = $row["count"];
 
     if ($rowCount == 0) {
@@ -678,8 +683,8 @@ static public function drawItems($top_item, $rows, $highlight)
     } else {
 
         $query_range = "select trans_id,description,total,comment,status,lineColor
-                       from screendisplay where trans_id >= ".$top_item." and trans_id <= "
-                .($top_item + $rows)." order by trans_id";
+                       from screendisplay where trans_id >= ".$topItem." and trans_id <= "
+                .($topItem + $rows)." order by trans_id";
         $db_range = Database::tDataConnect();
         $result_range = $db_range->query($query_range);
         $screenRecords = array();
@@ -706,24 +711,24 @@ static public function drawItems($top_item, $rows, $highlight)
           to verify this method behaves the same as the screendisplay via.
           No ETA at this point.
         */
-        //$screenRecords = self::screenDisplay($top_item, $top_item + $rows);
+        //$screenRecords = self::screenDisplay($topItem, $topItem + $rows);
 
         foreach ($screenRecords as $row) {
 
-            $trans_id = $row["trans_id"];
+            $transID = $row["trans_id"];
             $description = $row["description"];
             $total = $row["total"];
             $comment = $row["comment"];
-            $tf_status = $row["status"];
+            $tfStatus = $row["status"];
             $color = $row["lineColor"];
 
             
-            if ($trans_id == $highlight) {
-                $ret .= self::printItemColorHilite($color, array($description, $comment, $total, $tf_status));
+            if ($transID == $highlight) {
+                $ret .= self::printItemColorHilite($color, array($description, $comment, $total, $tfStatus));
             } elseif ($color == "004080") {
-                $ret .= self::printItem(array($description, $comment, $total, $tf_status),$trans_id);
+                $ret .= self::printItem(array($description, $comment, $total, $tfStatus),$transID);
             } else {
-                $ret .= self::printItemColor($color, array($description, $comment, $total, $tf_status),$trans_id);
+                $ret .= self::printItemColor($color, array($description, $comment, $total, $tfStatus),$transID);
             }                
         }
     }
@@ -743,27 +748,23 @@ static public function drawItems($top_item, $rows, $highlight)
 */
 static public function lastpage($readOnly=False) 
 {
-    $lines = CoreLocal::get('screenLines');
-    if (!$lines === '' || !is_numeric($lines)) {
-        $lines = 11;
-    }
+    $lines = self::screenLines();
 
     if (!$readOnly) {
         Database::getsubtotals();
     }
-    $last_id = CoreLocal::get("LastID");
+    $lastID = CoreLocal::get("LastID");
 
-    if (($last_id - $lines) < 0) {
-        $top_id = 1;
-    } else {
-        $top_id = $last_id - $lines;
+    $topID = $lastID - $lines;
+    if (($lastID - $lines) < 0) {
+        $topID = 1;
     }
     
     if (!$readOnly) {
-        CoreLocal::set("currentid",$last_id);
-        CoreLocal::set("currenttopid",$top_id);
+        CoreLocal::set("currentid",$lastID);
+        CoreLocal::set("currenttopid",$topID);
     }
-    return self::drawItems($top_id, $lines, $last_id);
+    return self::drawItems($topID, $lines, $lastID);
 }
 
 /**
@@ -819,6 +820,7 @@ static public function screenDisplay($min, $max)
     return $ret;
 }
 
+    // @hintable
 static private function screenDisplayColor($row)
 {
     if ($row['trans_status'] == 'V' || $row['trans_type'] == 'T' || $row['trans_status'] == 'R' || $row['trans_status'] == 'M' || $row['voided'] == 17 || $row['trans_status'] == 'J') {
@@ -830,20 +832,20 @@ static private function screenDisplayColor($row)
         return '000000';
     } elseif ($row['voided'] == 7) {
         return '800080';
-    } else {
-        return '004080';
     }
+    return '004080';
 }
 
+    // @hintable
 static private function screenDisplayDescription($row)
 {
     if ($row['voided'] == 5 || $row['voided'] == 11 || $row['voided'] == 17 || $row['trans_type'] == 'T') {
         return '';
-    } else {
-        return $row['description'];
     }
+    return $row['description'];
 }
 
+    // @hintable
 static private function screenDisplayComment($row)
 {
     if ($row['discounttype'] == 3 && $row['trans_status'] == 'V') {
@@ -878,22 +880,22 @@ static private function screenDisplayComment($row)
         return _('1 w/ vol adj');
     } elseif ($row['trans_type'] == 'T') {
         return $row['description'];
-    } else {
-        return '';
     }
+    return '';
 }
 
+    // @hintable
 static private function screenDisplayTotal($row)
 {
     if ($row['voided'] == 3 || $row['voided'] == 5 || $row['voided'] == 7 || $row['voided'] == 11 || $row['voided'] == 17) {
         return $row['unitPrice'];
     } elseif ($row['trans_status'] == 'D') {
         return '';
-    } else {
-        return $row['total'];
     }
+    return $row['total'];
 }
 
+    // @hintable
 static private function screenDisplayStatus($row)
 {
     if ($row['trans_status'] == 'V') {
@@ -914,9 +916,8 @@ static private function screenDisplayStatus($row)
         return substr($row['tax_description'], 0 , 1);
     } elseif ($row['tax'] == 0 && $row['foodstamp'] != 0) {
         return 'F';
-    } else {
-        return '';
     }
+    return '';
 }
 
 static public function touchScreenScrollButtons($selector='#search')
@@ -942,6 +943,13 @@ static public function touchScreenScrollButtons($selector='#search')
             onclick="pageDown(\''. $selector . '\');">
             <img src="' . $stem . 'pagedown.png" width="16" height="16" />
         </button>';
+}
+
+static public function screenLines()
+{
+    $valid = function($var) { return ($var !== '' && is_numeric($var)); };
+
+    return $valid(CoreLocal::get('screenLines')) ? CoreLocal::get('screenLines') : 11;
 }
 
 } // end class DisplayLib

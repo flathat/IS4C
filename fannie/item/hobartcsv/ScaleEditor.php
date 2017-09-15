@@ -125,7 +125,7 @@ class ScaleEditor extends FannieRESTfulPage
             $supers[$row['superID']] = $row['super_name'];
         }
 
-        $ret = '<form action="' . $_SERVER['PHP_SELF'] . '" method="post">';
+        $ret = '<form action="' . filter_input(INPUT_SERVER, 'PHP_SELF') . '" method="post">';
         
         $ret .= '<table class="table">
             <tr><th>Description</th><th>Host</th><th>Type</th><th>Scale Dept.</th><th>POS Super Dept</th>
@@ -189,6 +189,11 @@ class ScaleEditor extends FannieRESTfulPage
             Currently only Hobart Quantums are supported. Data Gate Weigh
             still has to be configured separately with similar information.
             </p>';
+    }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->get_view()));
     }
 }
 

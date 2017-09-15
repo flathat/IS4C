@@ -75,7 +75,7 @@ class DeptSettingsReport extends FannieReportPage
             $args = array($d1,$d2);
         }
 
-        $query = $dbc->prepare_statement("SELECT d.dept_no,d.dept_name,d.salesCode,d.margin,
+        $query = $dbc->prepare("SELECT d.dept_no,d.dept_name,d.salesCode,d.margin,
             CASE WHEN d.dept_tax=0 THEN 'NoTax' ELSE t.description END as tax,
             CASE WHEN d.dept_fs=1 THEN 'Yes' ELSE 'No' END as fs,
             m.super_name
@@ -84,26 +84,32 @@ class DeptSettingsReport extends FannieReportPage
             $join
             WHERE $where
             ORDER BY d.dept_no");
-        $result = $dbc->exec_statement($query,$args);
+        $result = $dbc->execute($query,$args);
         $data = array();
-        while($row = $dbc->fetch_row($result)) {
-            $record = array(
-                    $row[0],
-                    (isset($_REQUEST['excel']))?$row[1]:"<a href=\"{$FANNIE_URL}item/departments/DepartmentEditor.php?did=$row[0]\">$row[1]</a>",
-                    $row['super_name'],
-                    $row[2],
-                    sprintf('%.2f%%',$row[3]*100),
-                    $row[4],
-                    $row[5]
-            );
-            if (empty($row['super_name'])) {
-                $record['meta'] = FannieReportPage::META_COLOR;
-                $record['meta_background'] = '#ff9999';
-            }
-            $data[] = $record;
+        while ($row = $dbc->fetchRow($result)) {
+            $data[] = $this->rowToRecord($row);
         }
 
         return $data;
+    }
+
+    private function rowToRecord($row)
+    {
+        $record = array(
+            $row[0],
+            (isset($_REQUEST['excel']))?$row[1]:"<a href=\"" . $this->config->get('URL') . "item/departments/DepartmentEditor.php?did=$row[0]\">$row[1]</a>",
+            $row['super_name'],
+            $row[2],
+            sprintf('%.2f%%',$row[3]*100),
+            $row[4],
+            $row[5],
+        );
+        if (empty($row['super_name'])) {
+            $record['meta'] = FannieReportPage::META_COLOR;
+            $record['meta_background'] = '#ff9999';
+        }
+
+        return $record;
     }
 
     public function form_content()
@@ -112,15 +118,15 @@ class DeptSettingsReport extends FannieReportPage
         $dbc->selectDB($this->config->get('OP_DB'));
 
         $opts = "";
-        $prep = $dbc->prepare_statement("SELECT superID,super_name fROM superDeptNames ORDER BY super_name");
-        $resp = $dbc->exec_statement($prep);
+        $prep = $dbc->prepare("SELECT superID,super_name fROM superDeptNames ORDER BY super_name");
+        $resp = $dbc->execute($prep);
         while($row = $dbc->fetch_row($resp)) {
             $opts .= "<option value=$row[0]>$row[1]</option>";
         }
 
         $depts = "";
-        $prep = $dbc->prepare_statement("SELECT dept_no,dept_name FROM departments ORDER BY dept_no");
-        $resp = $dbc->exec_statement($prep);
+        $prep = $dbc->prepare("SELECT dept_no,dept_name FROM departments ORDER BY dept_no");
+        $resp = $dbc->execute($prep);
         $d1 = false;
         while($row = $dbc->fetch_row($resp)) {
             $depts .= "<option value=$row[0]>$row[0] $row[1]</option>";
@@ -183,6 +189,12 @@ class DeptSettingsReport extends FannieReportPage
     {
         return '<p>This is just a quick list of current margin, tax,
             and foodstamp settings for a set of POS departments.</p>';
+    }
+
+    public function unitTest($phpunit)
+    {
+        $data = array(0=>1, 1=>'TEST', 2=>100, 3=>0.5, 4=>0, 5=>1, 'super_name'=>'test');
+        $phpunit->assertInternalType('array', $this->rowToRecord($data));
     }
 }
 

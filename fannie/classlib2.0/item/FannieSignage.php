@@ -21,7 +21,19 @@
 
 *********************************************************************************/
 
-namespace COREPOS\Fannie\API\item {
+namespace COREPOS\Fannie\API\item;
+use COREPOS\Fannie\API\FanniePlugin;
+use COREPOS\Fannie\API\lib\PriceLib;
+use COREPOS\Fannie\API\lib\Store;
+use \BarcodeLib;
+use \DTrans;
+use \FannieConfig;
+use \FannieDB;
+use \FormLib;
+use \ProductsModel;
+use \ProductUserModel;
+use \OriginsModel;
+use \ShelftagsModel;
 
 class FannieSignage 
 {
@@ -31,6 +43,13 @@ class FannieSignage
     protected $data = array();
     protected $overrides = array();
     protected $excludes = array();
+    protected $in_use_filter = 0;
+    protected $repeats = 1;
+
+    protected $width;
+    protected $height;
+    protected $top;
+    protected $left;
 
     /**
       constructor
@@ -66,11 +85,21 @@ class FannieSignage
         $this->connection = $dbc;
     }
 
+    public function setInUseFilter($store)
+    {
+        $this->in_use_filter = $store;
+    }
+
+    public function setRepeats($repeats)
+    {
+        $this->repeats = $repeats;
+    }
+
     protected function getDB()
     {
         if (!is_object($this->connection)) {
-            $op_db = \FannieConfig::factory()->get('OP_DB');
-            $this->connection = \FannieDB::get($op_db);
+            $op_db = FannieConfig::factory()->get('OP_DB');
+            $this->connection = FannieDB::get($op_db);
         }
         return $this->connection;
     }
@@ -109,6 +138,7 @@ class FannieSignage
         $data = array();
         $prep = $dbc->prepare($sql['query']);
         $result = $dbc->execute($prep, $sql['args']);
+        $lastUPC = null;
 
         $mapP = $dbc->prepare('SELECT o.name, o.shortName
                                FROM ProductOriginsMap AS m
@@ -117,8 +147,15 @@ class FannieSignage
                                 m.upc = ?
                                 AND o.name <> ?
                                 AND o.shortName <> ?');
+        if ($this->in_use_filter) {
+            $useP = $dbc->prepare('SELECT inUse FROM products WHERE upc=? AND store_id=?');
+        }
 
         while ($row = $dbc->fetch_row($result)) {
+
+            if ($row['upc'] == $lastUPC) {
+                continue;
+            }
 
             if (substr($row['upc'], 0, 2) == 'LC') {
                 $row = $this->unrollLikeCode($dbc, substr($row['upc'], 2), $row);
@@ -128,8 +165,18 @@ class FannieSignage
                 continue;
             }
 
+            if ($this->in_use_filter && !$dbc->getValue($useP, array($row['upc'], $this->in_use_filter))) {
+                continue;
+            }
+
+            if ($row['unitofmeasure'] && is_numeric($row['size'])) {
+                $row['size'] .= $row['unitofmeasure'];
+            }
             if ($row['pricePerUnit'] == '') {
-                $row['pricePerUnit'] = \COREPOS\Fannie\API\lib\PriceLib::pricePerUnit($row['normal_price'], $row['size']);
+                $row['pricePerUnit'] = PriceLib::pricePerUnit($row['normal_price'], $row['size']);
+            }
+            if ($row['sku'] == $row['upc']) {
+                $row['sku'] = '';
             }
             if (!isset($row['signMultiplier'])) {
                 $row['signMultiplier'] = 1;
@@ -139,8 +186,8 @@ class FannieSignage
                 // check for additional origins
                 $mapR = $dbc->execute($mapP, array($row['upc'], $row['originName'], $row['originShortName']));
                 while ($mapW = $dbc->fetch_row($mapR)) {
-                    $row['originName'] .= _(' or ') . $mapW['name'];
-                    $row['originShortName'] .= _(' or ') . $mapW['shortName'];
+                    $row['originName'] .= _(' and ') . $mapW['name'];
+                    $row['originShortName'] .= _(' and ') . $mapW['shortName'];
                 }
             }
 
@@ -156,9 +203,11 @@ class FannieSignage
             if (!isset($row['signCount']) || $row['signCount'] < 0) {
                 $row['signCount'] = 1;
             }
-            for ($i=0; $i<$row['signCount']; $i++) {
+            for ($i=0; $i<$row['signCount']*$this->repeats; $i++) {
                 $data[] = $row;
             }
+
+            $lastUPC = $row['upc'];
         }
 
         return $data;
@@ -178,10 +227,13 @@ class FannieSignage
                     p.numflag,
                     \'\' AS startDate,
                     \'\' AS endDate,
+                    \'\' AS batchName,
+                    \'\' AS unitofmeasure,
+                    o.originID,
                     o.name AS originName,
                     o.shortName AS originShortName
                   FROM shelftags AS s
-                    ' . \DTrans::joinProducts('s', 'p', 'INNER') . '
+                    ' . DTrans::joinProducts('s', 'p', 'INNER') . '
                     LEFT JOIN origins AS o ON p.current_origin_id=o.originID
                   WHERE s.id=?
                   ORDER BY p.department, s.upc';
@@ -209,15 +261,18 @@ class FannieSignage
                     s.size,
                     s.sku,
                     \'\' AS pricePerUnit,
+                    \'\' AS unitofmeasure,
                     s.vendor,
                     p.scale,
                     p.numflag,
                     b.startDate,
+                    b.batchName,
                     b.endDate,
+                    o.originID,
                     o.name AS originName,
                     o.shortName AS originShortName
                   FROM batchBarcodes AS s
-                    ' . \DTrans::joinProducts('s', 'p', 'INNER') . '
+                    ' . DTrans::joinProducts('s', 'p', 'INNER') . '
                     INNER JOIN batches AS b ON s.batchID=b.batchID
                     LEFT JOIN origins AS o ON p.current_origin_id=o.originID
                   WHERE s.batchID IN (' . $ids . ')
@@ -244,11 +299,11 @@ class FannieSignage
         $query = 'SELECT l.upc,
                     l.salePrice AS normal_price,
                     p.normal_price AS nonSalePrice,
-                    ' . \COREPOS\Fannie\API\item\ItemText::longDescriptionSQL() . ',
+                    ' . ItemText::longDescriptionSQL() . ',
                     p.description AS posDescription,
-                    ' . \COREPOS\Fannie\API\item\ItemText::longBrandSQL() . ',
+                    ' . ItemText::longBrandSQL() . ',
                     v.units,
-                    ' . \COREPOS\Fannie\API\item\ItemText::signSizeSQL() . ',
+                    ' . ItemText::signSizeSQL() . ',
                     v.sku,
                     \'\' AS pricePerUnit,
                     n.vendorName AS vendor,
@@ -278,10 +333,13 @@ class FannieSignage
             $query .= '1 AS signCount,';
         }
         $query .= ' o.name AS originName,
+                    o.originID,
                     o.shortName AS originShortName,
+                    p.unitofmeasure,
+                    b.batchName,
                     b.batchType
                  FROM batchList AS l
-                    ' . \DTrans::joinProducts('l', 'p', 'LEFT') . '
+                    ' . DTrans::joinProducts('l', 'p', 'LEFT') . '
                     INNER JOIN batches AS b ON b.batchID=l.batchID
                     LEFT JOIN batchType AS t ON b.batchType=t.batchTypeID
                     LEFT JOIN productUser AS u ON p.upc=u.upc
@@ -289,7 +347,7 @@ class FannieSignage
                     LEFT JOIN vendorItems AS v ON p.upc=v.upc AND p.default_vendor_id=v.vendorID
                     LEFT JOIN origins AS o ON p.current_origin_id=o.originID
                  WHERE l.batchID IN (' . $ids . ') ';
-        $query .= ' ORDER BY brand, description';
+        $query .= ' ORDER BY l.batchID, brand, description';
 
         return array('query' => $query, 'args' => $args);
     }
@@ -298,7 +356,7 @@ class FannieSignage
     {
         $likeP = $dbc->prepare('
             SELECT u.upc,
-                ' . \COREPOS\Fannie\API\item\ItemText::longBrandSQL('s', 'p') . ',
+                ' . ItemText::longBrandSQL('s', 'p') . ',
                 CASE WHEN s.description IS NULL OR s.description=\'\' THEN l.likeCodeDesc ELSE s.description END AS likeCodeDesc,
                 p.normal_price,
                 p.scale,
@@ -307,7 +365,7 @@ class FannieSignage
                 COALESCE(s.signCount, 1) AS signCount
             FROM upcLike AS u
                 INNER JOIN likeCodes AS l ON u.likeCode=l.likeCode
-                ' . \DTrans::joinProducts('u', 'p', 'INNER') . '
+                ' . DTrans::joinProducts('u', 'p', 'INNER') . '
                 LEFT JOIN productUser AS s ON u.upc=s.upc
             WHERE u.likeCode=?
             ORDER BY u.upc
@@ -337,11 +395,11 @@ class FannieSignage
         $ids = substr($ids, 0, strlen($ids)-1);
         $query = 'SELECT p.upc,
                     p.normal_price,
-                    ' . \COREPOS\Fannie\API\item\ItemText::longDescriptionSQL() . ',
+                    ' . ItemText::longDescriptionSQL() . ',
                     p.description AS posDescription,
-                    ' . \COREPOS\Fannie\API\item\ItemText::longBrandSQL() . ',
+                    ' . ItemText::longBrandSQL() . ',
                     v.units,
-                    ' . \COREPOS\Fannie\API\item\ItemText::signSizeSQL() . ',
+                    ' . ItemText::signSizeSQL() . ',
                     v.sku,
                     \'\' AS pricePerUnit,
                     n.vendorName AS vendor,
@@ -349,6 +407,9 @@ class FannieSignage
                     p.numflag,
                     \'\' AS startDate,
                     \'\' AS endDate,
+                    \'\' AS batchName,
+                    p.unitofmeasure,
+                    o.originID,
                     o.name AS originName,
                     o.shortName AS originShortName
                  FROM products AS p
@@ -357,9 +418,9 @@ class FannieSignage
                     LEFT JOIN vendorItems AS v ON p.upc=v.upc AND p.default_vendor_id=v.vendorID
                     LEFT JOIN origins AS o ON p.current_origin_id=o.originID
                  WHERE p.upc IN (' . $ids . ') ';
-        if (\FannieConfig::config('STORE_MODE') == 'HQ') {
+        if (FannieConfig::config('STORE_MODE') == 'HQ') {
             $query .= ' AND p.store_id=? ';
-            $args[] = \FannieConfig::config('STORE_ID');
+            $args[] = FannieConfig::config('STORE_ID');
         }
         $query .= 'ORDER BY p.department, p.upc';
 
@@ -377,11 +438,11 @@ class FannieSignage
         $ids = substr($ids, 0, strlen($ids)-1);
         $query = 'SELECT p.upc,
                     l.salePrice AS normal_price,
-                    ' . \COREPOS\Fannie\API\item\ItemText::longDescriptionSQL() . ',
+                    ' . ItemText::longDescriptionSQL() . ',
                     p.description AS posDescription,
-                    ' . \COREPOS\Fannie\API\item\ItemText::longBrandSQL() . ',
+                    ' . ItemText::longBrandSQL() . ',
                     v.units,
-                    ' . \COREPOS\Fannie\API\item\ItemText::signSizeSQL() . ',
+                    ' . ItemText::signSizeSQL() . ',
                     v.sku,
                     \'\' AS pricePerUnit,
                     n.vendorName AS vendor,
@@ -389,6 +450,9 @@ class FannieSignage
                     p.numflag,
                     \'\' AS startDate,
                     \'\' AS endDate,
+                    \'\' AS batchName,
+                    p.unitofmeasure,
+                    o.originID,
                     o.name AS originName,
                     o.shortName AS originShortName
                  FROM products AS p
@@ -401,9 +465,9 @@ class FannieSignage
                  WHERE p.upc IN (' . $ids . ')
                     AND b.discounttype = 0
                     AND b.startDate >= ' . $dbc->curdate() . ' ';
-        if (\FannieConfig::config('STORE_MODE') == 'HQ') {
+        if (FannieConfig::config('STORE_MODE') == 'HQ') {
             $query .= ' AND p.store_id=? ';
-            $args[] = \FannieConfig::config('STORE_ID');
+            $args[] = FannieConfig::config('STORE_ID');
         }
         $query .= 'ORDER BY p.department, p.upc';
 
@@ -422,29 +486,44 @@ class FannieSignage
         $query = 'SELECT p.upc,
                     CASE WHEN p.discounttype <> 0 THEN p.special_price ELSE p.normal_price END AS normal_price,
                     p.normal_price AS nonSalePrice,
-                    ' . \COREPOS\Fannie\API\item\ItemText::longDescriptionSQL() . ',
+                    ' . ItemText::longDescriptionSQL() . ',
                     p.description AS posDescription,
-                    ' . \COREPOS\Fannie\API\item\ItemText::longBrandSQL() . ',
+                    ' . ItemText::longBrandSQL() . ',
                     v.units,
-                    ' . \COREPOS\Fannie\API\item\ItemText::signSizeSQL() . ',
+                    ' . ItemText::signSizeSQL() . ',
                     v.sku,
                     \'\' AS pricePerUnit,
                     n.vendorName AS vendor,
                     p.scale,
                     p.numflag,
-                    p.start_date AS startDate,
-                    p.end_date AS endDate,
+                    CASE
+                        WHEN t.datedSigns=0 AND t.typeDesc LIKE \'%DISCO%\' THEN \'Discontinued\' 
+                        WHEN t.datedSigns=0 AND t.typeDesc NOT LIKE \'%DISCO%\' THEN \'While supplies last\' 
+                        ELSE p.start_date 
+                    END AS startDate,
+                    CASE
+                        WHEN t.datedSigns=0 AND t.typeDesc LIKE \'%DISCO%\' THEN \'Discontinued\' 
+                        WHEN t.datedSigns=0 AND t.typeDesc NOT LIKE \'%DISCO%\' THEN \'While supplies last\' 
+                        ELSE p.end_date 
+                    END AS endDate,
+                    p.unitofmeasure,
+                    o.originID,
+                    b.batchName,
                     o.name AS originName,
-                    o.shortName AS originShortName
+                    o.shortName AS originShortName,
+                    CASE WHEN l.signMultiplier IS NULL THEN 1 ELSE l.signMultiplier END AS signMultiplier
                  FROM products AS p
                     LEFT JOIN productUser AS u ON p.upc=u.upc
                     LEFT JOIN vendors AS n ON p.default_vendor_id=n.vendorID
                     LEFT JOIN vendorItems AS v ON p.upc=v.upc AND p.default_vendor_id=v.vendorID
                     LEFT JOIN origins AS o ON p.current_origin_id=o.originID
+                    LEFT JOIN batchList AS l ON p.batchID=l.batchID AND p.upc=l.upc
+                    LEFT JOIN batches AS b ON l.batchID=b.batchID
+                    LEFT JOIN batchType AS t ON b.batchType=t.batchTypeID
                  WHERE p.upc IN (' . $ids . ') ';
-        if (\FannieConfig::config('STORE_MODE') == 'HQ') {
+        if (FannieConfig::config('STORE_MODE') == 'HQ') {
             $query .= ' AND p.store_id=? ';
-            $args[] = \FannieConfig::config('STORE_ID');
+            $args[] = Store::getIdByIp();
         }
         $query .= 'ORDER BY p.department, p.upc';
 
@@ -463,18 +542,29 @@ class FannieSignage
         $query = 'SELECT p.upc,
                     l.salePrice AS normal_price,
                     p.normal_price AS nonSalePrice,
-                    ' . \COREPOS\Fannie\API\item\ItemText::longDescriptionSQL() . ',
+                    ' . ItemText::longDescriptionSQL() . ',
                     p.description AS posDescription,
-                    ' . \COREPOS\Fannie\API\item\ItemText::longBrandSQL() . ',
+                    ' . ItemText::longBrandSQL() . ',
                     v.units,
-                    ' . \COREPOS\Fannie\API\item\ItemText::signSizeSQL() . ',
+                    ' . ItemText::signSizeSQL() . ',
                     v.sku,
                     \'\' AS pricePerUnit,
                     n.vendorName AS vendor,
                     p.scale,
                     p.numflag,
-                    b.startDate,
-                    b.endDate,
+                    CASE
+                        WHEN t.datedSigns=0 AND t.typeDesc LIKE \'%DISCO%\' THEN \'Discontinued\' 
+                        WHEN t.datedSigns=0 AND t.typeDesc NOT LIKE \'%DISCO%\' THEN \'While supplies last\' 
+                        ELSE b.startDate 
+                    END AS startDate,
+                    CASE
+                        WHEN t.datedSigns=0 AND t.typeDesc LIKE \'%DISCO%\' THEN \'Discontinued\' 
+                        WHEN t.datedSigns=0 AND t.typeDesc NOT LIKE \'%DISCO%\' THEN \'While supplies last\' 
+                        ELSE b.endDate 
+                    END AS endDate,
+                    p.unitofmeasure,
+                    b.batchName,
+                    o.originID,
                     o.name AS originName,
                     o.shortName AS originShortName
                  FROM products AS p
@@ -484,53 +574,29 @@ class FannieSignage
                     LEFT JOIN origins AS o ON p.current_origin_id=o.originID
                     LEFT JOIN batchList AS l ON p.upc=l.upc
                     LEFT JOIN batches AS b ON l.batchID=b.batchID
+                    LEFT JOIN batchType AS t ON b.batchType=t.batchTypeID
                  WHERE p.upc IN (' . $ids . ')
                     AND b.discounttype <> 0
                     AND b.startDate > ' . $dbc->now() . ' ';
-        if (\FannieConfig::config('STORE_MODE') == 'HQ') {
+        if (FannieConfig::config('STORE_MODE') == 'HQ') {
             $query .= ' AND p.store_id=? ';
-            $args[] = \FannieConfig::config('STORE_ID');
+            $args[] = FannieConfig::config('STORE_ID');
         }
         $query .= 'ORDER BY p.department, p.upc';
 
         return array('query' => $query, 'args' => $args);
     }
 
-    protected $codes=array(
-        'A'=>array(
-            '0'=>'0001101','1'=>'0011001','2'=>'0010011','3'=>'0111101','4'=>'0100011',
-            '5'=>'0110001','6'=>'0101111','7'=>'0111011','8'=>'0110111','9'=>'0001011'),
-        'B'=>array(
-            '0'=>'0100111','1'=>'0110011','2'=>'0011011','3'=>'0100001','4'=>'0011101',
-            '5'=>'0111001','6'=>'0000101','7'=>'0010001','8'=>'0001001','9'=>'0010111'),
-        'C'=>array(
-            '0'=>'1110010','1'=>'1100110','2'=>'1101100','3'=>'1000010','4'=>'1011100',
-            '5'=>'1001110','6'=>'1010000','7'=>'1000100','8'=>'1001000','9'=>'1110100'),
-    );
-
-    protected $parities=array(
-        '0'=>array('A','A','A','A','A','A'),
-        '1'=>array('A','A','B','A','B','B'),
-        '2'=>array('A','A','B','B','A','B'),
-        '3'=>array('A','A','B','B','B','A'),
-        '4'=>array('A','B','A','A','B','B'),
-        '5'=>array('A','B','B','A','A','B'),
-        '6'=>array('A','B','B','B','A','A'),
-        '7'=>array('A','B','A','B','A','B'),
-        '8'=>array('A','B','A','B','B','A'),
-        '9'=>array('A','B','B','A','B','A')
-    );
-
     protected function upcToBitString($upc)
     {
         $code='101'; // start bar
-        $parity = $this->parities[$upc[0]]; // parity based on first digit
+        $parity = BarcodeLib::$PARITIES[$upc[0]]; // parity based on first digit
         for ($i=1;$i<=6;$i++) { // first half
-            $code .= $this->codes[$parity[$i-1]][$upc[$i]];
+            $code .= BarcodeLib::$CODES[$parity[$i-1]][$upc[$i]];
         }
         $code .= '01010'; // middle bar
         for ($i=7;$i<=12;$i++) { // second half
-            $code .= $this->codes['C'][$upc[$i]];
+            $code .= BarcodeLib::$CODES['C'][$upc[$i]];
         }
         $code.='101'; // end bar
 
@@ -564,17 +630,18 @@ class FannieSignage
         $suffix = isset($args['suffix']) ? $args['suffix'] : '';
         $font = isset($args['font']) ? $args['font'] : 'Arial';
         $fontsize = isset($args['fontsize']) ? $args['fontsize'] : 9;
+        $vertical = isset($args['vertical']) ? $args['vertical'] : false;
 
         $upc = ltrim($upc, '0');
         $is_ean = false;
         if (strlen($upc) == 12) { 
             // must be EAN
-            $check = \BarcodeLib::getCheckDigit($upc);
+            $check = BarcodeLib::getCheckDigit($upc);
             $upc .= $check;
             $is_ean = true;
         } else {
             $upc = str_pad($upc, 11, '0', STR_PAD_LEFT);
-            $check = \BarcodeLib::getCheckDigit($upc);
+            $check = BarcodeLib::getCheckDigit($upc);
             $upc = '0' . $upc . $check;
         }
 
@@ -585,14 +652,18 @@ class FannieSignage
         $full_width = 0;
         for ($i=0;$i<strlen($code);$i++) {
             if ($code{$i}=='1') {
-                $pdf->Rect($x+($i*$width), $y, $width, $height, 'F');
+                if ($vertical) {
+                    $pdf->Rect($x, $y+($i*$height), $width, $height, 'F');
+                } else {
+                    $pdf->Rect($x+($i*$width), $y, $width, $height, 'F');
+                }
             }
             $full_width += $width;
         }
 
         // Print text under barcode
         // omits first digit; should always be zero
-        if ($fontsize > 0) {
+        if ($fontsize > 0 && !$vertical) {
             $pdf->SetFont($font, '', $fontsize);
             if ($valign == 'T') {
                 $pdf->SetXY($x, $y - 5);
@@ -605,9 +676,40 @@ class FannieSignage
         return $pdf;
     }
 
+    public function getOrigins()
+    {
+        $dbc = $this->getDB();
+        $model = new OriginsModel($dbc);
+        $origins = array();
+        foreach ($model->find('shortName') as $o) {
+            $origins[$o->originID()] = $o->shortName();
+        }
+
+        return $origins;
+    }
+
     public function listItems()
     {
-        $url = \FannieConfig::factory()->get('URL');
+        // preserve values from re-posting form
+        $overrides = array();
+        $upc = FormLib::get('update_upc', array());
+        $brand = FormLib::get('update_brand', array());
+        $desc = FormLib::get('update_desc', array());
+        $ignore = FormLib::get('ignore_desc', array());
+        for ($i=0; $i<count($upc); $i++) {
+            $bOver = isset($brand[$i]) ? $brand[$i] : '';
+            $dOver = '';
+            if (isset($ignore[$i]) && $ignore[$i] == 0 && isset($desc[$i])) {
+                $dOver = $desc[$i];
+            }
+            $overrides[$upc[$i]] = array('brand' => $bOver, 'desc' => $dOver);
+        }
+        $excludes = array();
+        foreach (FormLib::get('exclude', array()) as $e) {
+            $excludes[] = $e;
+        }
+
+        $url = FannieConfig::factory()->get('URL');
         $ret = '<table class="table tablesorter tablesorter-core">';
         $ret .= '<thead>';
         $ret .= '<tr>
@@ -619,10 +721,23 @@ class FannieSignage
             </tr>';
         $ret .= '</thead><tbody>';
         $data = $this->loadItems();
+        $origins = $this->getOrigins();
         foreach ($data as $item) {
+            $oselect = '<select name="update_origin[]" class="FannieSignageField form-control originField"><option value="0"></option>'; 
+            foreach ($origins as $id => $name) {
+                $oselect .= sprintf('<option %s value="%d">%s</option>',
+                    ($id == $item['originID'] ? 'selected' : ''), $id, $name);
+            }
+            $oselect .= '</select>';
+            if (isset($overrides[$item['upc']]) && $overrides[$item['upc']]['brand'] != '') {
+                $item['brand'] = $overrides[$item['upc']]['brand'];
+            }
+            if (isset($overrides[$item['upc']]) && $overrides[$item['upc']]['desc'] != '') {
+                $item['desc'] = $overrides[$item['upc']]['desc'];
+            }
             $ret .= sprintf('<tr>
                             <td><a href="%sitem/ItemEditorPage.php?searchupc=%s" target="_edit%s">%s</a></td>
-                            <input type="hidden" name="update_upc[]" value="%d" />
+                            <input type="hidden" name="update_upc[]" value="%s" />
                             <td>
                                 <span class="collapse">%s</span>
                                 <input class="FannieSignageField form-control" type="text" 
@@ -630,11 +745,14 @@ class FannieSignage
                             <td>
                                 <span class="collapse">%s</span>
                                 <input class="FannieSignageField form-control" type="text" 
-                                name="update_desc[]" value="%s" /></td>
+                                name="update_desc[]" value="%s" />
+                                <input type="hidden" name="ignore_desc[]" value="%d" />
+                            </td>
                             <td>%.2f</td>
-                            <td><input class="FannieSignageField form-control" type="text" 
-                                name="update_origin[]" value="%s" /></td>
-                            <td><input type="checkbox" name="exclude[]" class="exclude-checkbox" value="%s" /></td>
+                            <td class="form-inline">%s<input type="text" name="custom_origin[]" 
+                                class="form-control FannieSignageField originField" placeholder="Custom origin..." value="" />
+                            </td>
+                            <td><input type="checkbox" name="exclude[]" class="exclude-checkbox" value="%s" %s /></td>
                             </tr>',
                             $url,
                             $item['upc'], $item['upc'], $item['upc'],
@@ -643,9 +761,11 @@ class FannieSignage
                             $item['brand'],
                             str_replace('"', '&quot;', $item['description']),
                             str_replace('"', '&quot;', $item['description']),
+                            (strstr($item['description'], "\n") ? 1 : 0),
                             $item['normal_price'],
-                            $item['originName'],
-                            $item['upc']
+                            $oselect,
+                            $item['upc'],
+                            (in_array($item['upc'], $excludes) ? 'checked' : '')
             );
         }
         $ret .= '</tbody></table>';
@@ -653,7 +773,7 @@ class FannieSignage
         return $ret;
     }
 
-    public function updateItem($upc, $brand, $description)
+    public function updateItem($upc, $brand, $description, $originID)
     {
         switch (strtolower($this->source)) {
             case 'shelftags':
@@ -664,7 +784,7 @@ class FannieSignage
                 break;
             case 'batch':
             case '':
-                $this->updateRealItem($upc, $brand, $description);
+                $this->updateRealItem($upc, $brand, $description, $originID);
                 break;
         }
     }
@@ -672,9 +792,9 @@ class FannieSignage
     protected function updateShelftagItem($upc, $brand, $description)
     {
         $dbc = $this->getDB();
-        $model = new \ShelftagsModel($dbc);
+        $model = new ShelftagsModel($dbc);
         $model->id($this->source_id);
-        $model->upc(\BarcodeLib::padUPC($upc));
+        $model->upc(BarcodeLib::padUPC($upc));
         $model->brand($brand);
         $model->description($description);
         return $model->save();
@@ -683,7 +803,7 @@ class FannieSignage
     protected function updateBatchBarcodeItem($upc, $brand, $description)
     {
         $dbc = $this->getDB();
-        $args = array($brand, $description, \BarcodeLib::padUPC($upc));
+        $args = array($brand, $description, BarcodeLib::padUPC($upc));
         if (!is_array($this->source_id)) {
             $this->source_id = array($this->source_id);
         }
@@ -701,38 +821,39 @@ class FannieSignage
         return $dbc->execute($prep, $args);
     }
 
-    protected function updateRealItem($upc, $brand, $description)
+    protected function updateRealItem($upc, $brand, $description, $originID)
     {
         $dbc = $this->getDB();
-        $model = new \ProductUserModel($dbc);
-        $model->upc(\BarcodeLib::padUPC($upc));
+        $model = new ProductUserModel($dbc);
+        $model->upc(BarcodeLib::padUPC($upc));
         $model->brand($brand);
         $model->description($description);
         $model->save();
-        $model = new \ProductsModel($dbc);
-        $model->upc(\BarcodeLib::padUPC($upc));
+        $model = new ProductsModel($dbc);
+        $model->upc(BarcodeLib::padUPC($upc));
         foreach ($model->find('store_id') as $obj) {
-            $obj->brand($brand);
+            $obj->current_origin_id($originID);
             $obj->save();
         }
     }
 
     public function saveItems()
     {
-        $upcs = \FormLib::get('update_upc', array());
-        $brands = \FormLib::get('update_brand', array());
-        $descs = \FormLib::get('update_desc', array());
+        $upcs = FormLib::get('update_upc', array());
+        $brands = FormLib::get('update_brand', array());
+        $descs = FormLib::get('update_desc', array());
+        $origins = FormLib::get('update_origin', array());
         for ($i=0; $i<count($upcs); $i++) {
             if (!isset($brands[$i]) || !isset($descs[$i])) {
                 continue;
             }
-            $this->updateItem($upcs[$i], $brands[$i], $descs[$i]);
+            $this->updateItem($upcs[$i], $brands[$i], $descs[$i], $origins[$i]);
         }
     }
 
     public function addOverride($upc, $field_name, $value)
     {
-        $upc = \BarcodeLib::padUPC($upc);
+        $upc = BarcodeLib::padUPC($upc);
         if (!isset($this->overrides[$upc])) {
             $this->overrides[$upc] = array();
         }
@@ -747,11 +868,15 @@ class FannieSignage
     public function formatPrice($price, $multiplier=1, $regPrice=0)
     {
         if ($multiplier > 1) {
-            $ttl = round($multiplier*$price);
+            // if the multiplier results in a nearly round number, just use the round number
+            // otherwise use two decimal places.
+            // the 2.5 cent threshold corresponds to existing advertisements
+            $ttl = abs(($multiplier*$price) - round($multiplier*$price)) < 0.025 ? round($multiplier*$price) : sprintf('%.2f', $multiplier*$price);
             return $multiplier . '/$' . $ttl;
         } elseif ($multiplier < 0) {
             return self::formatOffString($price, $multiplier, $regPrice);
         }
+
 
         if (substr($price, -3) == '.33') {
             $ttl = round(3*$price);
@@ -768,7 +893,9 @@ class FannieSignage
         } elseif (substr($price, -3) == '.25') {
             $ttl = round(4*$price);
             return '4/$' . $ttl;
-        } elseif (substr($price, -3) == '.00' && $price <= 5.00) {
+        } elseif ($price == 1) {
+            return '5/$5';
+        } elseif ($price > 0 && substr($price, -3) == '.00' && $price <= 5.00) {
             $mult = 2;
             while (($mult+1)*$price <= 10) {
                 $mult++;
@@ -776,8 +903,11 @@ class FannieSignage
             return sprintf('%d/$%d', $mult, round($mult*$price));
         } elseif (substr($price, 0, 1) == '$') {
             return $price;
-        } elseif (strstr($price, '/')) {
+        } elseif (strstr($price, '/') || strstr($price, '%')) {
             return $price;
+        } elseif ($price < 1) {
+            // weird contortions because floating-point rounding
+            return substr(sprintf('%.2f', $price),-2) . chr(0xA2);
         } else {
             return sprintf('$%.2f', $price);
         }
@@ -796,7 +926,7 @@ class FannieSignage
 
     protected static function formatOffString($price, $multiplier, $regPrice)
     {
-        if ($regPrice == 0) {
+        if ($regPrice == 0 || $multiplier == -4) {
             return sprintf('%.2f', $price);
         } elseif ($multiplier == -1) {
             $off = self::dollarsOff($price, $regPrice);
@@ -864,6 +994,11 @@ class FannieSignage
 
     protected function formatSize($size, $item)
     {
+        $plu = ltrim($item['upc'], '0');
+        if (strlen($plu) < 5 && strlen($plu) > 0 && $item['scale']) {
+            return 'PLU# ' . ltrim($item['upc'], '0'); // show PLU #s on by-weight
+        }
+
         $size = trim(strtolower($size));
         if ($size == '0' || $size == '00' || $size == '') {
             return '';
@@ -873,9 +1008,6 @@ class FannieSignage
         }
         if (substr($size, 0, 1) == '.') {
             $size = '0' . $size; // add leading zero on decimal qty
-        }
-        if (strlen(ltrim($item['upc'], '0')) < 5 && $item['scale']) {
-            $size = 'PLU# ' . ltrim($item['upc'], '0'); // show PLU #s on by-weight
         }
 
         return $size;
@@ -892,6 +1024,9 @@ class FannieSignage
             }
             $price .= ' /lb.';
         } elseif (isset($item['signMultiplier'])) {
+            if (!isset($item['nonSalePrice'])) { // Fix for NOTICES if this didn't get supplied
+                $item['nonSalePrice'] = $item['normal_price'];
+            }
             $price = $this->formatPrice($item['normal_price'], $item['signMultiplier'], $item['nonSalePrice']);
         } else {
             $price = $this->formatPrice($item['normal_price']);
@@ -902,7 +1037,7 @@ class FannieSignage
 
     protected function loadPluginFonts($pdf)
     {
-        if (\COREPOS\Fannie\API\FanniePlugin::isEnabled('CoopDealsSigns')) {
+        if (FanniePlugin::isEnabled('CoopDealsSigns')) {
             $this->font = 'Gill';
             $this->alt_font = 'GillBook';
             define('FPDF_FONTPATH', dirname(__FILE__) . '/../../modules/plugins2.0/CoopDealsSigns/noauto/fonts/');
@@ -913,11 +1048,70 @@ class FannieSignage
 
         return $pdf;
     }
-}
 
-}
+    protected function fitText($pdf, $font_size, $text, $spacing)
+    {
+        $font_shrink = 0;
+        $effective_width = $this->width - $this->left;
+        $column = $spacing[0];
+        $line_height = $spacing[1];
+        $lines = $spacing[2];
+        while (true) {
+            $pdf->SetX($this->left + ($this->width*$column));
+            $y = $pdf->GetY();
+            $pdf->MultiCell($effective_width, $line_height, $text, 0, 'C');
+            if ($pdf->GetY() - $y > ($line_height*$lines)) {
+                $pdf->SetFillColor(0xff, 0xff, 0xff);
+                $pdf->Rect($this->left + ($this->width*$column), $y, $this->left + ($this->width*$column) + $effective_width, $pdf->GetY(), 'F');
+                $font_shrink++;
+                if ($font_shrink >= $font_size) {
+                    break;
+                }
+                $pdf->SetFontSize($font_size - $font_shrink);
+                $pdf->SetXY($this->left + ($this->width*$column), $y);
+            } else {
+                if ($lines == 2 && $pdf->GetY() - $y < ($lines*$line_height)) {
+                    $pdf = $this->twoLineText($pdf, $text, $y, $spacing);
+                }
+                break;
+            }
+        }
 
-namespace {
-    class FannieSignage extends \COREPOS\Fannie\API\item\FannieSignage {}
+        return $pdf;
+    }
+
+    protected function twoLineText($pdf, $text, $y, $spacing)
+    {
+        $effective_width = $this->width - $this->left;
+        $column = $spacing[0];
+        $line_height = $spacing[1];
+        $words = explode(' ', $text);
+        $multi = '';
+        for ($i=0;$i<floor(count($words)/2);$i++) {
+            $multi .= $words[$i] . ' ';
+        }
+        $multi = trim($multi) . "\n";
+        for ($i=floor(count($words)/2); $i<count($words); $i++) {
+            $multi .= $words[$i] . ' ';
+        }
+        $text = trim($multi);
+        $pdf->SetFillColor(0xff, 0xff, 0xff);
+        $pdf->Rect($this->left + ($this->width*$column), $y, $this->left + ($this->width*$column) + $effective_width, $pdf->GetY(), 'F');
+        $pdf->SetXY($this->left + ($this->width*$column), $y);
+        $pdf->MultiCell($effective_width, $line_height, $text, 0, 'C');
+
+        return $pdf;
+    }
+
+    protected function validDate($date)
+    {
+        if ($date == '') {
+            return false;
+        } elseif (substr($date,0,10) == '0000-00-00') {
+            return false;
+        }
+
+        return true;
+    }
 }
 

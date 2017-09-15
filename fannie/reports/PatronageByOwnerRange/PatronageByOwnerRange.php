@@ -29,7 +29,7 @@ if (!class_exists('FannieAPI')) {
 class PatronageByOwnerRange extends FannieReportPage 
 {
     public $description = '[Patronage Over Date Range] lists top, or all, customers by purchases/avg basket over a range of dates';
-    public $report_set = 'Membership';
+    public $report_set = 'Membership :: Patronage';
     public $themed = true;
 
     protected $report_headers = array();
@@ -162,11 +162,11 @@ class PatronageByOwnerRange extends FannieReportPage
                 ;";
 
 $dbc->logger("First: $query");
-        $statement = $dbc->prepare_statement($query);
+        $statement = $dbc->prepare($query);
         $args = array($d1.' 00:00:00', $d2.' 23:59:59');
-        $result = $dbc->exec_statement($statement, $args);
+        $result = $dbc->execute($statement, $args);
         $mdata = array(); // New
-        while ($row = $dbc->fetch_row($result)) {
+        while ($row = $dbc->fetchRow($result)) {
             $card_no[] = $row['card_no'];
             $total[] = $row['T'];
             //New
@@ -192,15 +192,15 @@ $dbc->logger("First: $query");
                     ORDER BY mt, dt, yt
                     ;";
 $dbc->logger("Second {$plan}: $query");
-            $statement = $dbc->prepare_statement($query);
+            $statement = $dbc->prepare($query);
             $args = array($d1.' 00:00:00', $d2.' 23:59:59');
             for($i=0; $i<count($card_no);$i++) {
                 $args[2] = $card_no[$i];
-                $result = $dbc->exec_statement($statement, $args);
+                $result = $dbc->execute($statement, $args);
                 //$result = $dbc->query($query);
                 // Why not use $dbc->row_count($result); ?
                 $count = 0;
-                while ($row = $dbc->fetch_row($result)) {
+                while ($row = $dbc->fetchRow($result)) {
                     $count++;
                 }
                 $numTran[] = $count;
@@ -225,12 +225,12 @@ $dbc->logger("Second {$plan}: $query");
                     AND (trans_type = 'A'){$shrinkageUsers}
                     ;";
 $dbc->logger("Second {$plan}: $query");
-            $statement = $dbc->prepare_statement($query);
+            $statement = $dbc->prepare($query);
             $args = array($d1.' 00:00:00', $d2.' 23:59:59');
-            $result = $dbc->exec_statement($statement, $args);
+            $result = $dbc->execute($statement, $args);
             //$result = $dbc->query($query);
             $count = 0;
-            while ($row = $dbc->fetch_row($result)) {
+            while ($row = $dbc->fetchRow($result)) {
                 $mem_num = $row['card_no'];
                 $mdata["$mem_num"][1] += 1;
                 $count++;
@@ -254,11 +254,11 @@ $dbc->logger("Second {$plan}: $query");
                     GROUP BY card_no
                     ;";
 $dbc->logger("Second {$plan}: $query");
-            $statement = $dbc->prepare_statement($query);
+            $statement = $dbc->prepare($query);
             $args = array($d1.' 00:00:00', $d2.' 23:59:59');
-            $result = $dbc->exec_statement($statement, $args);
+            $result = $dbc->execute($statement, $args);
             $count = 0;
-            while ($row = $dbc->fetch_row($result)) {
+            while ($row = $dbc->fetchRow($result)) {
                 $mem_num = $row['card_no'];
                 $mdata["$mem_num"][1] = $row['ct'];
                 $count++;

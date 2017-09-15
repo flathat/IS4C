@@ -37,6 +37,58 @@ class TrendsReport extends FannieReportPage
     public $report_set = 'Movement Reports';
     public $themed = true;
 
+    public function report_description_content()
+    {
+        if ($this->report_format != 'html') {
+            return array();
+        }
+
+        $url = $this->config->get('URL');
+        $this->add_script($url . 'src/javascript/jquery.js');
+        $this->add_script($url . 'src/javascript/jquery-ui.js');
+        $this->add_css_file($url . 'src/javascript/jquery-ui.css');
+
+        $dates_form = '<form method="post" action="' . $_SERVER['PHP_SELF'] . '">';
+        foreach ($_GET as $key => $value) {
+            if ($key != 'date1' && $key != 'date2' && $key != 'store') {
+                if (is_array($value)) {
+                    foreach ($value as $v) {
+                        $dates_form .= sprintf('<input type="hidden" name="%s[]" value="%s" />', $key, $v);
+                    }
+                } else {
+                    $dates_form .= sprintf('<input type="hidden" name="%s" value="%s" />', $key, $value);
+                }
+            }
+        }
+        foreach ($_POST as $key => $value) {
+            if ($key != 'date1' && $key != 'date2' && $key != 'store') {
+                if (is_array($value)) {
+                    foreach ($value as $v) {
+                        $dates_form .= sprintf('<input type="hidden" name="%s[]" value="%s" />', $key, $v);
+                    }
+                } else {
+                    $dates_form .= sprintf('<input type="hidden" name="%s" value="%s" />', $key, $value);
+                }
+            }
+        }
+        $stores = FormLib::storePicker();
+        $dates_form .= '
+            <label>Start Date</label>
+            <input class="date-field" type="text" name="date1" value="' . FormLib::get('date1') . '" /> 
+            <label>End Date</label>
+            <input class="date-field" type="text" name="date2" value="' . FormLib::get('date2') . '" /> 
+            <input type="hidden" name="excel" value="" id="excel" />
+            ' . $stores['html'] . '
+            <button type="submit" onclick="$(\'#excel\').val(\'\');return true;">Change Dates</button>
+            <button type="submit" onclick="$(\'#excel\').val(\'csv\');return true;">Download</button>
+            </form>';
+
+        $this->add_onload_command("\$('.date-field').datepicker({dateFormat:'yy-mm-dd'});");
+        
+        return array($dates_form);
+ 
+    }
+
     public function fetch_report_data()
     {
         $dbc = $this->connection;
@@ -45,6 +97,7 @@ class TrendsReport extends FannieReportPage
         $date1 = $this->form->date1;
         $date2 = $this->form->date2;
         $dlog = DTransactionsModel::selectDlog($date1,$date2);
+        $store = FormLib::get('store', 0);
 
         $from_where = FormLib::standardItemFromWhere();
         
@@ -76,6 +129,7 @@ class TrendsReport extends FannieReportPage
             " . $from_where['query'] . "
                 AND trans_status <> 'M'
                 AND trans_type = 'I'
+                AND " . DTrans::isStoreID($store, 't') . "
             GROUP BY YEAR(t.tdate),
                 MONTH(t.tdate),
                 DAY(t.tdate),
@@ -84,8 +138,9 @@ class TrendsReport extends FannieReportPage
                 YEAR(t.tdate),
                 MONTH(t.tdate),
                 DAY(t.tdate)";
-        $prep = $dbc->prepare_statement($query);
-        $result = $dbc->exec_statement($prep,$from_where['args']);
+        $prep = $dbc->prepare($query);
+        $from_where['args'][] = $store;
+        $result = $dbc->execute($prep,$from_where['args']);
     
         // variable columns. one per dates
         $dates = array();
@@ -107,7 +162,7 @@ class TrendsReport extends FannieReportPage
         $data = array();
         // track upc while going through the rows, storing 
         // all data about a given upc before printing
-        while ($row = $dbc->fetch_array($result)){  
+        while ($row = $dbc->fetchRow($result)){  
             if ($current['upc'] != $row['prodID']){
                 if ($current['upc'] != ""){
                     $record = array(
@@ -167,6 +222,7 @@ class TrendsReport extends FannieReportPage
     public function form_content()
     {
         ob_start();
+        $stores = FormLib::storePicker();
         ?>
 <form method=get action=TrendsReport.php class="form">
 <div class="row">
@@ -174,7 +230,11 @@ class TrendsReport extends FannieReportPage
     <?php echo FormLib::standardDateFields(); ?>
 </div>
 <p>
+    <div class="form-inline">
+    <label>Store</label>
+    <?php echo $stores['html']; ?>
     <button type="submit" class="btn btn-default">Submit</button>
+    </div>
 </p>
 </form>
         <?php

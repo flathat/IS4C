@@ -21,48 +21,20 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\gui\BasicCorePage;
+use COREPOS\pos\lib\DisplayLib;
+use COREPOS\pos\lib\MiscLib;
 include_once(dirname(__FILE__).'/../lib/AutoLoader.php');
 
 class boxMsg2 extends BasicCorePage 
 {
     function head_content(){
         ?>
+        <script type="text/javascript" src="js/boxMsg2.js"></script>
         <script type="text/javascript">
-        function submitWrapper(){
-            var str = $('#reginput').val();
-            var endorseType = $('#endorseType').val();
-            var endorseAmt = $('#endorseAmt').val();
-            var cmd = $('#repeat-cmd').val();
-            $.ajax({
-                url: '<?php echo $this->page_url; ?>ajax-callbacks/AjaxDecision.php',
-                type: 'get',
-                data: 'input='+str,
-                dataType: 'json',
-                cache: false,
-                success: function(data){
-                    if (!data.cleared && endorseType != ''){
-                        $.ajax({
-                            url: '<?php echo $this->page_url; ?>ajax-callbacks/AjaxEndorse.php',
-                            type: 'get',
-                            data: 'type='+endorseType+'&amount='+endorseAmt,
-                            cache: false,
-                            success: function(){
-                                location = data.dest_page;
-                            }
-                        });
-                    }
-                    else {
-                        var changeTo = data.dest_page;
-                        if (!data.cleared) {
-                            changeTo += "?reginput=" + encodeURIComponent(cmd);
-                            changeTo += "&repeat=1";
-                        }
-                        window.location = changeTo;
-                    }
-                }
-            });
-            return false;
-        }
+            function submitWrapper() {
+                boxMsg2.submitWrapper('../');
+            }
         </script>
         <?php
         $this->noscan_parsewrapper_js();
@@ -74,36 +46,39 @@ class boxMsg2 extends BasicCorePage
           Bounce through this page and back to pos2.php. This lets
           TenderModules use the msgrepeat feature during input parsing.
         */
-        if (isset($_REQUEST['autoconfirm'])) {
-            $this->change_page(
-                MiscLib::base_url()
-                .'gui-modules/pos2.php'
-                . '?reginput=' .urlencode(CoreLocal::get('strEntered'))
-                . '&repeat=1'
-            );
-            return false;
-        }
+        try {
+            if ($this->form->autoconfirm) {
+                $this->change_page(
+                    MiscLib::base_url()
+                    .'gui-modules/pos2.php'
+                    . '?reginput=' .urlencode($this->session->get('strEntered'))
+                    . '&repeat=1'
+                );
+                return false;
+            }
+        } catch (Exception $ex) {}
+
         return true;
     }
 
     function body_content()
     {
-        $this->input_header("onsubmit=\"return submitWrapper();\"");
+        $this->input_header("onsubmit=\"return boxMsg2.submitWrapper('{$this->page_url}');\"");
         ?>
         <div class="baseHeight">
 
         <?php
-        $buttons = is_array(CoreLocal::get('boxMsgButtons')) ? CoreLocal::get('boxMsgButtons') : array();
-        echo DisplayLib::boxMsg(CoreLocal::get("boxMsg"), "", true, $buttons);
+        $buttons = is_array($this->session->get('boxMsgButtons')) ? $this->session->get('boxMsgButtons') : array();
+        echo DisplayLib::boxMsg($this->session->get("boxMsg"), "", true, $buttons);
         echo "</div>";
         echo "<div id=\"footer\">";
         echo DisplayLib::printfooter();
         echo "</div>";
         echo '<input type="hidden" id="endorseType" value="'
-            .(isset($_REQUEST['endorse'])?$_REQUEST['endorse']:'')
+            . $this->form->tryGet('endorse') 
             .'" />';
         echo '<input type="hidden" id="endorseAmt" value="'
-            .(isset($_REQUEST['endorseAmt'])?$_REQUEST['endorseAmt']:'')
+            . $this->form->tryGet('endorseAmt') 
             .'" />';
         /**
           Encode the last command entered in the page. With payment
@@ -111,17 +86,15 @@ class boxMsg2 extends BasicCorePage
           in the background and alter the value of strEntered
         */
         echo '<input type="hidden" id="repeat-cmd" value="'
-            . CoreLocal::get('strEntered') . '" />';
+            . $this->session->get('strEntered') . '" />';
         
-        CoreLocal::set("boxMsg",'');
-        CoreLocal::set("boxMsgButtons", array());
-        CoreLocal::set("msgrepeat",2);
-        if (!isset($_REQUEST['quiet']))
+        $this->session->set("boxMsg",'');
+        $this->session->set("boxMsgButtons", array());
+        if ($this->form->tryGet('quiet') !== '') {
             MiscLib::errorBeep();
+        }
     } // END body_content() FUNCTION
 }
 
-if (basename(__FILE__) == basename($_SERVER['PHP_SELF']))
-    new boxMsg2();
+AutoLoader::dispatch();
 
-?>

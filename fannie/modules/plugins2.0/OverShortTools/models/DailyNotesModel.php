@@ -24,11 +24,13 @@
 class DailyNotesModel extends BasicModel {
 
     protected $name = 'dailyNotes';
+    protected $preferred_db = 'plugin:OverShortDatabase';
 
     protected $columns = array(
     'date' => array('type'=>'VARCHAR(10)','primary_key'=>True),
     'emp_no' => array('type'=>'SMALLINT','primary_key'=>True),
-    'note' => array('type'=>'TEXT')
+    'note' => array('type'=>'TEXT'),
+    'storeID' => array('type'=>'INT','primary_key'=>true),
     );
 }
 

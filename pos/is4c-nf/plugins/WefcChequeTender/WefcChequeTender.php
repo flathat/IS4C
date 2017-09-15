@@ -22,6 +22,8 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\plugins\Plugin;
+
 class WefcChequeTender extends Plugin {
 
     public $plugin_settings = array(

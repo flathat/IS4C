@@ -21,6 +21,10 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 *********************************************************************************/
+
+use COREPOS\pos\lib\ReceiptLib;
+use COREPOS\pos\lib\ReceiptBuilding\CustMessages\CustomerReceiptMessage;
+
 /**
   @class CCredBalanceMessage
   Return a message containing Available Balance
@@ -85,12 +89,12 @@ class CCredBalanceMessage extends CustomerReceiptMessage {
                 WHERE m.cardNo =" . $CORE_LOCAL->get("memberID") .
                 " AND m.programID={$programID}
                  AND c.personNum=1";
-        $ccS = $conn->prepare_statement("$ccQ");
+        $ccS = $conn->prepare("$ccQ");
         if ($ccS === False) {
             return "Statement prep for Program {$programID} failed.{$lineEnd}";
         }
         $args = array();
-        $ccR = $conn->exec_statement($ccS, $args);
+        $ccR = $conn->execute($ccS, $args);
         if ($ccR === False) {
             return "Query for Program {$programID} failed.{$lineEnd}";
         }
@@ -103,7 +107,7 @@ class CCredBalanceMessage extends CustomerReceiptMessage {
 
         /* For each Coop Cred Program the member is in.
          */
-        while ($row = $conn->fetch_array($ccR)) {
+        while ($row = $conn->fetchRow($ccR)) {
             $programOK = CoopCredLib::programOK($row['tenderType'], $conn);
             if ($programOK === True) {
                 $subs = CoopCredLib::getCCredSubtotals($row['tenderType'], $conn);
@@ -135,4 +139,3 @@ class CCredBalanceMessage extends CustomerReceiptMessage {
 
 }
 
-?>

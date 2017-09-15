@@ -21,7 +21,7 @@
 
 *********************************************************************************/
 
-namespace COREPOS\Fannie\API\lib {
+namespace COREPOS\Fannie\API\lib;
 
 /**
   @class FannieUI
@@ -129,11 +129,5 @@ class FannieUI
             return '';
         }
     }
-}
-
-}
-
-namespace {
-    class FannieUI extends \COREPOS\Fannie\API\lib\FannieUI {}
 }
 

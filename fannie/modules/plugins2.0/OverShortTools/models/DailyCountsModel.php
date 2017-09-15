@@ -24,12 +24,14 @@
 class DailyCountsModel extends BasicModel {
 
     protected $name = 'dailyCounts';
+    protected $preferred_db = 'plugin:OverShortDatabase';
 
     protected $columns = array(
     'date' => array('type'=>'VARCHAR(10)','primary_key'=>True),
     'emp_no' => array('type'=>'SMALLINT','primary_key'=>True),
     'tender_type' => array('type'=>'VARCHAR(10)','primary_key'=>True),
-    'amt' => array('type'=>'MONEY','default'=>0)
+    'amt' => array('type'=>'MONEY','default'=>0),
+    'storeID' => array('type'=>'INT','primary_key'=>true),
     );
 }
 

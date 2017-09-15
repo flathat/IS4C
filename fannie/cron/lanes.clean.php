@@ -30,7 +30,6 @@
    Delete all entries from localtrans_today except today's.
     Not pruning localtrans_today will eventually slow logins.
    Delete entries from localtransover 30 days old.
-   Delete entries from efsnetTokens that do not expire today.
 
    Can run either before or after midnight with somewhat different results.
    After midnight probably better.
@@ -48,7 +47,7 @@ if (!isset($FANNIE_LANES) || !is_array($FANNIE_LANES)) {
     $FANNIE_LANES = array();
 }
 
-set_time_limit(0);
+set_time_limit(60);
 
 foreach($FANNIE_LANES as $ln){
 
@@ -73,15 +72,6 @@ foreach($FANNIE_LANES as $ln){
     if ($cleanR === False){
         echo cron_msg("Could not clean $table on lane: ".$ln['host']);
     }
-
-    $table = 'efsnetTokens';
-    $cleanQ = "DELETE FROM $table WHERE ".$sql->datediff($sql->now(),'expireDay')." <> 0 ";
-    $cleanR = $sql->query($cleanQ,$ln['trans']);
-    if ($cleanR === False){
-        echo cron_msg("Could not clean $table on lane: ".$ln['host']);
-    }
-
 }
 
 
-?>

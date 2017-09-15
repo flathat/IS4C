@@ -40,38 +40,33 @@ class VendorDepartmentUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
 
     protected $preview_opts = array(
         'deptID' => array(
-            'name' => 'deptID',
             'display_name' => 'Subcategory Number *',
             'default' => 0,
             'required' => true
         ),
         'name' => array(
-            'name' => 'name',
             'display_name' => 'Subcategory Name',
             'default' => 1,
-            'required' => false
         ),
         'margin' => array(
-            'name' => 'margin',
             'display_name' => 'Margin (%)',
             'default' => 2,
-            'required' => false,
         ),
     );
 
-    function process_file($linedata)
+    public function process_file($linedata, $indexes)
     {
         $dbc = $this->connection;
         $dbc->selectDB($this->config->get('OP_DB'));
 
-        if (!isset($_SESSION['vid'])) {
+        if (!isset($this->session->vid)) {
             $this->error_details = 'Missing vendor setting';
             return False;
         }
-        $VENDOR_ID = $_SESSION['vid'];
+        $VENDOR_ID = $this->session->vid;
 
-        $p = $dbc->prepare_statement("SELECT vendorID,vendorName FROM vendors WHERE vendorID=?");
-        $idR = $dbc->exec_statement($p,array($VENDOR_ID));
+        $p = $dbc->prepare("SELECT vendorID,vendorName FROM vendors WHERE vendorID=?");
+        $idR = $dbc->execute($p,array($VENDOR_ID));
         if ($dbc->num_rows($idR) == 0){
             $this->error_details = 'Cannot find vendor';
             return False;
@@ -79,22 +74,19 @@ class VendorDepartmentUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
         $idW = $dbc->fetch_row($idR);
         $vendorName = $idW['vendorName'];
 
-        $num = $this->get_column_index('deptID');
-        $name = $this->get_column_index('name');
-        $margin = $this->get_column_index('margin');
         $model = new VendorDepartmentsModel($dbc);
 
         foreach ($linedata as $data) {
             if (!is_array($data)) continue;
 
-            if (!isset($data[$num])) continue;
-            if (!is_numeric($data[$num])) continue;
+            if (!isset($data[$indexes['deptID']])) continue;
+            if (!is_numeric($data[$indexes['deptID']])) continue;
 
             // grab data from appropriate columns
             $model->vendorID($VENDOR_ID);
-            $model->deptID($data[$num]);
-            $model->name($name === false ? '' : $data[$name]);
-            $model->margin($margin === false ? 0 : $data[$margin]);
+            $model->deptID($data[$indexes['deptID']]);
+            $model->name($indexes['name'] === false ? '' : $data[$indexes['name']]);
+            $model->margin($indexes['margin'] === false ? 0 : $data[$indexes['margin']]);
             $model->save();
         }
 
@@ -105,8 +97,8 @@ class VendorDepartmentUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
     {
         $ret = '<p>Import Complete</p>';
         $ret .= sprintf('<p><a class="btn btn-default" 
-            href="VendorIndexPage.php?vid=%d">Back to Vendor</a></p>', $_SESSION['vid']);
-        unset($_SESSION['vid']);
+            href="VendorIndexPage.php?vid=%d">Back to Vendor</a></p>', $this->session->vid);
+        unset($this->session->vid);
 
         return $ret;
     }
@@ -120,14 +112,14 @@ class VendorDepartmentUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
             return '<div class="alert alert-danger">Error: No Vendor Selected</div>';
         }
         $dbc = FannieDB::get($FANNIE_OP_DB);
-        $vp = $dbc->prepare_statement('SELECT vendorName FROM vendors WHERE vendorID=?');
-        $vr = $dbc->exec_statement($vp,array($vid));
+        $vp = $dbc->prepare('SELECT vendorName FROM vendors WHERE vendorID=?');
+        $vr = $dbc->execute($vp,array($vid));
         if ($dbc->num_rows($vr)==0){
             $this->add_onload_command("\$('#FannieUploadForm').remove();");
             return '<div class="alert alert-danger">Error: No Vendor Found</div>';
         }
         $vrow = $dbc->fetch_row($vr);
-        $_SESSION['vid'] = $vid;
+        $this->session->vid = $vid;
         return '<div class="well"><legend>Instructions</legend>
             Upload a price file for <i>'.$vrow['vendorName'].'</i> ('.$vid.'). File must be
             CSV. Files &gt; 2MB may be zipped.</div>';
@@ -164,5 +156,5 @@ class VendorDepartmentUploadPage extends \COREPOS\Fannie\API\FannieUploadPage
     }
 }
 
-FannieDispatch::conditionalExec(false);
+FannieDispatch::conditionalExec();
 

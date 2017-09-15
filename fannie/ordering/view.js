@@ -45,9 +45,9 @@ function confirmC(oid,tid){
 
 	if (window.confirm("Are you sure you want to close this order as "+t[tid]+"?")){
 		$.ajax({
-		url: 'ajax-calls.php',
+		url: 'OrderAjax.php',
 		type: 'post',
-		data: 'action=closeOrder&orderID='+oid+'&status='+tid,
+		data: 'id='+oid+'&close='+tid,
 		cache: false,
 		success: function(resp){
 			//location = 'review.php?orderID='+oid;
@@ -106,17 +106,6 @@ function deleteID(orderID,transID){
 	}
 	});
 }
-function deleteUPC(orderID,upc){
-	$.ajax({
-	url: 'ajax-calls.php',
-	type: 'post',
-	data: 'action=deleteUPC&orderID='+orderID+'&upc='+upc,
-	cache: false,
-	success: function(resp){
-		$('#itemDiv').html(resp);
-	}
-	});
-}
 function saveDesc(new_desc,tid)
 {
     saveByTransID(tid, 'saveDesc', 'desc', new_desc);
@@ -153,7 +142,11 @@ function saveSRP(new_price,tid){
 	});
 }
 function saveCtC(val,oid){
-    saveByOrderID(oid, 'saveCtC', 'val', val);
+    $.ajax({
+        url: 'OrderAjax.php',
+        type: 'post',
+        data: 'id='+oid+'&ctc='+val
+    });
 }
 function saveQty(new_qty,tid){
 	var oid = $('#orderID').val();
@@ -278,14 +271,18 @@ function saveText(oid,val){
     saveByOrderID(oid, 'saveText', 'val', val);
 }
 function savePN(oid,val){
-    saveByOrderID(oid, 'savePN', 'val', val);
+    $.ajax({
+        url: 'OrderAjax.php',
+        type: 'post',
+        data: 'pn='+val+'&id='+oid
+    });
 }
 function saveConfirmDate(val,oid){
 	if (val){
 		$.ajax({
-		url: 'ajax-calls.php',
+		url: 'OrderAjax.php',
 		type: 'post',
-		data: 'action=confirmOrder&orderID='+oid,
+        data: 'id='+oid+'&confirm=1',
 		cache: false,
 		success: function(resp){
 			$('#confDateSpan').html('Confirmed '+resp);
@@ -294,9 +291,9 @@ function saveConfirmDate(val,oid){
 	}
 	else {
 		$.ajax({
-		url: 'ajax-calls.php',
+		url: 'OrderAjax.php',
 		type: 'post',
-		data: 'action=unconfirmOrder&orderID='+oid,
+        data: 'id='+oid+'&confirm=0',
 		cache: false,
 		success: function(resp){
 			$('#confDateSpan').html('Not confirmed');
@@ -305,16 +302,25 @@ function saveConfirmDate(val,oid){
 	}
 }
 function togglePrint(username,oid){
-	var dstr = 'action=UpdatePrint&orderID='+oid+'&user='+username;
-    silentSave(dstr);
+    $.ajax({
+        url: 'OrderViewPage.php',
+        type: 'post',
+        data: 'togglePrint=1&orderID='+oid
+    });
 }
 function toggleO(oid,tid){
-	var dstr = 'action=UpdateItemO&orderID='+oid+'&transID='+tid;
-    silentSave(dstr);
+    $.ajax({
+        url: 'OrderViewPage.php',
+        type: 'post',
+        data: 'toggleMemType=1&orderID='+oid+'&transID='+tid
+    });
 }
 function toggleA(oid,tid){
-	var dstr = 'action=UpdateItemA&orderID='+oid+'&transID='+tid;
-    silentSave(dstr);
+    $.ajax({
+        url: 'OrderViewPage.php',
+        type: 'post',
+        data: 'toggleStaff=1&orderID='+oid+'&transID='+tid
+    });
 }
 function doSplit(oid,tid){
 	var dcheck=false;
@@ -363,6 +369,11 @@ function validateAndHome(){
 	var nT = $('#nText').val();
 	if (nT !== "" && nD === '0') {
 		window.alert("Assign your notes to a department");
+		return false;
+    }
+
+    if ($('#oStoreID').val() == 0) {
+        window.alert('Choose a store');
 	} else {
 		window.location = $('#redirectURL').val();
     }
@@ -371,16 +382,20 @@ function validateAndHome(){
 }
 function updateStatus(oid,val){
 	$.ajax({
-	url: 'ajax-calls.php',
+	url: 'OrderAjax.php',
 	type: 'post',
-	data: 'action=UpdateStatus&orderID='+oid+'&val='+val,
+    data: 'id='+oid+'&status='+val,
+    dataType: 'json',
 	cache: false,
 	success: function(resp){
-		$('#statusdate'+oid).html(resp);	
+		$('#statusdate'+oid).html(resp.tdate);
 	}
 	});
 }
 function updateStore(oid,val){
-	var dstr = 'action=UpdateStore&orderID='+oid+'&val='+val;
-    silentSave(dstr);
+    $.ajax({
+        url: 'OrderAjax.php',
+        type: 'post',
+        data: 'id='+oid+'&store='+val
+    });
 }

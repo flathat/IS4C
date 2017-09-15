@@ -275,7 +275,8 @@ function WEFC_No_Barcode_4_up($data,$offset=0) {
     // Make a local array of Product Flags
     $productFlags = array();
     $pQ = "SELECT bit_number, description FROM prodFlags";
-    $pR = $dbc->exec_statement($pQ,array());
+    $pS = $dbc->prepare($pQ);
+    $pR = $dbc->execute($pS,array());
     if ($pR) {
         while($pf = $dbc->fetch_row($pR)){
             // Scrunch
@@ -369,8 +370,9 @@ function WEFC_No_Barcode_4_up($data,$offset=0) {
         if (False && isset($FANNIE_COOP_ID) && $FANNIE_COOP_ID == 'WEFC_Toronto') {
             $oQ = "SELECT order_code, description
                            FROM products_$FANNIE_COOP_ID WHERE upc = ?";
+            $oS = $dbc->prepare($oQ);
             $oV = array($row['upc']);
-            $oR = $dbc->exec_statement($oQ,$oV);
+            $oR = $dbc->execute($oS,$oV);
             if ($oR) {
                while ($oRow = $dbc->fetch_row($oR)) {
                    // Override the one from products.

@@ -209,12 +209,14 @@ class StatementsPluginIndex extends FannieRESTfulPage
         global $FANNIE_OP_DB, $FANNIE_TRANS_DB;
         $dbc = FannieDB::get($FANNIE_OP_DB);
 
-        $opt_sets = array('', '');
+        $opt_sets = array('', '', '');
         $q1 = 'SELECT a.card_no,
-                c.LastName
+                c.LastName,
+                m.email_1
                FROM ' . $FANNIE_TRANS_DB . $dbc->sep() . 'ar_live_balance AS a
                 INNER JOIN custdata AS c ON a.card_no=c.CardNo AND c.personNum=1
                 LEFT JOIN suspensions AS s ON a.card_no=s.cardno
+                INNER JOIN meminfo AS m ON a.card_no=m.card_no
                WHERE c.Type <> \'TERM\'
                 AND (c.memType=2 OR s.memtype1=2)
                 AND a.balance > 0
@@ -222,35 +224,79 @@ class StatementsPluginIndex extends FannieRESTfulPage
                 c.LastName';
         $r1 = $dbc->query($q1);
         while ($row = $dbc->fetch_row($r1)) {
+            if (filter_var($row['email_1'], FILTER_VALIDATE_EMAIL)) {
+                $row['LastName'] .= ' &#x2709;';
+            }
             $option = sprintf('<option value="%d">%d %s</option>',
                         $row['card_no'], $row['card_no'], $row['LastName']);
             $opt_sets[0] .= $option;
         }
 
         $q2 = 'SELECT a.cardno AS card_no,
-                c.LastName
+                c.LastName,
+                m.email_1
                FROM ' . $FANNIE_TRANS_DB . $dbc->sep() . 'AR_EOM_Summary AS a
                 INNER JOIN custdata AS c ON a.cardno=c.CardNo AND c.personNum=1
                 LEFT JOIN suspensions AS s ON a.cardno=s.cardno
+                INNER JOIN meminfo AS m ON a.cardno=m.card_no
                WHERE c.Type <> \'TERM\'
                 AND (c.memType=2 OR s.memtype1=2)
                 AND (a.lastMonthBalance <> 0 OR a.lastMonthCharges <> 0 OR a.lastMonthPayments <> 0)';
         $r2 = $dbc->query($q2);
         while ($row = $dbc->fetch_row($r2)) {
+            if (filter_var($row['email_1'], FILTER_VALIDATE_EMAIL)) {
+                $row['LastName'] .= ' &#x2709;';
+            }
             $option = sprintf('<option value="%d">%d %s</option>',
                         $row['card_no'], $row['card_no'], $row['LastName']);
             $opt_sets[1] .= $option;
+        }
+
+        $q2 = 'SELECT a.b2bInvoiceID AS card_no,
+                c.LastName,
+                m.email_1
+               FROM ' . $FANNIE_TRANS_DB . $dbc->sep() . 'B2BInvoices AS a
+                INNER JOIN custdata AS c ON a.cardNo=c.CardNo AND c.personNum=1
+                LEFT JOIN suspensions AS s ON a.cardNo=s.cardno
+                INNER JOIN meminfo AS m ON a.cardNo=m.card_no
+               WHERE c.Type <> \'TERM\'
+                AND (c.memType=2 OR s.memtype1=2)
+                AND (a.isPaid=0)';
+        $r2 = $dbc->query($q2);
+        while ($row = $dbc->fetch_row($r2)) {
+            if (filter_var($row['email_1'], FILTER_VALIDATE_EMAIL)) {
+                $row['LastName'] .= ' &#x2709;';
+            }
+            $option = sprintf('<option value="b2b%d">%d %s</option>',
+                        $row['card_no'], $row['card_no'], $row['LastName']);
+            $opt_sets[2] .= $option;
         }
 
         $ret = '<form id="arForm" action="StatementsPluginBusiness.php" method="post">';
         $ret .= '<select onchange="$(\'#arAccounts\').html($(this.value).html());">';
         $ret .= '<option value="#arSet0">Business (Any Balance)</option>';
         $ret .= '<option value="#arSet1">Business (EOM)</option>';
+        $ret .= '<option value="#arSet2">B2B Invoices</option>';
         $ret .= '</select>';
 
-        $ret .= '<button type="button" onclick="$(\'#arAccounts option\').each(function(){$(this).attr(\'selected\', \'selected\');});
+        $ret .= '<button type="button" onclick="$(\'#arAccounts option\').each(function(){$(this).prop(\'selected\', true);});
                     return false;">Select All</button>';
-        $ret .= '<button type="submit">Print</button>';
+        $ret .= '<button type="button" onclick="$(\'#arAccounts option\').each(function(){
+                    if (/\u2709/.test($(this).html())) {
+                        $(this).prop(\'selected\', true);
+                    } else {
+                        $(this).prop(\'selected\', false);
+                    }
+                    }); return false;">Select Email</button>';
+        $ret .= '<button type="button" onclick="$(\'#arAccounts option\').each(function(){
+                    if (/\u2709/.test($(this).html()) == false) {
+                        $(this).prop(\'selected\', true);
+                    } else {
+                        $(this).prop(\'selected\', false);
+                    } 
+                    }); return false;">Select Paper</button>';
+        $ret .= '<button onclick="$(\'#arForm\').attr(\'action\', \'StatementsPluginBusiness.php\');" type="submit">Print</button>';
+        $ret .= '<button onclick="$(\'#arForm\').attr(\'action\', \'StatementsPluginEmail.php\');" type="submit">Email</button>';
         $ret .= '<button type="button" onclick="exportCSV(\'ar_statements\', \'#arAccounts\');">Export List</button>';
 
         $ret .= '<br />';
@@ -260,7 +306,7 @@ class StatementsPluginIndex extends FannieRESTfulPage
         $ret .= '</select>';
         $ret .= '</form>';
 
-        for ($i=0; $i<2; $i++) {
+        for ($i=0; $i<3; $i++) {
             $ret .= '<div id="arSet' . $i . '" style="display:none;">';
             $ret .= $opt_sets[$i];
             $ret .= '</div>';

@@ -115,9 +115,9 @@ class PostalCodeReport extends FannieReportPage {
 				"GROUP BY zipcode
 				ORDER BY COUNT(*) DESC";
 			$exArgs[] = $date1.' 00:00:00';
-			$prep = $dbc->prepare_statement($query);
-			$result = $dbc->exec_statement($prep, $exArgs);
-			while($row = $dbc->fetch_row($result)){
+			$prep = $dbc->prepare($query);
+			$result = $dbc->execute($prep, $exArgs);
+			while($row = $dbc->fetchRow($result)){
 				$record = array($row['zipcode'], $row['num']);
 				$ret[] = $record;
 			}
@@ -148,9 +148,9 @@ class PostalCodeReport extends FannieReportPage {
 			$date_id2 = date('Y-m-d',strtotime($date2)) . ' 23:59:59';
 			$exArgs[] = $date_id1;
 			$exArgs[] = $date_id2;
-			$prep = $dbc->prepare_statement($query);
-			$result = $dbc->exec_statement($prep, $exArgs);
-			while($row = $dbc->fetch_row($result)){
+			$prep = $dbc->prepare($query);
+			$result = $dbc->execute($prep, $exArgs);
+			while($row = $dbc->fetchRow($result)){
 				$record = array($row['zipcode'],$row['num_trans'],$row['uniques'],$row['spending']);
 				$ret[] = $record;
 			}

@@ -115,6 +115,7 @@ class DTransactionsModel extends BasicModel
         $this->columns['store_row_id'] = $tmp1;
 
         $this->connection = FannieDB::get($FANNIE_ARCHIVE_DB);
+        $dated_tables = array();
         if ($FANNIE_ARCHIVE_METHOD == 'partitions') {
             $this->name = 'bigArchive';
             $chk = parent::normalize($FANNIE_ARCHIVE_DB, $mode, $doCreate);
@@ -123,7 +124,7 @@ class DTransactionsModel extends BasicModel
             }
         } else {
             $pattern = '/^transArchive\d\d\d\d\d\d$/';
-            $tables = $this->connection->get_tables($FANNIE_ARCHIVE_DB);
+            $tables = $this->connection->getTables($FANNIE_ARCHIVE_DB);
             foreach($tables as $t) {
                 if (preg_match($pattern,$t)) {
                     $this->name = $t;
@@ -131,6 +132,8 @@ class DTransactionsModel extends BasicModel
                     if ($chk !== False) {
                         $trans_adds += $chk;
                     }
+                    // track existing monthly archives by date string
+                    $dated_tables[substr($t, -6)] = true;
                 }
             }
         }
@@ -144,8 +147,9 @@ class DTransactionsModel extends BasicModel
         $this->name = 'dlog_15';
         unset($this->columns['datetime']);
         $tdate = array('tdate'=>array('type'=>'datetime','index'=>True));
+        $date_id = array('date_id'=>array('type'=>'INT'));
         $trans_num = array('trans_num'=>array('type'=>'VARCHAR(25)'));
-        $this->columns = $tdate + $this->columns + $trans_num;
+        $this->columns = $tdate + $date_id + $this->columns + $trans_num;
         $chk = parent::normalize($db_name, $mode, $doCreate);
         if ($chk !== false) {
             $log_adds += $chk;
@@ -184,7 +188,7 @@ class DTransactionsModel extends BasicModel
             }
         } else {
             $pattern = '/^dlog\d\d\d\d\d\d$/';
-            $tables = $this->connection->get_tables($FANNIE_ARCHIVE_DB);
+            $tables = $this->connection->getTables($FANNIE_ARCHIVE_DB);
             foreach($tables as $t) {
                 if (preg_match($pattern,$t)) {
                     $this->name = $t;
@@ -195,6 +199,17 @@ class DTransactionsModel extends BasicModel
                         $log_adds += $chk;
                         $this->normalizeLog($t, 'transArchive'.substr($t,4),$mode);
                     }
+                    unset($dated_tables[substr($t, -6)]);
+                }
+            }
+            // create any missing dlogs for existing month tables
+            foreach ($dated_tables as $date => $val) {
+                ob_start();
+                $chk = parent::normalize($FANNIE_ARCHIVE_DB, BasicModel::NORMALIZE_MODE_CHECK);
+                ob_end_clean();
+                if ($chk !== false && $chk > 0) {
+                    $log_adds += $chk;
+                    $this->normalizeLog('dlog' . $date, 'transArchive'. $date,$mode);
                 }
             }
         }
@@ -202,6 +217,7 @@ class DTransactionsModel extends BasicModel
         // EL: Need to restore $this-columns to original values.
         $this->connection = FannieDB::get($FANNIE_TRANS_DB);
         unset($this->columns['tdate']);
+        unset($this->columns['date_id']);
         unset($this->columns['trans_num']);
         $datetime = array('datetime'=>array('type'=>'datetime','index'=>true));
         $this->columns = $datetime + $this->columns;
@@ -248,47 +264,50 @@ class DTransactionsModel extends BasicModel
             "$view_name (of table $table_name)\n"
         );
         if ($this->connection->table_exists($view_name)) {
-            $sql = 'DROP VIEW '.$this->connection->identifier_escape($view_name);
+            $sql = 'DROP VIEW '.$this->connection->identifierEscape($view_name);
             if ($mode == BasicModel::NORMALIZE_MODE_APPLY) {
                 $this->connection->query($sql);
             }
         }
+        $source = $this->connection->tableDefinition($table_name);
+        $dbms = $this->connection->dbmsName();
 
-        $sql = 'CREATE VIEW '.$this->connection->identifier_escape($view_name).' AS '
+        $sql = 'CREATE VIEW '.$this->identifierEscape($dbms, $view_name).' AS '
             .'SELECT '
-            .$this->connection->identifier_escape('datetime').' AS '
-            .$this->connection->identifier_escape('tdate').',';
+            .$this->connection->identifierEscape('datetime').' AS '
+            .$this->connection->identifierEscape('tdate').',';
+        if (isset($source['date_id'])) {
+            $sql .= 'date_id,';
+        } else {
+            $sql .= $this->connection->dateymd('datetime') . ' AS date_id,';
+        }
         $c = $this->connection; // for more concise code below
         foreach($this->columns as $name => $definition) {
             if ($name == 'datetime') continue;
             elseif ($name == 'tdate') continue;
+            elseif ($name == 'date_id') continue;
             elseif ($name == 'trans_num'){
                 // create trans_num field
                 $sql .= $c->concat(
-                $c->convert($c->identifier_escape('emp_no'),'char'),
+                $c->convert($c->identifierEscape('emp_no'),'char'),
                 "'-'",
-                $c->convert($c->identifier_escape('register_no'),'char'),
+                $c->convert($c->identifierEscape('register_no'),'char'),
                 "'-'",
-                $c->convert($c->identifier_escape('trans_no'),'char'),
+                $c->convert($c->identifierEscape('trans_no'),'char'),
                 ''
                 ).' as trans_num';
             } elseif($name == 'trans_type') {
                 // type conversion for old records. Newer coupon & discount
                 // records should have correct trans_type when initially created
-                $sql .= "CASE WHEN (trans_subtype IN ('CP','IC') OR upc like('%000000052')) then 'T' 
-                    WHEN upc = 'DISCOUNT' then 'S' else trans_type end as trans_type,\n";
-            } elseif($name == 'trans_subtype'){
-                // type conversion for old records. Probably WFC quirk that can
-                // eventually go away entirely
-                $sql .= "CASE WHEN upc = 'MAD Coupon' THEN 'MA' 
-                   WHEN upc like('%00000000052') THEN 'RR' ELSE trans_subtype END as trans_subtype,\n";
+                $sql .= "CASE WHEN trans_subtype IN ('CP','IC') THEN 'T' 
+                    WHEN upc = 'DISCOUNT' THEN 'S' ELSE trans_type END AS trans_type,\n";
             } else {
-                $sql .= $c->identifier_escape($name).",\n";
+                $sql .= $this->identifierEscape($dbms, $name).",\n";
             }
         }
         $sql = preg_replace("/,\n$/","\n",$sql);
-        $sql .= ' FROM '.$c->identifier_escape($table_name)
-            .' WHERE '.$c->identifier_escape('trans_status')
+        $sql .= ' FROM '.$this->identifierEscape($dbms, $table_name)
+            .' WHERE '.$c->identifierEscape('trans_status')
             ." NOT IN ('D','X','Z') AND emp_no <> 9999
             AND register_no <> 99";
         // for plain "dlog" view, add a date restriction
@@ -296,7 +315,6 @@ class DTransactionsModel extends BasicModel
             $sql .= ' AND datetime >= ' . $c->curdate();
         }
         if ($mode == BasicModel::NORMALIZE_MODE_APPLY) {
-            var_dump($sql);
             $this->connection->query($sql);
         }
 
@@ -333,112 +351,18 @@ class DTransactionsModel extends BasicModel
      * @param $start [datetime] date range start
      * @param $end [datetime] date range end
      *   => false implies just the date specified by $start
-     * @param $where [array] of SQL conditions and parameters
-     *   => false implies no conditions
      *
      * @return [string] qualified table name
      *   Note: return value may be a SQL string that can be
      *   used as if it were a qualified table name
     */
-    static private function selectStruct($dlog, $start, $end=false, $where=false)
+    static private function selectStruct($dlog, $start, $end=false)
     {
         $config = FannieConfig::factory();
         $sep = ($config->get('SERVER_DBMS') == 'MSSQL') ? '.dbo.' : '.';
         $FANNIE_TRANS_DB = $config->get('TRANS_DB');
         $FANNIE_ARCHIVE_DB = $config->get('ARCHIVE_DB');
         $FANNIE_ARCHIVE_METHOD = $config->get('ARCHIVE_METHOD');
-
-        /**
-          Where clause takes precedence if present
-        */
-        if (is_array($where) && isset($where['connection']) && isset($where['clauses'])) {
-            /**
-              Create randomly named temporary table based
-              on the structure of dlog_15 or transachive
-            */
-            $random_name = uniqid('temp'.rand(1000, 9999));
-            $temp_table = $FANNIE_ARCHIVE_DB . $sep . $random_name;
-            if ($dlog) {
-                $source = $FANNIE_TRANS_DB . $sep . 'dlog_15';
-            } else {
-                $source = $FANNIE_TRANS_DB . $sep . 'transarchive';
-            }
-            $dbc = $where['connection'];
-            $temp_name = $dbc->temporaryTable($temp_table, $source);
-
-            /**
-              If creating a temporary table failed (not
-              supported by database?) continue on below and
-              return the table(s) with the appropriate dates
-            */
-            if ($temp_name !== false) {
-
-                /**
-                  Create a skeleton query that has the appropriate
-                  WHERE clauses
-                */
-                $date_col = $dlog ? 'tdate' : 'datetime';
-                $populateQ = '
-                    INSERT INTO ' . $temp_name . '
-                    SELECT *
-                    FROM __SOURCE_TABLE__
-                    WHERE ' . $date_col . ' BETWEEN ? AND ? ';
-                $params = array($start . ' 00:00:00', ($end ? $end : $start) . ' 23:59:59');
-                foreach ($where['clauses'] as $clause) {
-                    if (!isset($clause['sql']) || !isset($clause['params'])) {
-                        // malformed value
-                        continue;
-                    }
-                    $populateQ .= ' AND ' . $clause['sql'];
-                    foreach ($clause['params'] as $p) {
-                        $params[] = $p;
-                    }
-                }
-
-                /**
-                  Call self recursively to get the name of the table
-                  or tables corresponding to the date range. If multiple
-                  tables, use regex to lift table names out of the subquery
-                */
-                $source_tables = self::selectStruct($dlog, $start, $end);
-                if (strstr($source_tables, ' UNION ')) {
-                    preg_match_all('/\s+FROM\s+(\w+)\s+/', $source_tables, $matches);
-                    $source_tables = array();
-                    foreach ($matches[1] as $m) {
-                        $source_tables[] = $m;
-                    }
-                } else {
-                    $source_tables = array($source_tables);
-                }
-
-                /**
-                  Loop through transaction table(s) and 
-                  execute the skeleton query with the actual table
-                  name slotted in.
-                */
-                $result = true;
-                foreach ($source_tables as $source_table) {
-                    $query = str_replace('__SOURCE_TABLE__', $source_table, $populateQ);
-                    $prep = $dbc->prepare($query);
-                    $result = $dbc->execute($prep, $params);
-                    if ($result === false) {
-                        // failed to insert data into temp table
-                        break;
-                    }
-                }
-
-                /**
-                  In theory temporary table now has the right set
-                  of records. Return the table's name to the caller.
-                  If anything went wrong, fall through to below and
-                  simply return table(s) that match the dates.
-                */
-                if ($result) {
-
-                    return $temp_name;
-                }
-            }
-        }
 
         if ($end === false) {
             $end = $start;
@@ -502,151 +426,6 @@ class DTransactionsModel extends BasicModel
     // selectStruct()
     }
 
-    public static function aggregateDlog(SQLManager $connection, $start_date, $end_date, stdclass $where, $groupby=array())
-    {
-        return self::aggregateStruct($connection, true, $start_date, $end_date, $where, $groupby);
-    }
-
-    public static function aggregateDtrans(SQLManager $connection, $start_date, $end_date, stdclass $where, $groupby=array())
-    {
-        return self::aggregateStruct($connection, false, $start_date, $end_date, $where, $groupby);
-    }
-
-    public static function aggregateStruct(SQLManager $connection, $dlog, $start_date, $end_date, stdclass $where, $groupby=array())
-    {
-        $base_table = self::selectStruct($dlog, $start_date, $end_date);
-        $dt_col = ($dlog) ? 'tdate' : 'datetime';
-        $clone_table = ($dlog) ? 'dlog_15' : 'transarchive';
-
-        /**
-          Grouping is required
-        */
-        if (!is_array($groupby) || count($groupby) == 0) {
-            return $base_table;
-        }
-
-        /**
-          Validate group by columns
-        */
-        $model = new DTransactionsModel(null);
-        $columns = $model->getColumns();
-        $insert_cols = array();
-        $select_cols = array();
-        for ($i=0; $i<count($groupby); $i++) {
-            $group = $groupby[$i];
-            if (isset($columns[$group])) {
-                $insert_cols[] = $group;
-                $select_cols[] = $group;
-            } elseif (preg_match('/(.+)\s+AS\s+(\w+)$/', $group, $matches)) {
-                $col_definition = $matches[1];
-                $col_alias = $matches[2];
-                if (isset($columns[$col_alias])) {
-                    $insert_cols[] = $col_alias;
-                    $select_cols[] = $group;
-                    $groupby[$i] = $col_definition;
-                } else {
-                    return $base_table;
-                }
-            } else {
-                return $base_table;
-            }
-        }
-        /**
-          Always include a datetime column
-        */
-        if (!in_array($dt_col, $insert_cols)) {
-            $insert_cols[] = $dt_col;
-            $select_cols[] = 'MAX(' . $dt_col . ') AS ' . $dt_col;
-        }
-
-        /**
-          Create randomly named temporary table based
-          on the structure of dlog_15 or transachive
-        */
-        $config = FannieConfig::factory();
-        $sep = $connection->sep();
-        $random_name = uniqid('temp'.rand(1000, 9999));
-        $temp_table = $config->get('ARCHIVE_DB') . $sep . $random_name;
-        $clone_table = $config->get('TRANS_DB') . $sep . $clone_table;
-        $temp_name = $connection->temporaryTable($temp_table, $clone_table);
-        if ($temp_name === false) {
-            return $base_table;
-        }
-
-        /**
-          Build a query to insert aggregated rows into
-          the temporary table
-        */
-        $query = 'INSERT INTO ' . $temp_name . '(';
-        foreach ($insert_cols as $c) {
-            $query .= $c . ',';
-        }
-        $query .= 'total, quantity) ';
-
-        $query .= ' SELECT ';
-        foreach ($select_cols as $c) {
-            $query .= $c . ',';
-        }
-        /**
-          Always aggregate by total & quantity
-        */
-        $query .= ' SUM(total) AS total, '
-            . DTrans::sumQuantity() . ' AS quantity
-            FROM __TRANSACTION_TABLE__
-            WHERE ' . $dt_col . ' BETWEEN ? AND ? ';
-        $params = array($start_date . ' 00:00:00', $end_date . ' 23:59:59');
-
-        /**
-          Add a where clause if one has been specified
-        */
-        if (property_exists($where, 'sql') && is_array($where->sql)) {
-            foreach ($where->sql as $sql) {
-                $query .= ' AND ' . $sql;
-            }
-        }
-        if (property_exists($where, 'params') && is_array($where->params)) {
-            foreach ($where->params as $p) {
-                $params[] = $p;
-            }
-        }
-
-        /**
-          Add the group by clause
-        */
-        $query .= ' GROUP BY ';
-        foreach ($groupby as $group) {
-            $query .= $group . ',';
-        }
-        $query = substr($query, 0, strlen($query)-1);
-
-        /**
-          Split monthly archive union if needed
-        */
-        $source_tables = array();
-        if (strstr($base_table, ' UNION ')) {
-            preg_match_all('/\s+FROM\s+(\w+)\s+/', $base_table, $matches);
-            foreach ($matches[1] as $m) {
-                $source_tables[] = $m;
-            }
-        } else {
-            $source_tables = array($base_table);
-        }
-
-        /**
-          Load data into temporary table from source table(s)
-          using built query
-        */
-        foreach ($source_tables as $source_table) {
-            $insertQ = str_replace('__TRANSACTION_TABLE__', $source_table, $query);
-            $prep = $connection->prepare($insertQ);
-            if (!$connection->execute($prep, $params)) {
-                return $base_table;
-            }
-        }
-
-        return $temp_name;
-    }
-
     public function doc()
     {
         return '
@@ -691,9 +470,21 @@ trans_type indicates the record\'s type Values include
          always, \'0\' (e.g., manufacturer coupons
          have their own UPCs)
     0 => another commentary line
+    L => log record. Used for login/out, bad scans,
+        member ID, a few other purposes.
+    S => discount line. upc will be \'DISCOUNT\',
+        unitPrice and total will hold the dollar
+        amount of the discount, discountPercent will
+        hold the discount percentage (5% discount => 5).
 
 trans_subtype refines the record\'s type. Values include
 (but may not be limited to at all co-ops):
+    NA => default subtype of type \'I\', probably stands for
+          Not Available.
+    AD => Auto Deposit item, for returnable water bottles.
+    SS => scanner scale.
+    KB => programmed key.
+    HI => USB scanner.
     CM => record is a cashier-written comment.
           Used to make notes on a transaction
     (tender code) => goes with trans_type \'T\',

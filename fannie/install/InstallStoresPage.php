@@ -29,7 +29,7 @@ if (!class_exists('FannieAPI')) {
 if (!function_exists('confset')) {
     include(dirname(__FILE__) . '/util.php');
 }
-if (!function_exists('create_if_needed')) {
+if (!function_exists('dropDeprecatedStructure')) {
     include(dirname(__FILE__) . '/db.php');
 }
 
@@ -45,25 +45,6 @@ class InstallStoresPage extends \COREPOS\Fannie\API\InstallPage {
     public $description = "
     Class for the Stores install and config options page.
     ";
-    public $themed = true;
-
-    // This replaces the __construct() in the parent.
-    public function __construct() {
-
-        // To set authentication.
-        FanniePage::__construct();
-
-        // Link to a file of CSS by using a function.
-        $this->add_css_file("../src/style.css");
-        $this->add_css_file("../src/javascript/jquery-ui.css");
-        $this->add_css_file("../src/css/install.css");
-
-        // Link to a file of JS by using a function.
-        $this->add_script("../src/javascript/jquery.js");
-        $this->add_script("../src/javascript/jquery-ui.js");
-
-    // __construct()
-    }
 
     public function preprocess()
     {
@@ -75,6 +56,7 @@ class InstallStoresPage extends \COREPOS\Fannie\API\InstallPage {
         if (is_array(FormLib::get('storeID'))) {
             $ids = FormLib::get('storeID');
             $names = FormLib::get('storeName', array());
+            $urls = FormLib::get('storeURL', array());
             $hosts = FormLib::get('storeHost', array());
             $drivers = FormLib::get('storeDriver', array());
             $users = FormLib::get('storeUser', array());
@@ -98,6 +80,7 @@ class InstallStoresPage extends \COREPOS\Fannie\API\InstallPage {
                 $model->push( in_array($ids[$i], $push) ? 1 : 0 );
                 $model->pull( in_array($ids[$i], $pull) ? 1 : 0 );
                 $model->hasOwnItems( in_array($ids[$i], $items) ? 1 : 0 );
+                $model->webServiceUrl(isset($urls[$i]) ? $urls[$i] : '');
                 $model->save();
             }
 
@@ -134,6 +117,20 @@ class InstallStoresPage extends \COREPOS\Fannie\API\InstallPage {
                 $FANNIE_READONLY_JSON = json_encode(json_decode(FormLib::get('FANNIE_READONLY_JSON')));
                 confset('FANNIE_READONLY_JSON', "'$FANNIE_READONLY_JSON'");
             }
+            $netIDs = FormLib::get('storeNetId');
+            $nets = FormLib::get('storeNet');
+            $saveStr = 'array(';
+            for ($i=0; $i<count($netIDs); $i++) {
+                $saveStr .= $netIDs[$i] . '=>array(';
+                foreach (explode(',', $nets[$i]) as $net) {
+                    $saveStr .= "'" . trim($net) . '\',';
+                }
+                $saveStr .= '),';
+            }
+            $saveStr .= ')';
+            if (count($netIDs) > 0) {
+                confset('FANNIE_STORE_NETS', "$saveStr");
+            }
             header('Location: InstallStoresPage.php');
             return false;
         }
@@ -163,55 +160,25 @@ class InstallStoresPage extends \COREPOS\Fannie\API\InstallPage {
         ?>
 
 <form action=InstallStoresPage.php method=post>
-<h1 class="install">
-    <?php 
-    if (!$this->themed) {
-        echo "<h1 class='install'>{$this->header}</h1>";
-    }
-    ?>
-</h1>
 <p class="ichunk">Revised 23Apr2014</p>
 <?php
-if (is_writable('../config.php')){
-    echo "<div class=\"alert alert-success\"><i>config.php</i> is writeable</div>";
-}
-else {
-    echo "<div class=\"alert alert-danger\"><b>Error</b>: config.php is not writeable</div>";
-}
+echo $this->writeCheck(dirname(__FILE__) . '/../config.php');
 ?>
 <hr />
 <h4 class="install">Stores</h4>
 <p class="ichunk" style="margin:0.0em 0em 0.4em 0em;">
 <?php
 $model = new StoresModel(FannieDB::get($FANNIE_OP_DB));
-$model->dbHost($FANNIE_SERVER);
-$myself = $model->find();
-if (count($myself) == 0) {
-    echo '<i>No entry found for this store. Adding one automatically...</i><br />';
-    $model->description('CURRENT STORE');
-    $model->save();
-} else if (count($myself) > 1) {
-    echo '<i>Warning: more than one entry for store host: ' . $FANNIE_SERVER . '</i><br />';
-} else {
-    echo '<i>This store is #' . installTextField('FANNIE_STORE_ID', $FANNIE_STORE_ID, $myself[0]->storeID()) . '</i><br />';
-}
-$model->reset();
+echo '<i>This store is #' . installTextField('FANNIE_STORE_ID', $FANNIE_STORE_ID, 1) . '</i><br />';
 echo '<label>Mode</label>';
 echo installSelectField('FANNIE_STORE_MODE', $FANNIE_STORE_MODE, array('STORE'=>'Single Store', 'HQ'=>'HQ'),'STORE');
 
-$supportedTypes = array('none'=>'');
-if (extension_loaded('pdo') && extension_loaded('pdo_mysql'))
-    $supportedTypes['PDO_MYSQL'] = 'PDO MySQL';
-if (extension_loaded('mysqli'))
-    $supportedTypes['MYSQLI'] = 'MySQLi';
-if (extension_loaded('mysql'))
-    $supportedTypes['MYSQL'] = 'MySQL';
-if (extension_loaded('mssql'))
-    $supportedTypes['MSSQL'] = 'MSSQL';
+$supportedTypes = \COREPOS\common\sql\Lib::getDrivers();
 ?>
 <table class="table">
 <tr>
-    <th>Store #</th><th>Description</th><th>DB Host</th>
+    <th>Store #</th><th>Description</th>
+    <th>Web Services URL</th><th>DB Host</th>
     <th>Driver</th><th>Username</th><th>Password</th>
     <th>Operational DB</th>
     <th>Transaction DB</th>
@@ -224,10 +191,12 @@ if (extension_loaded('mssql'))
     printf('<tr %s>
             <td>%d<input type="hidden" name="storeID[]" value="%d" /></td>
             <td><input type="text" class="form-control" name="storeName[]" value="%s" /></td>
+            <td><input type="text" class="form-control" name="storeURL[]" value="%s" /></td>
             <td><input type="text" class="form-control" name="storeHost[]" value="%s" /></td>',
             ($store->dbHost() == $FANNIE_SERVER ? 'class="info"' : ''),
             $store->storeID(), $store->storeID(),
             $store->description(),
+            $store->webServiceUrl(),
             $store->dbHost()
     );
     echo '<td><select name="storeDriver[]" class="form-control">';
@@ -283,7 +252,7 @@ Specify one or more database servers that can be used strictly
 for read operations. If more than one database is listed, read-only
 queries will be load-balanced across them.
 <?php
-if (!isset($FANNIE_READONLY_JSON)) {
+if (!isset($FANNIE_READONLY_JSON) || $FANNIE_READONLY_JSON === 'null') {
     $FANNIE_READONLY_JSON = json_encode(array(array(
         'host' => $FANNIE_SERVER,
         'type' => $FANNIE_SERVER_DBMS,
@@ -297,6 +266,25 @@ confset('FANNIE_READONLY_JSON', "'$FANNIE_READONLY_JSON'");
 <?php echo \COREPOS\Fannie\API\lib\FannieUI::prettyJSON($FANNIE_READONLY_JSON); ?>
 </textarea>
 <hr />
+<h4 class="install">Store Network(s)</h4>
+<p class="ichunk" style="margin:0.0em 0em 0.4em 0em;">
+List the network or network(s) in use at each store so clients default to
+the correct store (e.g., 192.168.0.0/24)<br />
+<?php 
+$model->hasOwnItems(1);
+foreach($model->find('storeID') as $store) {
+    $nets = '';
+    if (isset($FANNIE_STORE_NETS) && isset($FANNIE_STORE_NETS[$store->storeID()])) {
+        $nets = implode(', ', $FANNIE_STORE_NETS[$store->storeID()]);
+    }
+
+    echo 'Store #' . $store->storeID();
+    echo '<input type="hidden" name="storeNetId[]" value="' . $store->storeID() . '" />';
+    echo '<input type="text" name="storeNet[]" class="form-control" value="'
+        . $nets
+        . ' " /><br />';
+} ?>
+</p>
 <p>
 <button type=submit name="saveButton" value="Save" class="btn btn-default">Save</button>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
@@ -311,9 +299,13 @@ confset('FANNIE_READONLY_JSON', "'$FANNIE_READONLY_JSON'");
     // body_content
     }
 
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->body_content()));
+    }
+
 // InstallStoresPage
 }
 
-FannieDispatch::conditionalExec(false);
+FannieDispatch::conditionalExec();
 
-?>

@@ -21,7 +21,7 @@
 
 *********************************************************************************/
 
-namespace COREPOS\Fannie\API\item {
+namespace COREPOS\Fannie\API\item;
 
 class EpScaleLib 
 {
@@ -42,10 +42,21 @@ class EpScaleLib
         $scale_fields .= 'DNO' . $scale_model->epDeptNo() . chr(253);
         $scale_fields .= 'SAD' . $scale_model->epScaleAddress() . chr(253);
 
+        if (isset($item_info['Label'])) {
+            $item_info['Label'] = ServiceScaleLib::labelTranslate($item_info['Label'], $scale_model->scaleType());
+        }
+
         if ($item_info['RecordType'] == 'WriteOneItem') {
-            return self::getAddItemLine($item_info) . $scale_fields;
+            $line = self::getAddItemLine($item_info) . $scale_fields;
         } else {
-            return self::getUpdateItemLine($item_info) . $scale_fields;
+            $line = self::getUpdateItemLine($item_info) . $scale_fields;
+        }
+
+        if ($scale_model->scaleType() == 'HOBART_HTI') {
+            preg_match('/UTA(\d\d\d)/', $line, $matches);    
+            $tare = $matches[1];
+            $fixed_tare = substr($tare . '0', -3);
+            $line = str_replace($matches[0], 'UTA' . $fixed_tare, $line);
         }
 
         return $line;
@@ -61,11 +72,25 @@ class EpScaleLib
         $et_line .= 'SAD' . $scale_model->epScaleAddress() . chr(253);
         $et_line .= 'PNO' . $item_info['PLU'] . chr(253);
         $et_line .= 'INO' . $item_info['PLU'] . chr(253);
-        $item_info['ExpandedText'] = str_replace("\r", '', $item_info['ExpandedText']);
-        $item_info['ExpandedText'] = str_replace("\n", '<br>', $item_info['ExpandedText']);
-        $et_line .= 'ITE' . $item_info['ExpandedText'] . chr(253);
+        $et_line .= 'ITE' . self::expandedText($item_info['ExpandedText'], $item_info, $scale_model) . chr(253);
 
         return $et_line;
+    }
+
+    static private function expandedText($text, $item_info, $scale_model)
+    {
+        if ($item_info['MOSA']) {
+            $text = str_replace('{mosa}', 'Certified Organic By MOSA', $text);
+        } else {
+            $text = str_replace('{mosa}', '', $text);
+            $text = str_ireplace('CERTIFIED ', '', $text);
+        }
+        if (!isset($item_info['OriginText'])) {
+            $item_info['OriginText'] = '';
+        }
+        $text = str_replace('{cool}', $item_info['OriginText'], $text);
+        $text = str_replace("\r", '', $text);
+        return str_replace("\n", chr(0xE), $text);
     }
 
     static private function getAddItemLine($item_info)
@@ -73,10 +98,13 @@ class EpScaleLib
         $line = 'CCOSPIA' . chr(253);
         $line .= 'PNO' . $item_info['PLU'] . chr(253);
         $line .= 'UPC' . '002' . str_pad($item_info['PLU'],4,'0',STR_PAD_LEFT) . '000000' . chr(253);
-        $line .= 'DN1' . (isset($item_info['Description']) ? $item_info['Description'] : '') . chr(253);
+        $desc = (isset($item_info['Description'])) ? $item_info['Description'] : '';
+        $line .= self::wrapDescription($desc, 26);
         $line .= 'DS1' . '0' . chr(253);
-        $line .= 'DN2' . chr(253);
-        $line .= 'DS2' . '0' . chr(253);
+        if (!strstr($line, 'DN2')) {
+            $line .= 'DN2' . chr(253);
+            $line .= 'DS2' . '0' . chr(253);
+        }
         $line .= 'DN3' . chr(253);
         $line .= 'DS3' . '0' . chr(253);
         $line .= 'DN4' . chr(253);
@@ -87,11 +115,11 @@ class EpScaleLib
         if ($item_info['Type'] == 'Random Weight') {
             $line .= 'UMELB' . chr(253);
         } else {
-            $line .= 'UMEFW' . chr(253);
+            $line .= 'UMEBC' . chr(253);
         }
         $line .= 'BCO' . '0' . chr(253);
         $line .= 'WTA' . '0' . chr(253);
-        $line .= 'UTA' . (isset($item_info['Tare']) ? floor(1000*$item_info['Tare']) . '0' : '0') . chr(253);
+        $line .= 'UTA' . (isset($item_info['Tare']) ? str_pad(floor(100*$item_info['Tare']).'0', 3, '0', STR_PAD_LEFT) : '0') . chr(253);
         $line .= 'SLI' . (isset($item_info['ShelfLife']) ? $item_info['ShelfLife'] : '0') . chr(253);
         $line .= 'SLT' . '0' . chr(253);
         $line .= 'EBY' . '0' . chr(253);
@@ -137,12 +165,15 @@ class EpScaleLib
                     case 'PLU':
                         $line .= 'PNO' . $item_info[$key] . chr(253);
                         $line .= 'UPC' . '002' . str_pad($item_info[$key],4,'0',STR_PAD_LEFT) . '000000' . chr(253);
+                        $line .= 'INO' . $item_info[$key] . chr(253);
                         break;
                     case 'Description':
                         if (strstr($item_info[$key], "\n")) {
                             list($line1, $line2) = explode("\n", $item_info[$key]);
                             $line .= 'DN1' . $line1 . chr(253);
                             $line .= 'DN2' . $line2 . chr(253);
+                        } elseif (strlen($item_info[$key]) > 22) {
+                            $line .= self::wrapDescription($item_info[$key], 26);
                         } else {
                             $line .= 'DN1' . $item_info[$key] . chr(253);
                         }
@@ -150,22 +181,25 @@ class EpScaleLib
                     case 'ReportingClass':
                         $line .= 'CCL' . $item_info[$key] . chr(253);
                     case 'Label':
-                        $line .= 'FL1' . $item_info[$key] . chr(253);
+                        /** disabled 11Nov2015 - doesn't syncing seems broken **/
+                        $line .= 'LF1' . $item_info[$key] . chr(253);
                         break;
                     case 'Tare':
-                        $line .= 'UTA' . floor(100*$item_info[$key]) .'0' . chr(253);
+                        $line .= 'UTA' . str_pad(floor(100*$item_info['Tare']).'0', 3, '0', STR_PAD_LEFT). chr(253);
                         break;
                     case 'ShelfLife':
                         $line .= 'SLI' . $item_info[$key] . chr(253) . 'SLT0' . chr(253);
                         break;
                     case 'Price':
-                        $line .= 'UPR' . round(100*$item_info[$key]) . chr(253);
+                        if ($item_info['Price'] != 0) {
+                            $line .= 'UPR' . round(100*$item_info[$key]) . chr(253);
+                        }
                         break;
                     case 'Type':
                         if ($item_info[$key] == 'Random Weight') {
                             $line .= 'UMELB' . chr(253);
                         } else {
-                            $line .= 'UMEFW' . chr(253);
+                            $line .= 'UMEBC' . chr(253);
                         }
                         break;
                     case 'NetWeight':
@@ -179,6 +213,17 @@ class EpScaleLib
         }
 
         return $line;
+    }
+
+    static private function wrapDescription($desc, $length, $limit=2)
+    {
+        $desc = wordwrap($desc, $length, "\n", true); 
+        $lines = explode("\n", $desc);
+        $keys = array_filter(array_keys($lines), function($i) use ($limit) { return $i<$limit; });
+        return array_reduce($keys, function($carry, $key) use ($lines) {
+            return $carry . 'DN' . ($key+1) . trim($lines[$key]) . chr(253)
+                . 'DS' . ($key+1) . '0' . chr(253);
+        });
     }
 
     /**
@@ -299,11 +344,5 @@ class EpScaleLib
             $counter++;
         }
     }
-}
-
-}
-
-namespace {
-    class EpScaleLib extends \COREPOS\Fannie\API\item\EpScaleLib {}
 }
 

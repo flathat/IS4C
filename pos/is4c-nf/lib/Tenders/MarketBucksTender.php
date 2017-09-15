@@ -22,6 +22,8 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\Tenders\TenderModule;
+
 class MarketBucksTender extends TenderModule 
 {
     protected $amount_tendered;

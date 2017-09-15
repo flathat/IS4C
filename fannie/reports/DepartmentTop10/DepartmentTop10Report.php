@@ -109,10 +109,10 @@ class DepartmentTop10Report extends FannieReportPage
                     WHERE dept_no IN (" .
                     $this->deptPlaceholders .
                     ") ORDER BY {$this->deptOrderBy}";
-                $deptS = $dbc->prepare_statement($deptQ);
-                $deptR = $dbc->exec_statement($deptS,$this->deptsList);
+                $deptS = $dbc->prepare($deptQ);
+                $deptR = $dbc->execute($deptS,$this->deptsList);
                 $dSep = '';
-                while ($row = $dbc->fetch_row($deptR)) {
+                while ($row = $dbc->fetchRow($deptR)) {
                     $this->deptNames .= sprintf("%s(%d) %s",
                         $dSep, $row['dept_no'], $row['dept_name']);
                     $dSep = ', ';
@@ -271,8 +271,8 @@ class DepartmentTop10Report extends FannieReportPage
           Date (n/a here) requires a special case to combine
           year, month, and day into a single field.
         */
-        $prep = $dbc->prepare_statement($query);
-        $result = $dbc->exec_statement($prep,$args);
+        $prep = $dbc->prepare($query);
+        $result = $dbc->execute($prep,$args);
         $ret = array();
         $currentDept = -999;
         $perDept = 0;
@@ -311,7 +311,7 @@ class DepartmentTop10Report extends FannieReportPage
             'SubDept'
         ));
         // r2R2
-        while ($row = $dbc->fetch_array($result)) {
+        while ($row = $dbc->fetchArray($result)) {
             $record = array();
             if ($row["$sectionKey"] != $currentDept) {
                 if ($currentDept != -999) {
@@ -353,7 +353,7 @@ class DepartmentTop10Report extends FannieReportPage
             // r3R3
             // Format Qty, others are already 2 decimals.
             $record[] = $perDept;
-            for($i=0;$i<$dbc->num_fields($result);$i++) {
+            for($i=0;$i<$dbc->numFields($result);$i++) {
                 if ($i == 4) {
                     $record[] = sprintf('%.2f',$row['cost'] / $row['qty']);
                     /* Markup and Margin only if wanted
@@ -413,8 +413,8 @@ class DepartmentTop10Report extends FannieReportPage
               Date (n/a here) requires a special case to combine
               year, month, and day into a single field.
             */
-            $prep = $dbc->prepare_statement($query);
-            $result = $dbc->exec_statement($prep,$args);
+            $prep = $dbc->prepare($query);
+            $result = $dbc->execute($prep,$args);
             //
             // Add to the existing array.
             $currentDept = -999;
@@ -428,7 +428,7 @@ class DepartmentTop10Report extends FannieReportPage
             $sectionFooterLabel = 'of Department Total';
             $ret[] = array('meta'=>FannieReportPage::META_BLANK);
             $ret[] = array('meta'=>FannieReportPage::META_REPEAT_HEADERS);
-            while ($row = $dbc->fetch_array($result)) {
+            while ($row = $dbc->fetchArray($result)) {
                 $record = array();
                 if ($row["$sectionKey"] != $currentDept) {
                     if ($currentDept != -999) {
@@ -471,7 +471,7 @@ class DepartmentTop10Report extends FannieReportPage
                 // Format Qty, others are already 2 decimals.
                 // r6 R6
                 $record[] = $perDept;
-                for($i=0;$i<$dbc->num_fields($result);$i++) {
+                for($i=0;$i<$dbc->numFields($result);$i++) {
                     if ($i == 4) {
                         $record[] = sprintf('%.2f',$row['cost'] / $row['qty']);
                         /* Markup and Margin only if wanted
@@ -718,28 +718,28 @@ class DepartmentTop10Report extends FannieReportPage
             LEFT JOIN superdepts s on s.dept_ID = d.dept_no
             WHERE superID > 0
             ORDER BY superID, dept_name";
-        $deptsQ = $dbc->prepare_statement($query);
-        $deptsR = $dbc->exec_statement($deptsQ);
+        $deptsQ = $dbc->prepare($query);
+        $deptsR = $dbc->execute($deptsQ);
 
-        $deptSuperQ = $dbc->prepare_statement("SELECT superID,super_name FROM superDeptNames
+        $deptSuperQ = $dbc->prepare("SELECT superID,super_name FROM superDeptNames
                 WHERE superID <> 0 
                 ORDER BY superID");
-        $deptSuperR = $dbc->exec_statement($deptSuperQ);
+        $deptSuperR = $dbc->execute($deptSuperQ);
 
         $deptSuperList = "";
-        while($deptSuperW = $dbc->fetch_array($deptSuperR)) {
+        while($deptSuperW = $dbc->fetchArray($deptSuperR)) {
             $deptSuperList .=" <option value=$deptSuperW[0]>$deptSuperW[0] $deptSuperW[1]</option>";
         }
         $deptsList = "";
         $deptsMultiList = "";
-        while ($deptsW = $dbc->fetch_array($deptsR)) {
+        while ($deptsW = $dbc->fetchArray($deptsR)) {
             $deptsList .= "<option value=$deptsW[0]>({$deptsW['superID']}) $deptsW[0] $deptsW[1]</option>";
             $deptsMultiList .= "<option value=$deptsW[0]>({$deptsW['superID']}) $deptsW[1] - $deptsW[0]</option>";
         }
         $storesQ = "SELECT * FROM Stores";
-        $storesS = $dbc->prepare_statement($storesQ);
-        $storesR = $dbc->exec_statement($storesS);
-        if ($dbc->num_rows($storesR)>1) {
+        $storesS = $dbc->prepare($storesQ);
+        $storesR = $dbc->execute($storesS);
+        if ($dbc->numRows($storesR)>1) {
             $storeWidget = '<div class="form-group" style="width:50%;"> 
         <label for="store">Store:</label>';
             $ret=FormLib::storePicker();

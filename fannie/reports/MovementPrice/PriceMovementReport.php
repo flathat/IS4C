@@ -36,7 +36,6 @@ class PriceMovementReport extends FannieReportPage
 
     public $description = '[Movement by Price] lists item sales with a separate line for each price point. If an item was sold at more than one price in the given date range, sales from each price are listed separately.';
     public $report_set = 'Movement Reports';
-    public $themed = true;
 
     public function report_description_content()
     {
@@ -67,8 +66,10 @@ class PriceMovementReport extends FannieReportPage
         $deptStart = FormLib::get('deptStart');
         $deptEnd = FormLib::get('deptEnd');
         $deptMulti = FormLib::get('departments', array());
+        $subs = FormLib::get('subdepts', array());
     
         $buyer = FormLib::get('buyer', '');
+        $store = FormLib::get('store', 0);
 
         // args/parameters differ with super
         // vs regular department
@@ -86,6 +87,10 @@ class PriceMovementReport extends FannieReportPage
             list($conditional, $args) = DTrans::departmentClause($deptStart, $deptEnd, $deptMulti, $args);
             $where .= $conditional;
         }
+        if (count($subs) > 0) {
+            list($inStr, $args) = $dbc->safeInClause($subs, $args);
+            $where .= " AND p.subdept IN ($inStr) ";
+        }
 
         $dlog = DTransactionsModel::selectDlog($date1, $date2);
 
@@ -94,7 +99,11 @@ class PriceMovementReport extends FannieReportPage
                 p.brand,
                 p.description,"
                 . DTrans::sumQuantity('d') . " AS qty,
-                CASE WHEN memDiscount <> 0 AND memType <> 0 THEN unitPrice - memDiscount ELSE unitPrice END as price,
+                CASE 
+                    WHEN unitPrice=0.01 THEN total 
+                    WHEN memDiscount <> 0 AND memType <> 0 THEN unitPrice - memDiscount 
+                    ELSE unitPrice 
+                END as price,
                 d.department, 
                 t.dept_name, 
                 SUM(total) AS total
@@ -110,26 +119,17 @@ class PriceMovementReport extends FannieReportPage
         $query .= "
             WHERE tdate BETWEEN ? AND ?
                 AND $where
+                AND " . DTrans::isStoreID($store, 'd') . "
             GROUP BY d.upc,p.description,price,d.department,t.dept_name
             ORDER BY d.upc";
+        $args[] = $store;
 
-        $prep = $dbc->prepare_statement($query);
-        $result = $dbc->exec_statement($query, $args);
+        $prep = $dbc->prepare($query);
+        $result = $dbc->execute($query, $args);
 
         $data = array();
-        while($row = $dbc->fetch_row($result)) {
-            $record = array(
-                $row['upc'],
-                $row['brand'],
-                $row['description'],
-                $row['department'],
-                $row['dept_name'],
-                sprintf('%.2f', $row['price']),
-                sprintf('%.2f', $row['qty']),
-                sprintf('%.2f', $row['total']),
-            );
-
-            $data[] = $record;
+        while ($row = $dbc->fetchRow($result)) {
+            $data[] = $this->rowToRecord($row);
         }
 
         // bold items that sold at multiple prices
@@ -145,6 +145,20 @@ class PriceMovementReport extends FannieReportPage
         }
 
         return $data;
+    }
+
+    private function rowToRecord($row)
+    {
+        return array(
+            $row['upc'],
+            $row['brand'],
+            $row['description'],
+            $row['department'],
+            $row['dept_name'],
+            sprintf('%.2f', $row['price']),
+            sprintf('%.2f', $row['qty']),
+            sprintf('%.2f', $row['total']),
+        );
     }
 
     public function calculate_footers($data)
@@ -217,8 +231,16 @@ class PriceMovementReport extends FannieReportPage
             totals are for all sales at a particular price during
             the date range.</p>';
     }
+
+    public function unitTest($phpunit)
+    {
+        $data = array('upc'=>'4011', 'brand'=>'test', 'description'=>'test',
+            'department'=>1, 'dept_name'=>'test', 'price'=>1.99,
+            'qty'=>1, 'total'=>1);
+        $phpunit->assertInternalType('array', $this->rowToRecord($data));
+        $phpunit->assertInternalType('array', $this->calculate_footers($this->dekey_array(array($data))));
+    }
 }
 
 FannieDispatch::conditionalExec();
 
-?>

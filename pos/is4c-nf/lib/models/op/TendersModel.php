@@ -22,6 +22,7 @@
 *********************************************************************************/
 
 namespace COREPOS\pos\lib\models\op;
+use COREPOS\pos\lib\CoreState;
 use COREPOS\pos\lib\models\BasicModel;
 
 class TendersModel extends BasicModel 
@@ -42,6 +43,7 @@ class TendersModel extends BasicModel
     'MaxRefund'    => array('type'=>'MONEY','default'=>1000.00),
     'TenderModule' => array('type'=>'VARCHAR(50)', 'default'=>"'TenderModule'"),
     'SalesCode' => array('type'=>'INT'),
+    'EndsTransaction' => array('type'=>'TINYINT', 'default'=>1),
     );
 
     public function doc()
@@ -81,9 +83,12 @@ TenderType and TenderID are mostly ignored.
 
     public function hookAddColumnTenderModule()
     {
-        CoreLocal::refresh();
+        \CoreLocal::refresh();
         CoreState::loadParams();
-        $current_map = CoreLocal::get('TenderMap');
+        $current_map = \CoreLocal::get('TenderMap');
+        if (!is_array($current_map)) {
+            $current_map = array();
+        }
         $update = $this->connection->prepare('
             UPDATE tenders
             SET TenderModule=?

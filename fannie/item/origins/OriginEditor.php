@@ -28,13 +28,11 @@ if (!class_exists('FannieAPI')) {
 
 class OriginEditor extends FannieRESTfulPage 
 {
-
     protected $header = 'Product Origins';
     protected $title = 'Product Origins';
 
     public $description = '[Origins Editor] manages complex data about where items come from
     geographically.';
-    public $themed = true;
 
     public function preprocess()
     {
@@ -81,9 +79,7 @@ class OriginEditor extends FannieRESTfulPage
 
         $this->normalizeOriginNames();
 
-        header('Location: OriginEditor.php');
-
-        return false;
+        return 'OriginEditor.php';
     }
 
     public function post_newCustom_newState_newCountry_handler()
@@ -103,9 +99,7 @@ class OriginEditor extends FannieRESTfulPage
             $this->normalizeOriginNames();
         }
 
-        header('Location: OriginEditor.php');
-
-        return false;
+        return 'OriginEditor.php';
     }
 
     public function get_new_country_handler()
@@ -116,9 +110,7 @@ class OriginEditor extends FannieRESTfulPage
         $model->name('0 New Country Entry');
         $model->save();
 
-        header('Location: OriginEditor.php?country=1');
-
-        return false;
+        return 'OriginEditor.php?country=1';
     }
 
     public function get_new_state_handler()
@@ -129,9 +121,7 @@ class OriginEditor extends FannieRESTfulPage
         $model->name('0 New State/Prov Entry');
         $model->save();
 
-        header('Location: OriginEditor.php?state=1');
-
-        return false;
+        return 'OriginEditor.php?state=1';
     }
 
     public function get_new_custom_handler()
@@ -142,9 +132,7 @@ class OriginEditor extends FannieRESTfulPage
         $model->name('0 New Custom Region Entry');
         $model->save();
 
-        header('Location: OriginEditor.php?custom=1');
-
-        return false;
+        return 'OriginEditor.php?custom=1';
     }
 
     public function post_countryID_name_abbr_handler()
@@ -157,13 +145,11 @@ class OriginEditor extends FannieRESTfulPage
             if ($this->hasEntry($this->name, $i) && $this->hasEntry($this->abbr, $i)) {
 
                 $model->countryID($this->countryID[$i]);
-                $this->saveOrDelete($model, $model->countryID());
+                $this->saveOrDelete($model, $model->countryID(), $i);
             }
         }
 
-        header('Location: OriginEditor.php?country=1');
-
-        return false;
+        return 'OriginEditor.php?country=1';
     }
 
     public function post_stateID_name_abbr_handler()
@@ -176,13 +162,11 @@ class OriginEditor extends FannieRESTfulPage
             if ($this->hasEntry($this->name, $i) && $this->hasEntry($this->abbr, $i)) {
 
                 $model->stateProvID($this->stateID[$i]);
-                $this->saveOrDelete($model, $model->stateProvID());
+                $this->saveOrDelete($model, $model->stateProvID(), $i);
             }
         }
 
-        header('Location: OriginEditor.php?state=1');
-
-        return false;
+        return 'OriginEditor.php?state=1';
     }
 
     public function post_customID_name_handler()
@@ -210,9 +194,7 @@ class OriginEditor extends FannieRESTfulPage
             }
         }
 
-        header('Location: OriginEditor.php?custom=1');
-
-        return false;
+        return 'OriginEditor.php?custom=1';
     }
 
     public function get_country_view()
@@ -365,17 +347,20 @@ class OriginEditor extends FannieRESTfulPage
         }
 
         $origins = new OriginsModel($dbc);
-        $ret = '<form action="' . filter_input(INPUT_SERVER, 'PHP_SELF') . '" method="post">';
-        $ret .= '<h3>Edit Origins</h3>';
-        $ret .= '<table class="table">';
-        $ret .= '<tr>
-                <th>Short Name</th>
-                <th>Full Name</th>
-                <th><a href="' . filter_input(INPUT_SERVER, 'PHP_SELF') . '?custom=1">Region</a></th>
-                <th><a href="' . filter_input(INPUT_SERVER, 'PHP_SELF') . '?state=1">State/Prov</a></th>
-                <th><a href="' . filter_input(INPUT_SERVER, 'PHP_SELF') . '?country=1">Country</a></th>
-                <th>Local</th>
-                </tr>';
+        $self = filter_input(INPUT_SERVER, 'PHP_SELF');
+        $ret = <<<HTML
+<form action="{$self}" method="post">
+    <h3>Edit Origins</h3>
+    <table class="table">
+        <tr>
+            <th>Short Name</th>
+            <th>Full Name</th>
+            <th><a href="{$self}?custom=1">Region</a></th>
+            <th><a href="{$self}?state=1">State/Prov</a></th>
+            <th><a href="{$self}?country=1">Country</a></th>
+            <th>Local</th>
+        </tr>
+HTML;
         foreach ($origins->find('name') as $o) {
             $ret .= sprintf('<tr>
                             <input type="hidden" name="originID[]" value="%d" />
@@ -419,41 +404,45 @@ class OriginEditor extends FannieRESTfulPage
         $ret .= '<p><button type="submit" class="btn btn-default">Save Origins</button></p>';
         $ret .= '</form>';
 
-        $ret .= '<hr />';
+        $customOpts = $this->arrayToSelect($customs);
+        $stateOpts = $this->arrayToSelect($states);
+        $countryOpts = $this->arrayToSelect($countries);
+        $ret .= <<<HTML
+<hr />
+<form action="{$self}" method="post">
+    <h3>Create New Origin</h3>
+    <table class="table">
+        <tr>
+            <th><a href="{$self}?custom=1">Region</a></th>
+            <th><a href="{$self}'?state=1">State/Prov</a></th>
+            <th><a href="{$self}?country=1">Country</a></th>
+        </tr>
+        <tr>
+            <td><select name="newCustom" class="form-control"><option value="">n/a</option>
+                {$customOpts}
+            </select></td>
+            <td><select name="newState" class="form-control"><option value="">n/a</option>
+                {$stateOpts}
+            </select></td>
+            <td><select name="newCountry" class="form-control"><option value="">n/a</option>
+                {$countryOpts}
+            </select></td>
+        </tr>
+    </table>
+    <p><button type="submit" class="btn btn-default">Create</button></p>
+</form>
+HTML;
 
-        $ret = '<form action="' . filter_input(INPUT_SERVER, 'PHP_SELF') . '" method="post">';
-        $ret .= '<h3>Create New Origin</h3>';
-        $ret .= '<table class="table">';
-        $ret .= '<tr>
-                <th><a href="' . filter_input(INPUT_SERVER, 'PHP_SELF') . '?custom=1">Region</a></th>
-                <th><a href="' . filter_input(INPUT_SERVER, 'PHP_SELF') . '?state=1">State/Prov</a></th>
-                <th><a href="' . filter_input(INPUT_SERVER, 'PHP_SELF') . '?country=1">Country</a></th>
-                </tr>';
-        $ret .= '<tr>';
-        $ret .= '<td><select name="newCustom" class="form-control"><option value="">n/a</option>';
-        foreach ($customs as $id => $label) {
+        return $ret;
+    }
+
+    private function arrayToSelect($arr)
+    {
+        $ret = '';
+        foreach ($arr as $id => $label) {
             $ret .= sprintf('<option value="%d">%s</option>',
                         $id, $label);
         }
-        $ret .= '</select></td>';
-
-        $ret .= '<td><select name="newState" class="form-control"><option value="">n/a</option>';
-        foreach ($states as $id => $label) {
-            $ret .= sprintf('<option value="%d">%s</option>',
-                        $id, $label);
-        }
-        $ret .= '</select></td>';
-
-        $ret .= '<td><select name="newCountry" class="form-control"><option value="">n/a</option>';
-        foreach ($countries as $id => $label) {
-            $ret .= sprintf('<option value="%d">%s</option>',
-                        $id, $label);
-        }
-        $ret .= '</select></td>';
-        $ret .= '</tr>';
-        $ret .= '</table>';
-        $ret .= '<p><button type="submit" class="btn btn-default">Create</button></p>';
-        $ret .= '</form>';
 
         return $ret;
     }
@@ -574,14 +563,14 @@ class OriginEditor extends FannieRESTfulPage
         }
     }
 
-    private function saveOrDelete($model, $id)
+    private function saveOrDelete($model, $id, $index)
     {
         $delete = FormLib::get('delete', array());
         if (in_array($id, $delete)) {
             $model->delete();
         } else {
-            $model->name($this->name[$i]);
-            $model->abbr($this->abbr[$i]);
+            $model->name($this->name[$index]);
+            $model->abbr($this->abbr[$index]);
             $model->save();
         }
     }
@@ -613,6 +602,25 @@ class OriginEditor extends FannieRESTfulPage
             be smaller or larger than countries and/or states depending
             what is being tracked and measured.
             </p>';
+    }
+
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->get_country_view()));
+        $phpunit->assertNotEquals(0, strlen($this->get_state_view()));
+        $phpunit->assertNotEquals(0, strlen($this->get_custom_view()));
+        $phpunit->assertNotEquals(0, strlen($this->get_view()));
+        $this->get_new_country_handler();
+        $this->get_new_state_handler();
+        $this->get_new_custom_handler();
+        $this->countryID = array(1);
+        $this->name = array('TEST');
+        $this->abbr = array('TEST');
+        $this->post_countryID_name_abbr_handler();
+        $this->stateID = array(1);
+        $this->post_stateID_name_abbr_handler();
+        $this->customID = array(1);
+        $this->post_customID_name_handler();
     }
 }
 

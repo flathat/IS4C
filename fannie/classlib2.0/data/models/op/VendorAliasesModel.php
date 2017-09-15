@@ -49,4 +49,3 @@ vendor catalog entry.';
 
 }
 
-

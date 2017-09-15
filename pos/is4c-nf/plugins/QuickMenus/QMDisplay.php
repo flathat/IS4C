@@ -21,13 +21,14 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\gui\NoInputCorePage;
+use COREPOS\pos\lib\Database;
 use \COREPOS\pos\lib\FormLib;
-
+use COREPOS\pos\lib\MiscLib;
 include_once(dirname(__FILE__).'/../../lib/AutoLoader.php');
 
 class QMDisplay extends NoInputCorePage 
 {
-
     private $offset;
     private $plugin_url;
 
@@ -63,13 +64,13 @@ class QMDisplay extends NoInputCorePage
         $plugin_info = new QuickMenus();
         $this->plugin_url = $plugin_info->pluginUrl().'/';
 
-        $this->offset = isset($_REQUEST['offset'])?$_REQUEST['offset']:0;
+        $this->offset = FormLib::get('offset', 0);
 
         if (count($_POST) > 0){
             $output = "";
             $qstr = '';
             if ($_REQUEST["clear"] == 0) {
-                $value = $_REQUEST['ddQKselect'];
+                $value = FormLib::get('ddQKselect');
 
                 if ($value !== '') {
                     $output = CoreLocal::get("qmInput").$value;
@@ -91,18 +92,8 @@ class QMDisplay extends NoInputCorePage
         return True;
     } // END preprocess() FUNCTION
 
-    function body_content()
+    private function getMenu()
     {
-        $this->add_onload_command("selectSubmit('#ddQKselect', '#qmform');\n");
-        $this->add_onload_command('$(\'#ddQKselect\').focus()');
-
-        echo "<div class=\"baseHeight\" style=\"border: solid 1px black;\">";
-        echo "<form id=\"qmform\" action=\"".$_SERVER["PHP_SELF"]."\" 
-            method=\"post\" onsubmit=\"return false;\">";
-
-        /**
-          Where can the menu be found?
-        */
         $my_menu = array();
         if (is_array(CoreLocal::get('qmNumber'))){
             /** Calling code provided the menu array via session data */
@@ -111,9 +102,9 @@ class QMDisplay extends NoInputCorePage
             /** New way:
                 Get menu options from QuickLookups table
             */
-            $db = Database::pDataConnect();
-            if ($db->table_exists('QuickLookups')) {
-                $model = new QuickLookupsModel($db);
+            $dbc = Database::pDataConnect();
+            if (CoreLocal::get('NoCompat') == 1 || $dbc->table_exists('QuickLookups')) {
+                $model = new COREPOS\pos\plugins\QuickMenus\QuickLookupsModel($dbc);
                 $model->lookupSet(CoreLocal::get('qmNumber'));
                 foreach($model->find(array('sequence', 'label')) as $obj) {
                     $my_menu[$obj->label()] = $obj->action();
@@ -128,14 +119,28 @@ class QMDisplay extends NoInputCorePage
             }
         }
 
+        return $my_menu;
+    }
+
+    function body_content()
+    {
+        $this->add_onload_command("selectSubmit('#ddQKselect', '#qmform');\n");
+        $this->add_onload_command('$(\'#ddQKselect\').focus()');
+
+        echo "<div class=\"baseHeight\" style=\"border: solid 1px black;\">";
+        echo "<form id=\"qmform\" action=\"" . filter_input(INPUT_SERVER, "PHP_SELF") ."\" 
+            method=\"post\" onsubmit=\"return false;\">";
+
+        $my_menu = $this->getMenu();
+
         echo '<br /><br />';
         echo '<select name="ddQKselect" id="ddQKselect" style="width:380px;" size="10"
             onblur="$(\'#ddQKselect\').focus();" >';
-        $i=1;
+        $count=1;
         foreach ($my_menu as $label => $value) {
             printf('<option value="%s" %s>%d. %s</option>',$value,
-                ($i==1?'selected':''),$i,$label);
-            $i++;
+                ($count==1?'selected':''),$count,$label);
+            $count++;
         }
         echo '</select>';
         $this->add_onload_command("qmNumberPress();\n");
@@ -145,10 +150,7 @@ class QMDisplay extends NoInputCorePage
         echo "</form>";
         echo "</div>";
     } // END body_content() FUNCTION
-
 }
 
-if (basename($_SERVER['PHP_SELF']) == basename(__FILE__))
-    new QMDisplay();
+AutoLoader::dispatch();
 
-?>

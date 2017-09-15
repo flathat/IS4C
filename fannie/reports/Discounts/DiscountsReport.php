@@ -31,7 +31,6 @@ class DiscountsReport extends FannieReportPage {
     public $description = '[Discounts Reports] lists member percentage discounts by member type for a
         a given date range.';
     public $report_set = 'Membership';
-    public $themed = true;
 
     protected $report_headers = array('Type', 'Total');
     protected $title = "Fannie : Discounts Report";
@@ -58,7 +57,7 @@ class DiscountsReport extends FannieReportPage {
 
         $dlog = DTransactionsModel::selectDlog($d1,$d2);
 
-        $query = $dbc->prepare_statement("
+        $query = $dbc->prepare("
             SELECT m.memDesc,
                 SUM(total) AS total 
             FROM $dlog AS d
@@ -67,17 +66,22 @@ class DiscountsReport extends FannieReportPage {
                 AND tdate BETWEEN ? AND ?
             GROUP BY m.memDesc
             ORDER BY m.memDesc");
-        $result = $dbc->exec_statement($query, array($d1.' 00:00:00', $d2.' 23:59:59'));
+        $result = $dbc->execute($query, array($d1.' 00:00:00', $d2.' 23:59:59'));
 
         $data = array();
-        while($row = $dbc->fetch_row($result)){
-            $data[] = array(
-                        $row['memDesc'],
-                        sprintf('%.2f', $row['total'])
-                        );
+        while ($row = $dbc->fetchRow($result)) {
+            $data[] = $this->rowToRecord($row);
         }
 
         return $data;
+    }
+
+    private function rowToRecord($row)
+    {
+        return array(
+            $row['memDesc'],
+            sprintf('%.2f', $row['total']),
+        );
     }
 
     public function form_content()
@@ -133,8 +137,14 @@ class DiscountsReport extends FannieReportPage {
             </p>';
     }
 
+    public function unitTest($phpunit)
+    {
+        $data = array('memDesc'=>'test', 'total'=>1);
+        $phpunit->assertInternalType('array', $this->rowToRecord($data));
+        $phpunit->assertInternalType('array', $this->calculate_footers($this->dekey_array(array($data))));
+    }
+
 }
 
 FannieDispatch::conditionalExec();
 
-?>

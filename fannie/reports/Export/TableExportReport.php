@@ -33,6 +33,7 @@ class TableExportReport extends FannieReportPage
     protected $required_fields = array('id');
     public $description = '[View/Export Table] shows the entire contents of a given database table. 
         For very large tables, it instead shows the first ten thousand records.';
+    public $report_set = 'System';
 
     private $hard_limit = 10000;
 
@@ -74,9 +75,13 @@ class TableExportReport extends FannieReportPage
             return array();
         }
 
+        $noLimit = FormLib::get('noLimit', false);
+
         $row_count = 0;
         $columns = $obj->getColumns();
-        $obj->setFindLimit($this->hard_limit);
+        if ($noLimit == false) {
+            $obj->setFindLimit($this->hard_limit);
+        }
         $data = array();
         foreach ($obj->find() as $row) {
             $record = array();
@@ -100,6 +105,21 @@ class TableExportReport extends FannieReportPage
         </select>
     </div>
     <div class="form-group">
+        <label>Format</label>
+        <select name="excel" class="form-control">
+            <option value="">Web Page (HTML)</option>
+            <option value="csv" selected>CSV</option>
+            <option value="txt" selected>TXT</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label>
+            <input type="checkbox" name="noLimit" value="1" />
+            Export more than 10,000 records
+        </label>
+        <em>Checking this and choosing a very large table may crash your browser.</em>
+    </div>
+    <div class="form-group">
         <button type="submit" class="btn btn-default">Submit</button>
     </div>
 </form>
@@ -121,6 +141,14 @@ HTML;
             is currently capped at ten thousand records to avoid crashing
             the browser.
             </p>';
+    }
+
+    public function unitTest($phpunit)
+    {
+        $this->form = new COREPOS\common\mvc\ValueContainer();
+        $this->form->id = 'EmployeesModel';
+        $this->hard_limit = 1;
+        $phpunit->assertInternalType('array', $this->fetch_report_data());
     }
 }
 

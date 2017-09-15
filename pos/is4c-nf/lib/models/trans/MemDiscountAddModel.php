@@ -23,10 +23,13 @@
 
 namespace COREPOS\pos\lib\models\trans;
 use COREPOS\pos\lib\models\BasicModel;
+use COREPOS\pos\lib\Database;
 
+/*
 if (!class_exists('\\COREPOS\\pos\lib\\models\\trans\\LocalTransModel')) {
     include_once(dirname(__FILE__).'/LocalTransModel.php');
 }
+*/
 
 /**
   @class MemDiscountAddModel
@@ -114,9 +117,9 @@ to apply the relevant discount(s).
     public function normalize($db_name, $mode=BasicModel::NORMALIZE_MODE_CHECK, $doCreate=False)
     {
         if ($db_name == \CoreLocal::get('pDatabase')) {
-            $this->connection = \Database::pDataConnect();
+            $this->connection = Database::pDataConnect();
         } else if ($db_name == \CoreLocal::get('tDatabase')) {
-            $this->connection = \Database::tDataConnect();
+            $this->connection = Database::tDataConnect();
         } else {
             echo "Error: Unknown database ($db_name)";
             return false;
@@ -131,7 +134,7 @@ to apply the relevant discount(s).
         );
         echo "==========================================\n";
 
-        if (strstr($viewSQL, '0 AS memType') || strstr($viewSQL, '0 AS ' . $this->connection->identifier_escape('memType'))) {
+        if (strstr($viewSQL, '0 AS memType') || strstr($viewSQL, '0 AS ' . $this->connection->identifierEscape('memType'))) {
             /**
               Structure-check 27Dec2013
               Make sure memType is calcluated instead of hardcoded to zero
@@ -141,7 +144,7 @@ to apply the relevant discount(s).
                 echo "View needs to be rebuild to calculate memType correctly\n";    
             } else {
                 echo "Rebuilding view to calculate memType correctly... ";
-                $this->connection->query('DROP VIEW ' . $this->connection->identifier_escape($this->name));
+                $this->connection->query('DROP VIEW ' . $this->connection->identifierEscape($this->name));
                 $success = $this->create();
                 echo ($success ? 'succeeded' : 'failed') . "\n";
             }

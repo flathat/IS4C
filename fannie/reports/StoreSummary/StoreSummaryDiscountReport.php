@@ -246,11 +246,11 @@ class StoreSummaryDiscountReport extends FannieReportPage {
 
         $taxNames = array(0 => '');
         $tQ = "SELECT id, rate, description FROM taxrates WHERE id > 0 ORDER BY id";
-        $tS = $dbc->prepare_statement("$tQ");
-        $tR = $dbc->exec_statement($tS);
+        $tS = $dbc->prepare("$tQ");
+        $tR = $dbc->execute($tS);
         // Try generating code in this loop for use in SELECT and reporting.
         //  See SalesAndTaxTodayReport.php
-        while ( $trow = $dbc->fetch_array($tR) ) {
+        while ( $trow = $dbc->fetchArray($tR) ) {
             $taxNames[$trow['id']] = $trow['description'];
         }
 
@@ -279,9 +279,9 @@ class StoreSummaryDiscountReport extends FannieReportPage {
                     sname VARCHAR(50),
                     dept_no INT(11)
                 )";
-            $tbS = $dbc->prepare_statement($tbQ);
+            $tbS = $dbc->prepare($tbQ);
             $args = array();
-            $tbR = $dbc->exec_statement($tbS,$args);
+            $tbR = $dbc->execute($tbS,$args);
             if ($tbR === false) {
                 $dbc->logger("Failed: $tbQ");
             }
@@ -431,15 +431,15 @@ class StoreSummaryDiscountReport extends FannieReportPage {
         // #'q
         if (!$includeToday) {
             // The whole range is before today.
-            $totalsP = $dbc->prepare_statement($totals);
+            $totalsP = $dbc->prepare($totals);
             $totalArgs = array($d1.' 00:00:00', $d2.' 23:59:59');
-            $totalsR = $dbc->exec_statement($totalsP, $totalArgs);
+            $totalsR = $dbc->execute($totalsP, $totalArgs);
         } else {
             // Before today.
             $ttQ = "INSERT INTO $tempTable $totals";
-            $ttS = $dbc->prepare_statement($ttQ);
+            $ttS = $dbc->prepare($ttQ);
             $totalArgs = array($d1.' 00:00:00', $d2.' 23:59:59');
-            $ttR = $dbc->exec_statement($ttS,$totalArgs);
+            $ttR = $dbc->execute($ttS,$totalArgs);
             if ($ttR !== false) {
                 $noop = 1;
                 //$dbc->logger("OK Before Today Populating: $ttQ");
@@ -452,8 +452,8 @@ class StoreSummaryDiscountReport extends FannieReportPage {
                 $totalsToday = preg_replace("/FROM .* AS t/", "FROM $dlogToday AS t", $totals);
             }
             $ttQ = "INSERT INTO $tempTable $totalsToday";
-            $ttS = $dbc->prepare_statement($ttQ);
-            $ttR = $dbc->exec_statement($ttS,$totalArgs);
+            $ttS = $dbc->prepare($ttQ);
+            $ttR = $dbc->execute($ttS,$totalArgs);
             if ($ttR !== false) {
                 $noop = 1;
                 //$dbc->logger("OK Today Populating: $ttQ");
@@ -461,9 +461,9 @@ class StoreSummaryDiscountReport extends FannieReportPage {
                 $dbc->logger("Failed Today Populating: $ttQ");
             }
             // Get the combined.
-            $totalsP = $dbc->prepare_statement($totalsQforTemp);
+            $totalsP = $dbc->prepare($totalsQforTemp);
             $args = array();
-            $totalsR = $dbc->exec_statement($totalsP, $args);
+            $totalsR = $dbc->execute($totalsP, $args);
             if ($totalsR !== false) {
                 $noop = 1;
                 //$dbc->logger("OK tempTable getting: $totalsQforTemp");
@@ -485,7 +485,7 @@ class StoreSummaryDiscountReport extends FannieReportPage {
         $this->grandTax1Total = 0;
         $this->grandTax2Total = 0;
 
-        while ($row = $dbc->fetch_array($totalsR)) {
+        while ($row = $dbc->fetchArray($totalsR)) {
             if ($curSuper != $row['sid']){
                 $curSuper = $row['sid'];
             }
@@ -652,10 +652,10 @@ class StoreSummaryDiscountReport extends FannieReportPage {
                     AND t.trans_subtype not in ('CP','IC')
                 GROUP BY m.memDesc
                 ORDER BY m.memDesc";
-        $discS = $dbc->prepare_statement($discQ);
-        $discR = $dbc->exec_statement($discS,$totalArgs);
+        $discS = $dbc->prepare($discQ);
+        $discR = $dbc->execute($discS,$totalArgs);
        $record = array('','','','','','','','','','','');
-        while($discW = $dbc->fetch_row($discR)){
+        while($discW = $dbc->fetchRow($discR)){
             $ddKey= $discW['memDesc'];
             if (array_key_exists($ddKey,$discountData)) {
                 $discountData[$ddKey][1] += $discW['ct'];
@@ -675,9 +675,9 @@ class StoreSummaryDiscountReport extends FannieReportPage {
         if ($includeToday) {
             $dlogToday = $TRANS . 'dlog';
             $discQtoday = preg_replace("/FROM .* AS t/", "FROM $dlogToday AS t", $discQ);
-            $discS = $dbc->prepare_statement($discQtoday);
-            $discR = $dbc->exec_statement($discS,$totalArgs);
-            while($discW = $dbc->fetch_row($discR)){
+            $discS = $dbc->prepare($discQtoday);
+            $discR = $dbc->execute($discS,$totalArgs);
+            while($discW = $dbc->fetchRow($discR)){
                 $ddKey= $discW['memDesc'];
                 if (array_key_exists($ddKey,$discountData)) {
                     $discountData[$ddKey][1] += $discW['ct'];
@@ -740,9 +740,9 @@ class StoreSummaryDiscountReport extends FannieReportPage {
                 AND (t.tax > 0){$this->shrinkageUsers}
             GROUP BY t.tax
             ORDER BY t.tax DESC";
-        $statement = $dbc->prepare_statement($query);
-        $results = $dbc->exec_statement($statement, $totalArgs);
-        while ($res = $dbc->fetch_row($results)) {
+        $statement = $dbc->prepare($query);
+        $results = $dbc->execute($statement, $totalArgs);
+        while ($res = $dbc->fetchRow($results)) {
             switch ($res['taxid']) {
                 case 1:
                     $this->grandTax1Total += $res['taxamt'];
@@ -757,9 +757,9 @@ class StoreSummaryDiscountReport extends FannieReportPage {
         if ($includeToday) {
             $dlogToday = $TRANS . 'dlog';
             $queryToday = preg_replace("/FROM .* AS t/", "FROM $dlogToday AS t", $query);
-            $statement = $dbc->prepare_statement($queryToday);
-            $results = $dbc->exec_statement($statement, $totalArgs);
-            while ($res = $dbc->fetch_row($results)) {
+            $statement = $dbc->prepare($queryToday);
+            $results = $dbc->execute($statement, $totalArgs);
+            while ($res = $dbc->fetchRow($results)) {
                 switch ($res['taxid']) {
                     case 1:
                         $this->grandTax1Total += $res['taxamt'];
@@ -820,8 +820,8 @@ class StoreSummaryDiscountReport extends FannieReportPage {
          */
         if ($includeToday && ! $isTemporary) {
             $dropQ = "DROP table $tempTable";
-            $dropS = $dbc->prepare_statement($dropQ);
-            $dropR = $dbc->exec_statement($dropS,array());
+            $dropS = $dbc->prepare($dropQ);
+            $dropR = $dbc->execute($dropS,array());
             if ($dropR !== false) {
                 $noop = 1;
                 //$dbc->logger("DROP $tempTable didn't fail.");

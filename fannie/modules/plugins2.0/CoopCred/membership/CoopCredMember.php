@@ -31,7 +31,7 @@
  * For bootstrapped v.2 re-code the table with floating divs.
  */
 
-class CoopCredMember extends \COREPOS\Fannie\API\member\MemberModule
+class CoopCredMember extends COREPOS\Fannie\API\member\MemberModule 
 {
 
     protected $regularMemberMin = 1;
@@ -106,8 +106,8 @@ class CoopCredMember extends \COREPOS\Fannie\API\member\MemberModule
             FROM CCredPrograms
             WHERE active =1
             ORDER BY programName ASC";
-        $progS = $dbc->prepare_statement($progQ);
-        $progR = $dbc->exec_statement($progS,array());
+        $progS = $dbc->prepare($progQ);
+        $progR = $dbc->execute($progS,array());
         $ccred_programs = array();
         $pID = '';  // format: P01
         $firstMpID = ''; // a $pID
@@ -149,8 +149,8 @@ class CoopCredMember extends \COREPOS\Fannie\API\member\MemberModule
                 JOIN CCredPrograms AS p ON m.programID = p.programID
                 WHERE m.cardNo =?
                     AND p.active =1";
-        $infoS = $dbc->prepare_statement($infoQ);
-        $infoR = $dbc->exec_statement($infoS,array($memNum));
+        $infoS = $dbc->prepare($infoQ);
+        $infoR = $dbc->execute($infoS,array($memNum));
 
         $membershipCount = 0;
         $firstCreditOK = ($inProgramID > -1)?1:0;
@@ -488,7 +488,7 @@ class CoopCredMember extends \COREPOS\Fannie\API\member\MemberModule
      * If member not in CCredMemberships for this program
      *  add to CCRedMembers IFF creditOK ticked.
      */
-    function SaveFormData($memNum)
+    public function saveFormData($memNum, $json=array())
     {
         global $FANNIE_ROOT;
         //$dbc = $this->db();

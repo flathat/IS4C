@@ -21,6 +21,7 @@
 
 *********************************************************************************/
 
+use COREPOS\pos\lib\gui\NoInputCorePage;
 include_once(dirname(__FILE__).'/../../lib/AutoLoader.php');
 
 class ECheckVerifyPage extends NoInputCorePage 
@@ -31,7 +32,7 @@ class ECheckVerifyPage extends NoInputCorePage
         $amount = $_REQUEST['amount'];
         if (isset($_REQUEST['selectlist'])) {
             $opt = $_REQUEST['selectlist'];
-            if ($opt == '' || $opt == 'CL') {
+            if ($opt == '' || strtoupper($opt) == 'CL') {
                 CoreLocal::set('lastRepeat', '');
                 $this->change_page($this->page_url."gui-modules/pos2.php");
 
@@ -55,6 +56,7 @@ class ECheckVerifyPage extends NoInputCorePage
     function head_content()
     {
         ?>
+        <script type="text/javascript" src="../../js/singleSubmit.js"></script>
         <script type="text/javascript" >
         var prevKey = -1;
         var prevPrevKey = -1;
@@ -93,10 +95,11 @@ class ECheckVerifyPage extends NoInputCorePage
         <div class="centeredDisplay colored">
         <span class="larger">Check Type ($<?php echo sprintf('%.2f', $_REQUEST['amount']); ?>)</span>
         <form id="selectform" method="post" action="<?php echo $_SERVER['PHP_SELF']; ?>">
-            <select size="2" name="selectlist" 
+            <select size="3" name="selectlist"
                 id="selectlist" onblur="$('#selectlist').focus();">
             <option selected value="<?php echo $echeck; ?>">Electronic</option>
             <option value="<?php echo $paper; ?>">Paper</option>
+            <option value="TC">Gift Certificate</option>
             </select>
             <input type="hidden" name="amount" value="<?php echo $_REQUEST['amount']; ?>" />
         </form>
@@ -107,12 +110,10 @@ class ECheckVerifyPage extends NoInputCorePage
         </div>
         <?php
         $this->add_onload_command("\$('#selectlist').focus();\n");
+        $this->add_onload_command("singleSubmit.restrict('#selectform');\n");
         $this->add_onload_command("\$('#selectlist').keypress(processkeypress);\n");
     } // END body_content() FUNCTION
 }
 
-if (basename(__FILE__) == basename($_SERVER['PHP_SELF'])) {
-    new ECheckVerifyPage();
-}
+AutoLoader::dispatch();
 
-?>

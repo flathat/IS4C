@@ -45,20 +45,28 @@ class EndItemSale extends FannieRESTfulPage {
         $model->discounttype(0);
         $model->special_price(0);
         $model->modified(date('Y-m-d H:i:s'));
-        $model->save();
+        if ($this->config->get('STORE_MODE') == 'HQ') {
+            $stores = new StoresModel($dbc);
+            $stores->hasOwnItems(1);
+            foreach ($stores->find() as $obj) {
+                $model->store_id($obj->storeID());
+                $model->save();
+            }
+        } else {
+            $model->save();
+        }
 
         $batchID = FormLib::get_form_value('batchID');
         $batchUPC = FormLib::get_form_value('batchUPC');
         if ($batchID !== '' && $batchUPC !== ''){
             if (substr($batchUPC,0,2) != 'LC')
                 $batchUPC = BarcodeLib::padUPC($batchUPC);
-            $batchP = $dbc->prepare_statement('DELETE FROM batchList
+            $batchP = $dbc->prepare('DELETE FROM batchList
                     WHERE upc=? AND batchID=?');
-            $batchR = $dbc->exec_statement($batchP, array($batchUPC, $batchID));
+            $batchR = $dbc->execute($batchP, array($batchUPC, $batchID));
         }
 
-        require('laneUpdates.php');
-        updateProductAllLanes($upc);
+        COREPOS\Fannie\API\data\ItemSync::sync($upc);
 
         header('Location: ItemEditorPage.php?searchupc='.$upc);
         return False;
@@ -69,11 +77,11 @@ class EndItemSale extends FannieRESTfulPage {
         $dbc = FannieDB::get($FANNIE_OP_DB);
         $upc = BarcodeLib::padUPC($this->id);
 
-        $itemP = $dbc->prepare_statement('SELECT p.description,p.special_price,
+        $itemP = $dbc->prepare('SELECT p.description,p.special_price,
                         CASE WHEN u.likeCode IS NULL THEN -1 ELSE u.likeCode END as lc
                         FROM products AS p LEFT JOIN upcLike AS u
                         ON p.upc=u.upc WHERE p.upc=?');
-        $itemR = $dbc->exec_statement($itemP, array($upc));
+        $itemR = $dbc->execute($itemP, array($upc));
         if ($dbc->num_rows($itemR)==0)
             return '<div class="alert alert-danger">Item not found</div>';
         $itemW = $dbc->fetch_row($itemR);
@@ -81,11 +89,11 @@ class EndItemSale extends FannieRESTfulPage {
             <input type="hidden" name="id" value="'.$upc.'" />';
         $ret .= sprintf('<p>%s is currently on sale for $%.2f', $itemW['description'], $itemW['special_price']);
 
-        $batchP = $dbc->prepare_statement("SELECT b.batchName, b.batchID, l.upc FROM batches AS b 
+        $batchP = $dbc->prepare("SELECT b.batchName, b.batchID, l.upc FROM batches AS b 
             LEFT JOIN batchList as l
             on b.batchID=l.batchID WHERE '".date('Y-m-d')."' BETWEEN b.startDate
             AND b.endDate AND (l.upc=? OR l.upc=?)");
-        $batchR = $dbc->exec_statement($batchP,array($upc,'LC'.$itemW['lc']));
+        $batchR = $dbc->execute($batchP,array($upc,'LC'.$itemW['lc']));
         if ($dbc->num_rows($batchR) == 0) {
             $ret .= '<div class="alert alert-warning">The item does not appear to be in an active batch</div>';
         } else {
@@ -111,8 +119,13 @@ class EndItemSale extends FannieRESTfulPage {
             </p>';
     }
 
+    public function unitTest($phpunit)
+    {
+        $this->id = '4011';
+        $phpunit->assertNotEquals(0, strlen($this->get_id_view()));
+    }
+
 }
 
 FannieDispatch::conditionalExec();
 
-?>

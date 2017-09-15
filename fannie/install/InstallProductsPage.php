@@ -29,7 +29,7 @@ if (!class_exists('FannieAPI')) {
 if (!function_exists('confset')) {
     include(dirname(__FILE__) . '/util.php');
 }
-if (!function_exists('create_if_needed')) {
+if (!function_exists('dropDeprecatedStructure')) {
     include(dirname(__FILE__) . '/db.php');
 }
 
@@ -45,25 +45,6 @@ class InstallProductsPage extends \COREPOS\Fannie\API\InstallPage {
     public $description = "
     Class for the Products install and config options page.
     ";
-    public $themed = true;
-
-    // This replaces the __construct() in the parent.
-    public function __construct() {
-
-        // To set authentication.
-        FanniePage::__construct();
-
-        // Link to a file of CSS by using a function.
-        $this->add_css_file("../src/style.css");
-        $this->add_css_file("../src/javascript/jquery-ui.css");
-        $this->add_css_file("../src/css/install.css");
-
-        // Link to a file of JS by using a function.
-        $this->add_script("../src/javascript/jquery.js");
-        $this->add_script("../src/javascript/jquery-ui.js");
-
-    // __construct()
-    }
 
     /**
       Define any CSS needed
@@ -79,18 +60,13 @@ class InstallProductsPage extends \COREPOS\Fannie\API\InstallPage {
     //css_content()
     }
 
-    /**
-      Define any javascript needed
-      @return A javascript string
-    function javascript_content(){
-        $js ="";
-        return $js;
-    }
-    */
-
     function body_content()
     {
         include(dirname(__FILE__) . '/../config.php');
+        // set a default if needed
+        if (!isset($FANNIE_PRODUCT_MODULES) || !is_array($FANNIE_PRODUCT_MODULES) || count($FANNIE_PRODUCT_MODULES) === 0) {
+            $FANNIE_PRODUCT_MODULES = array('BaseItemModule' => array('seq'=>0, 'show'=>1, 'expand'=>1));
+        }
 
         ob_start();
 
@@ -98,20 +74,9 @@ class InstallProductsPage extends \COREPOS\Fannie\API\InstallPage {
 ?>
 
         <form action=InstallProductsPage.php method=post>
-        <h1 class="install">
-            <?php 
-            if (!$this->themed) {
-                echo "<h1 class='install'>{$this->header}</h1>";
-            }
-            ?>
         </h1>
         <?php
-        if (is_writable('../config.php')){
-            echo "<div class=\"alert alert-success\"><i>config.php</i> is writeable</div>";
-        }
-        else {
-            echo "<div class=\"alert alert-danger\"><b>Error</b>: config.php is not writeable</div>";
-        }
+        echo $this->writeCheck(dirname(__FILE__) . '/../config.php');
         ?>
         <hr />
         <h4 class="install">Product Information Modules</h4>
@@ -126,7 +91,7 @@ class InstallProductsPage extends \COREPOS\Fannie\API\InstallPage {
         <br />
         <br /><b>Available Modules</b> <br />
         <?php
-        $mods = FannieAPI::ListModules('ItemModule',True);
+        $mods = FannieAPI::ListModules('COREPOS\Fannie\API\item\ItemModule',True);
         sort($mods);
         ?>
         <table class="table">
@@ -192,15 +157,6 @@ class InstallProductsPage extends \COREPOS\Fannie\API\InstallPage {
             $FANNIE_PRODUCT_MODULES[$name] = $params;
         }
 
-        // set a default if needed
-        if (count($FANNIE_PRODUCT_MODULES) == 0) {
-            $FANNIE_PRODUCT_MODULES['BaseItemModule'] = array(
-                'seq' => 0,
-                'show' => 1,
-                'expand' => 1,
-            );
-        }
-
         $default = array('seq' => 0, 'show' => 0, 'expand' => 0);
         $opts = array('No', 'Yes', 'Auto');
         foreach ($mods as $module) {
@@ -256,35 +212,80 @@ class InstallProductsPage extends \COREPOS\Fannie\API\InstallPage {
         echo installSelectField('FANNIE_REPORT_DEPT_MODE', $FANNIE_REPORT_DEPT_MODE, $report_opts, 'range');
         ?>
         <hr />
+        <label>Special Order Interface</label>
+        <?php
+        $so_opts = array(
+            'bootstrap' => 'Consistent',
+            'legacy' => 'Legacy',
+        ); 
+        echo installSelectField('FANNIE_SO_UI', $FANNIE_SO_UI, $so_opts, 'bootstrap');
+        ?>
+        <label>Special Order Email Template ID</label>
+        <?php
+        echo installTextField('FANNIE_SO_TEMPLATE', $FANNIE_SO_TEMPLATE, 0);
+        ?> 
+        <hr />
+        <h4 class="install">Tags & Signs</h4>
         <label>Default Shelf Tag Layout</label>
         <?php
         $layouts = 'No Layouts Found!';
-        if (file_exists($FANNIE_ROOT.'admin/labels/scan_layouts.php') && !function_exists('scan_layouts')){
+        if (!function_exists('scan_layouts')) {
             include($FANNIE_ROOT.'admin/labels/scan_layouts.php');
-            $layouts = scan_layouts();
         }
+        $layouts = scan_layouts();
         echo installSelectField('FANNIE_DEFAULT_PDF', $FANNIE_DEFAULT_PDF, $layouts, 'Fannie Standard');
         ?>
         <label>Shelf Tag Data Source</label>
         <?php
-        $mods = FannieAPI::listModules('TagDataSource');
+        $mods = FannieAPI::listModules('COREPOS\Fannie\API\item\TagDataSource');
         $source = array('' => 'Default');
         foreach ($mods as $m) {
             $source[$m] = $m;
         }
         echo installSelectField('FANNIE_TAG_DATA_SOURCE', $FANNIE_TAG_DATA_SOURCE, $source);
+
+
+        $printers = array();
+        $printer_options = array(""=>"");
+        exec("lpstat -a", $printers);
+        foreach($printers as $printer) {
+          $name = explode(" ", $printer, 2);
+          $printer_options[$name[0]] = $name[0];
+        }
+        echo 'Printer for instant label: '.installSelectField('FANNIE_SINGLE_LABEL_PRINTER', $FANNIE_SINGLE_LABEL_PRINTER, $printer_options);
+
+        echo 'Layout for instant label: '.installSelectField('FANNIE_SINGLE_LABEL_LAYOUT', $FANNIE_SINGLE_LABEL_LAYOUT, $layouts, 'Zebra_Single_Label');
+        ?>
+        <label>Enabled Tag Layouts</label>
+        <?php
+        echo installMultiSelectField('FANNIE_ENABLED_TAGS', $FANNIE_ENABLED_TAGS, $layouts);
         ?>
         <label>Default Signage Layout</label>
         <?php
         $mods = FannieAPI::listModules('\COREPOS\Fannie\API\item\FannieSignage');
         echo installSelectField('FANNIE_DEFAULT_SIGNAGE', $FANNIE_DEFAULT_SIGNAGE, $mods);
         ?>
+        <label>Enabled Sign Layouts</label>
+        <?php
+        echo installMultiSelectField('FANNIE_ENABLED_SIGNAGE', $FANNIE_ENABLED_SIGNAGE, $mods);
+        ?>
+        <hr />
+        <h4 class="install">Purchase Orders</h4>
+        <label>Default Purchase Order Export</label>
+        <?php
+        $mods = COREPOS\Fannie\API\item\InventoryLib::orderExporters();
+        echo installSelectField('FANNIE_DEFAULT_PO_EXPORT', $FANNIE_DEFAULT_PO_EXPORT, $mods);
+        ?>
         <label>Default Account Coding</label>
         <?php
-        $mods = array('\COREPOS\Fannie\API\item\Accounting', '\COREPOS\Fannie\API\item\StandardAccounting');
+        $mods = array('COREPOS\Fannie\API\item\Accounting', 'COREPOS\Fannie\API\item\StandardAccounting');
         $mods = array_merge($mods, FannieAPI::listModules('\COREPOS\Fannie\API\item\Accounting'));
         echo installSelectField('FANNIE_ACCOUNTING_MODULE', $FANNIE_ACCOUNTING_MODULE, $mods);
         ?>
+        <label>From Email Address for Purchase Orders</label>
+        <?php echo installTextField('FANNIE_PO_EMAIL', $FANNIE_PO_EMAIL, ''); ?>
+        <label>From Email Name for Purchase Orders</label>
+        <?php echo installTextField('FANNIE_PO_EMAILNAME', $FANNIE_PO_EMAILNAME, ''); ?>
         <hr />
         <h4 class="install">Service Scale Integration</h4>
         <p class='ichunk' style="margin:0.4em 0em 0.4em 0em;"><b>Data Gate Weigh directory</b>
@@ -352,9 +353,12 @@ class InstallProductsPage extends \COREPOS\Fannie\API\InstallPage {
     // body_content
     }
 
+    public function unitTest($phpunit)
+    {
+        $phpunit->assertNotEquals(0, strlen($this->body_content()));
+    }
+
 // InstallProductsPage
 }
 
-FannieDispatch::conditionalExec(false);
-
-?>
+FannieDispatch::conditionalExec();

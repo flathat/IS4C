@@ -1863,7 +1863,7 @@ function getNewContactId($tempMember) {
     }
 
     // Get the _contact.id, which was created by auto-increment
-    //$retVal = $dbConn->insert_id; // returns 0, don't know why.
+    //$retVal = $dbConn->insertID(); // returns 0, don't know why.
     $sql = "SELECT LAST_INSERT_ID()";
     $rslt = $dbConn->query("$sql");
     if ( $dbConn->errno ) {
@@ -1932,7 +1932,7 @@ function getNewMemberId($contactId) {
     }
 
     // Get the _membership.id, which was created by auto-increment
-    //$retVal = $dbConn->insert_id; // returns 0, don't know why.
+    //$retVal = $dbConn->insertID(); // returns 0, don't know why.
     $sql = "SELECT LAST_INSERT_ID()";
     $rslt = $dbConn->query("$sql");
     if ( $dbConn->errno ) {
@@ -3246,7 +3246,7 @@ function civiTestAndDie($dbConn) {
     // Quick test.
     echo "Civi Members Numbered\n";
     //mysqli: while ( $row = $civim->fetch_row() ) {}
-    while ( $row = $dbConn->fetch_array($civim) ) {
+    while ( $row = $dbConn->fetchRow($civim) ) {
         // The numeric keys come first. 0,2,4. Name keys 1, 3, 5.
         $flds = getNameKeys($row);
         //$flds = array_keys($row);
@@ -3285,7 +3285,7 @@ function civiTestAndDie2($dbConn) {
     // Quick test.
     echo "Civi Contacts, Numbered\n";
     //mysqli: while ( $row = $civim->fetch_row() ) {}
-    while ( $row = $dbConn->fetch_array($civim) ) {
+    while ( $row = $dbConn->fetchRow($civim) ) {
         // The numeric keys come first. 0,2,4. Name keys 1, 3, 5.
         //$flds = getNameKeys($row);
         //$lineOut = implode("\t", $flds) . "\n";
@@ -3429,15 +3429,15 @@ function addTempMembers($dbc="")
     $mt = $dbc->tableDefinition('memtype');
     $dQuery = "SELECT custdataType,discount,staff,ssi from memtype " .
         "WHERE memtype=?";
-    $defaultsQ = $dbc->prepare_statement($dQuery);
+    $defaultsQ = $dbc->prepare($dQuery);
     if ($dbc->tableExists('memdefaults') && 
         (!isset($mt['custdataType']) || !isset($mt['discount']) ||
         !isset($mt['staff']) || !isset($mt['ssi']))) {
         $dQuery = "SELECT cd_type as custdataType,discount,staff,SSI as ssi " .
                 "FROM memdefaults WHERE memtype=?";
-        $defaultsQ = $dbc->prepare_statement($dQuery);
+        $defaultsQ = $dbc->prepare($dQuery);
     }
-    $defaultsR = $dbc->exec_statement($defaultsQ,array($mtype));
+    $defaultsR = $dbc->execute($defaultsQ,array($mtype));
     $defaults = $dbc->fetch_row($defaultsR);
 
     $start = $tempMemberRange + 1;
@@ -3471,13 +3471,13 @@ function addTempMembers($dbc="")
     $meminfo->email_1('');
     $meminfo->email_2('');
 
-    $chkP = $dbc->prepare_statement('SELECT CardNo FROM custdata WHERE CardNo=?');
-    $mdP = $dbc->prepare_statement("INSERT INTO memDates VALUES (?,NULL,NULL)");
-    $mcP = $dbc->prepare_statement("INSERT INTO memContact (card_no,pref) VALUES (?,?)");
+    $chkP = $dbc->prepare('SELECT CardNo FROM custdata WHERE CardNo=?');
+    $mdP = $dbc->prepare("INSERT INTO memDates VALUES (?,NULL,NULL)");
+    $mcP = $dbc->prepare("INSERT INTO memContact (card_no,pref) VALUES (?,?)");
     $membersAdded = 0;
     for($i=$start; $i<=$end; $i++) {
         // skip if record already exists
-        $chkR = $dbc->exec_statement($chkP,array($i));
+        $chkR = $dbc->execute($chkP,array($i));
         if ($dbc->num_rows($chkR) > 0) {
             continue;
         }
@@ -3490,9 +3490,9 @@ function addTempMembers($dbc="")
         $meminfo->save();
 
         /* memDates */
-        $dbc->exec_statement($mdP, array($i));
+        $dbc->execute($mdP, array($i));
         /* memContact */
-        $dbc->exec_statement($mcP, array($i,$pref));
+        $dbc->execute($mcP, array($i,$pref));
 
         $membersAdded++;
     }
@@ -4592,4 +4592,3 @@ exit();
 */
 
 
-?>

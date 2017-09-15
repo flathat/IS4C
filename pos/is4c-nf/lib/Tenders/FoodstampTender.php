@@ -21,6 +21,11 @@
 
 *********************************************************************************/
 
+namespace COREPOS\pos\lib\Tenders;
+use COREPOS\pos\lib\DisplayLib;
+use COREPOS\pos\lib\TransRecord;
+use \CoreLocal;
+
 /**
   @class FoodstampTender
   Tender module for EBT
@@ -39,7 +44,7 @@ class FoodstampTender extends TenderModule
                 _("eligible amount must be totaled before foodstamp tender can be accepted"),
                 '',
                 false,
-                array('Total [FS Total]' => 'parseWrapper(\'FNTL\');$(\'#reginput\').focus();', 'Dimiss [clear]' => 'parseWrapper(\'CL\');')
+                array(_('Total [FS Total]') => 'parseWrapper(\'FNTL\');$(\'#reginput\').focus();', _('Dimiss [clear]') => 'parseWrapper(\'CL\');')
             );
         } elseif ($this->amount !== false && $this->amount > 0 && $this->amount > (CoreLocal::get("fsEligible") + 0.005)) {
             return DisplayLib::xboxMsg(
@@ -48,7 +53,7 @@ class FoodstampTender extends TenderModule
             );
         } elseif ($this->amount !== false && $this->amount <= 0 && $this->amount < (CoreLocal::get("fsEligible") - 0.005)) {
             return DisplayLib::xboxMsg(
-                _('Foodstamp return cannot exceed eligible amount' . $info), 
+                _('Foodstamp return cannot exceed eligible amount' . CoreLocal::get('fsEligible')), 
                 DisplayLib::standardClearButton()
             );
         }

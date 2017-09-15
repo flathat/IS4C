@@ -21,12 +21,18 @@
 
     DHermann test
 *********************************************************************************/
+use COREPOS\pos\lib\FormLib;
+use COREPOS\pos\lib\MiscLib;
+use COREPOS\pos\install\conf\Conf;
+use COREPOS\pos\install\conf\FormFactory;
+use COREPOS\pos\install\db\Creator;
+use COREPOS\pos\install\InstallUtilities;
 
 ini_set('display_errors','1');
 
 include(realpath(dirname(__FILE__).'/../lib/AutoLoader.php'));
 AutoLoader::loadMap();
-include('InstallUtilities.php');
+$form = new FormFactory(null);
 ?>
 <html>
 <head>
@@ -36,7 +42,7 @@ body {
     line-height: 1.5em;
 }
 </style>
-<script type="text/javascript" src="../js/jquery.js"></script>
+<script type="text/javascript" src="../js/<?php echo MiscLib::jqueryFile(); ?>"></script>
 </head>
 <body>
 <?php include('tabs.php'); ?>
@@ -45,20 +51,19 @@ body {
 
 <form action=index.php method=post>
 
-<div class="alert"><?php InstallUtilities::checkWritable('../ini.php', False, 'PHP'); ?></div>
-<div class="alert"><?php InstallUtilities::checkWritable('../ini.json', false, 'JSON'); ?></div>
-<div class="alert"><?php InstallUtilities::checkWritable('../ini-local.php', True, 'PHP'); ?></div>
+<div class="alert"><?php Conf::checkWritable('../ini.json', false, 'JSON'); ?></div>
+<div class="alert"><?php Conf::checkWritable('../ini.php', true, 'PHP'); ?></div>
 
-PHP is running as: <?php echo InstallUtilities::whoami(); ?><br />
+<?php echo _('PHP is running as: ') . Conf::whoami(); ?><br />
 <?php
 if (!function_exists("socket_create")){
-    echo '<b>Warning</b>: PHP socket extension is not enabled. NewMagellan will not work quite right';
+    echo _('<b>Warning</b>: PHP socket extension is not enabled. NewMagellan will not work quite right');
 }
 ?>
 <br />
 <table id="install" border=0 cellspacing=0 cellpadding=4>
 <?php 
-$register_id_is_mapped = false;
+$lane_id_is_mapped = false;
 $store_id_is_mapped = false;
 if (is_array(CoreLocal::get('LaneMap'))) {
     $my_ips = MiscLib::getAllIPs();
@@ -68,35 +73,35 @@ if (is_array(CoreLocal::get('LaneMap'))) {
             continue;
         }
         if (!is_array($map[$ip])) {
-            echo '<tr><td colspan="3">Error: invalid entry for ' . $ip . '</td></tr>';
+            echo '<tr><td colspan="3">' . _('Error: invalid entry for ') . $ip . '</td></tr>';
         } elseif (!isset($map[$ip]['register_id'])) {
-            echo '<tr><td colspan="3">Error: missing register_id for ' . $ip . '</td></tr>';
+            echo '<tr><td colspan="3">' . _('Error: missing register_id for ') . $ip . '</td></tr>';
         } elseif (!isset($map[$ip]['store_id'])) {
-            echo '<tr><td colspan="3">Error: missing store_id for ' . $ip . '</td></tr>';
+            echo '<tr><td colspan="3">' . _('Error: missing store_id for ') . $ip . '</td></tr>';
         } else {
             if (CoreLocal::get('store_id') === '') {
                 // no store_id set. assign based on IP
                 CoreLocal::set('store_id', $map[$ip]['store_id']);
                 $store_id_is_mapped = true;
             } else if (CoreLocal::get('store_id') != $map[$ip]['store_id']) {
-                echo '<tr><td colspan="3">Warning: store_id is set to ' 
-                    . CoreLocal::get('store_id') . '. Based on IP ' . $ip
-                    . ' it should be set to ' . $map[$ip]['store_id'] . '</td></tr>';
+                echo '<tr><td colspan="3">' . _('Warning: store_id is set to ')
+                    . CoreLocal::get('store_id') . _('. Based on IP ') . $ip
+                    . _(' it should be set to ') . $map[$ip]['store_id'] . '</td></tr>';
             } else {
                 $store_id_is_mapped = true;
             }
             if (CoreLocal::get('laneno') === '') {
                 // no store_id set. assign based on IP
                 CoreLocal::set('laneno', $map[$ip]['register_id']);
-                $register_id_is_mapped = true;
+                $lane_id_is_mapped = true;
             } else if (CoreLocal::get('laneno') != $map[$ip]['register_id']) {
-                echo '<tr><td colspan="3">Warning: register_id is set to ' 
-                    . CoreLocal::get('laneno') . '. Based on IP ' . $ip
-                    . ' it should be set to ' . $map[$ip]['register_id'] . '</td></tr>';
+                echo '<tr><td colspan="3">' . _('Warning: register_id is set to ')
+                    . CoreLocal::get('laneno') . _('. Based on IP ') . $ip
+                    . _(' it should be set to ') . $map[$ip]['register_id'] . '</td></tr>';
             } else {
                 // map entry matches
-                // should maybe delete ini.php entry if it exists?
-                $register_id_is_mapped = true;
+                // should maybe delete ini entry if it exists?
+                $lane_id_is_mapped = true;
             }
 
             // use first matching IP
@@ -106,75 +111,74 @@ if (is_array(CoreLocal::get('LaneMap'))) {
 }
 ?>
 <tr>
-    <td style="width:30%;">Lane number*:</td>
+    <td style="width:30%;"><?php echo _('Lane number*:'); ?></td>
     <?php if (CoreLocal::get('laneno') !== '' && CoreLocal::get('laneno') == 0) { ?>
     <td>0 (Zero)</td>
-    <?php } elseif ($register_id_is_mapped) { ?>
-    <td><?php echo CoreLocal::get('laneno'); ?> (assigned by IP; cannot be edited)</td>
+    <?php } elseif ($lane_id_is_mapped) { ?>
+    <td><?php echo CoreLocal::get('laneno') . _(' (assigned by IP; cannot be edited)'); ?></td>
     <?php } else { ?>
-    <td><?php echo InstallUtilities::installTextField('laneno', 99, InstallUtilities::INI_SETTING, false); ?></td>
+    <td><?php echo $form->textField('laneno', 99, Conf::INI_SETTING, false); ?></td>
     <?php } ?>
     <td colspan=2>
         <div class="noteTxt">
-        <?php if (CoreLocal::get('laneno') == 99) { ?>
-        Lane #99 is used strictly for testing. Transaction data generated by lane #99 is
-        automatically excluded from sales reports.
-        <?php } ?>
+        <?php if (CoreLocal::get('laneno') == 99) { 
+        echo _('Lane #99 is used strictly for testing. Transaction data generated by lane #99 is
+            automatically excluded from sales reports.');
+        } ?>
         </div>
     </td>
 </tr>
 <tr>
-    <td>Store number*:</td>
+    <td><?php echo _('Store number*:'); ?></td>
     <?php if (CoreLocal::get('store_id') !== '' && CoreLocal::get('store_id') == 0) { ?>
     <td>0 (Zero)</td>
     <?php } elseif ($store_id_is_mapped) { ?>
-    <td><?php echo CoreLocal::get('store_id'); ?> (assigned by IP; cannot be edited)</td>
+    <td><?php echo CoreLocal::get('store_id') . _(' (assigned by IP; cannot be edited)'); ?></td>
     <?php } else { ?>
-    <td><?php echo InstallUtilities::installTextField('store_id', 1, InstallUtilities::INI_SETTING, false); ?></td>
+    <td><?php echo $form->textField('store_id', 1, Conf::INI_SETTING, false); ?></td>
     <?php } ?>
 </tr>
-<tr>
-    <td>Locale:</td>
-    <td><?php echo InstallUtilities::installSelectField('locale', array('en_US','en_CA'), 'en_US'); ?></td>
 <?php if (CoreLocal::get('laneno') === '' || CoreLocal::get('laneno') != 0) { ?>
 <tr>
     <td colspan=2 class="tblheader">
-    <h3>Database set up</h3>
+    <h3><?php echo _('Database set up'); ?></h3>
     </td>
 </tr>
 <tr>
-    <td>Lane database host*: </td>
-    <td><?php echo InstallUtilities::installTextField('localhost', '127.0.0.1', InstallUtilities::INI_SETTING); ?></td>
+    <td><?php echo _('Lane database host*: '); ?></td>
+    <td><?php echo $form->textField('localhost', '127.0.0.1', Conf::INI_SETTING); ?></td>
 </tr>
 <tr>
-    <td>Lane database type*:</td>
+    <td><?php echo _('Lane database type*: '); ?></td>
     <td>
     <?php
     $db_opts = \COREPOS\common\sql\Lib::getDrivers();
-    echo InstallUtilities::installSelectField('DBMS', $db_opts, 'mysql', InstallUtilities::INI_SETTING);
+    $db_keys = array_keys($db_opts);
+    $default = $db_opts[$db_keys[0]];
+    echo $form->selectField('DBMS', $db_opts, $default, Conf::INI_SETTING);
     ?>
     </td>
 </tr>
 <tr>
-    <td>Lane user name*:</td>
-    <td><?php echo InstallUtilities::installTextField('localUser', 'root', InstallUtilities::INI_SETTING); ?></td>
+    <td><?php echo _('Lane user name*: '); ?></td>
+    <td><?php echo $form->textField('localUser', 'root', Conf::INI_SETTING); ?></td>
 </tr>
 <tr>
-    <td>Lane password*:</td>
+    <td><?php echo _('Lane password*: '); ?></td>
     <td>
     <?php
-    echo InstallUtilities::installTextField('localPass', '', InstallUtilities::INI_SETTING, true, array('type'=>'password'));
+    echo $form->textField('localPass', '', Conf::INI_SETTING, true, array('type'=>'password'));
     ?>
     </td>
 </tr>
 <tr>
-    <td>Lane operational DB*:</td>
-    <td><?php echo InstallUtilities::installTextField('pDatabase', 'opdata', InstallUtilities::INI_SETTING); ?></td>
+    <td><?php echo _('Lane operational DB*: '); ?></td>
+    <td><?php echo $form->textField('pDatabase', 'opdata', Conf::INI_SETTING); ?></td>
 </tr>
 <tr>
     <td colspan=2>
 <div class="noteTxt">
-Testing operational DB Connection:
+<?php echo _('Testing operational DB Connection:'); ?>
 <?php
 $gotDBs = 0;
 if (CoreLocal::get("DBMS") == "mysql")
@@ -186,95 +190,82 @@ $sql = InstallUtilities::dbTestConnect(CoreLocal::get('localhost'),
         CoreLocal::get('localUser'),
         CoreLocal::get('localPass'));
 if ($sql === False) {
-    echo "<span class='fail'>Failed</span>";
+    echo "<span class='fail'>" . _('Failed') . "</span>";
     echo '<div class="db_hints" style="margin-left:25px;">';
     if (!function_exists('socket_create')){
-        echo '<i>Try enabling PHP\'s socket extension in php.ini for better diagnostics</i>';
+        echo _('<i>Try enabling PHP\'s socket extension in php.ini for better diagnostics</i>');
     }
     elseif (@MiscLib::pingport(CoreLocal::get('localhost'),CoreLocal::get('DBMS'))){
-        echo '<i>Database found at '.CoreLocal::get('localhost').'. Verify username and password
-            and/or database account permissions.</i>';
+        printf(_('<i>Database found at %s. Verify username and password
+            and/or database account permissions.</i>'), CoreLocal::get('localhost'));
     }
     else {
-        echo '<i>Database does not appear to be listening for connections on '
-            .CoreLocal::get('localhost').'. Verify host is correct, database is running and
-            firewall is allowing connections.</i>';
+        printf(_('<i>Database does not appear to be listening for connections on 
+            %s. Verify host is correct, database is running and
+            firewall is allowing connections.</i>'), CoreLocal::get('localhost'));
     }
     echo '</div>';
 } else {
-    echo "<span class='success'>Succeeded</span><br />";
+    echo "<span class='success'>" . _('Succeeded') . "</span><br />";
     //echo "<textarea rows=3 cols=80>";
-    $opErrors = InstallUtilities::createOpDBs($sql, CoreLocal::get('pDatabase'));
+    $opErrors = Creator::createOpDBs($sql, CoreLocal::get('pDatabase'));
     $opErrors = array_filter($opErrors, function($x){ return $x['error'] != 0; });
     $gotDBs++;
     if (!empty($opErrors)){
-        echo '<div class="db_create_errors" style="border: solid 1px red;padding:5px;">';
-        echo 'There were some errors creating operational DB structure';
-        echo '<ul style="margin-top:2px;">';
-        foreach($opErrors as $error){
-            if ($error['error'] == 0) {
-                continue; // no error occurred
-            }
-            echo '<li>';    
-            echo 'Error on structure <b>'.$error['struct'].'</b>. ';
-            printf('<a href="" onclick="$(\'#eDetails%s\').toggle();return false;">Details</a>',
-                $error['struct']);
-            printf('<ul style="display:none;" id="eDetails%s">',$error['struct']);
-            echo '<li>Query: <pre>'.$error['query'].'</pre></li>';
-            echo '<li>Error Message: '.$error['details'].'</li>';
-            echo '</ul>';
-            echo '</li>';
-        }
-        echo '</div>';
+        sqlErrorsToList($opErrors);
     }
-
 }
+
+$form->setDB($sql);
+
 ?>
 </div> <!-- noteTxt -->
 </td></tr>
 <tr>
-    <td>Lane transaction DB*:</td>
-    <td><?php echo InstallUtilities::installTextField('tDatabase', 'translog', InstallUtilities::INI_SETTING); ?></td>
+    <td><?php echo _('Lane transaction DB*: '); ?></td>
+    <td><?php echo $form->textField('tDatabase', 'translog', Conf::INI_SETTING); ?></td>
 </tr>
 <tr>
     <td colspan=2>
 <div class="noteTxt">
-Testing transactional DB connection:
-<?php
+<?php 
+echo _('Testing transactional DB connection:');
 $sql = InstallUtilities::dbTestConnect(CoreLocal::get('localhost'),
         CoreLocal::get('DBMS'),
         CoreLocal::get('tDatabase'),
         CoreLocal::get('localUser'),
         CoreLocal::get('localPass'));
 if ($sql === False ) {
-    echo "<span class='fail'>Failed</span>";
+    echo "<span class='fail'>" . _('Failed') . "</span>";
     echo '<div class="db_hints" style="margin-left:25px;">';
-    echo '<i>If both connections failed, see above. If just this one
+    echo _('<i>If both connections failed, see above. If just this one
         is failing, it\'s probably an issue of database user 
-        permissions.</i>';
+        permissions.</i>');
     echo '</div>';
 } else {
-    echo "<span class='success'>Succeeded</span><br />";
+    echo "<span class='success'>" . _('Succeeded') . "</span><br />";
     //echo "<textarea rows=3 cols=80>";
     
 
     /* Re-do tax rates here so changes affect the subsequent
      * ltt* view builds. 
      */
-    if (isset($_REQUEST['TAX_RATE']) && $sql->table_exists('taxrates')){
+    if (is_array(FormLib::get('TAX_RATE')) && $sql->table_exists('taxrates')){
         $queries = array();
-        for($i=0; $i<count($_REQUEST['TAX_RATE']); $i++){
-            $rate = $_REQUEST['TAX_RATE'][$i];
-            $desc = $_REQUEST['TAX_DESC'][$i];
+        $TAX_RATE = FormLib::get('TAX_RATE');
+        $TAX_DESC = FormLib::get('TAX_DESC');
+        for($i=0; $i<count($TAX_RATE); $i++){
+            $rate = $TAX_RATE[$i];
+            $desc = $TAX_DESC[$i];
             if(is_numeric($rate)){
                 $desc = str_replace(" ","",$desc);
                 $queries[] = sprintf("INSERT INTO taxrates VALUES 
                     (%d,%f,'%s')",$i+1,$rate,$desc);
             }
             else if ($rate != ""){
-                echo "<br /><b>Error</b>: the given
-                    tax rate, $rate, doesn't seem to
-                    be a number.";
+                printf(_("<br /><b>Error</b>: the given
+                    tax rate, %s, doesn't seem to
+                    be a number."), $rate);
             }
             $sql->query("TRUNCATE TABLE taxrates");
             foreach($queries as $q)
@@ -282,28 +273,11 @@ if ($sql === False ) {
         }
     }
 
-    $transErrors = InstallUtilities::createTransDBs($sql, CoreLocal::get('tDatabase'));
+    $transErrors = Creator::createTransDBs($sql, CoreLocal::get('tDatabase'));
     $transErrors = array_filter($transErrors, function($x){ return $x['error'] != 0; });
     $gotDBs++;
     if (!empty($transErrors)){
-        echo '<div class="db_create_errors" style="border: solid 1px red;padding:5px;">';
-        echo 'There were some errors creating transactional DB structure';
-        echo '<ul style="margin-top:2px;">';
-        foreach($transErrors as $error){
-            if ($error['error'] == 0) {
-                continue; // no error occurred
-            }
-            echo '<li>';    
-            echo 'Error on structure <b>'.$error['struct'].'</b>. ';
-            printf('<a href="" onclick="$(\'#eDetails%s\').toggle();return false;">Details</a>',
-                $error['struct']);
-            printf('<ul style="display:none;" id="eDetails%s">',$error['struct']);
-            echo '<li>Query: <pre>'.$error['query'].'</pre></li>';
-            echo '<li>Error Message: '.$error['details'].'</li>';
-            echo '</ul>';
-            echo '</li>';
-        }
-        echo '</div>';
+        sqlErrorsToList($transErrors);
     }
     //echo "</textarea>";
 }
@@ -317,41 +291,44 @@ if ($sql === False ) {
 if ($gotDBs == 2 && CoreLocal::get('laneno') != 0) {
     InstallUtilities::validateConfiguration();
 }
+$form->setDB(InstallUtilities::dbOrFail(CoreLocal::get('pDatabase')));
 ?>
 </td></tr>
 <tr>
-    <td>Server database host: </td>
-    <td><?php echo InstallUtilities::installTextField('mServer', '127.0.0.1'); ?></td>
+    <td><?php echo _('Server database host:'); ?></td>
+    <td><?php echo $form->textField('mServer', '127.0.0.1'); ?></td>
 </tr>
 <tr>
-    <td>Server database type:</td>
+    <td><?php echo _('Server database type:'); ?></td>
     <td>
     <?php
     $db_opts = \COREPOS\common\sql\Lib::getDrivers();
-    echo InstallUtilities::installSelectField('mDBMS', $db_opts, 'mysql');
+    $db_keys = array_keys($db_opts);
+    $default = $db_opts[$db_keys[0]];
+    echo $form->selectField('mDBMS', $db_opts, $default);
     ?>
     </td>
 </tr>
 <tr>
-    <td>Server user name:</td>
-    <td><?php echo InstallUtilities::installTextField('mUser', 'root'); ?></td>
+    <td><?php echo _('Server user name:'); ?></td>
+    <td><?php echo $form->textField('mUser', 'root'); ?></td>
 </tr>
 <tr>
-    <td>Server password:</td>
+    <td><?php echo _('Server password:'); ?></td>
     <td>
     <?php
-    echo InstallUtilities::installTextField('mPass', '', InstallUtilities::EITHER_SETTING, true, array('type'=>'password'));
+    echo $form->textField('mPass', '', Conf::EITHER_SETTING, true, array('type'=>'password'));
     ?>
     </td>
 </tr>
 <tr>
-    <td>Server database name:</td>
-    <td><?php echo InstallUtilities::installTextField('mDatabase', 'core_trans'); ?></td>
+    <td><?php echo _('Server database name:'); ?></td>
+    <td><?php echo $form->textField('mDatabase', 'core_trans'); ?></td>
 </tr>
 <tr>
     <td colspan=2>
 <div class="noteTxt">
-Testing server connection:
+<?php echo _('Testing server connection:'); ?>
 <?php
 $sql = InstallUtilities::dbTestConnect(CoreLocal::get('mServer'),
         CoreLocal::get('mDBMS'),
@@ -359,58 +336,46 @@ $sql = InstallUtilities::dbTestConnect(CoreLocal::get('mServer'),
         CoreLocal::get('mUser'),
         CoreLocal::get('mPass'));
 if ($sql === False){
-    echo "<span class='fail'>Failed</span>";
+    echo "<span class='fail'>" . _('Failed') . "</span>";
     echo '<div class="db_hints" style="margin-left:25px;width:350px;">';
     if (!function_exists('socket_create')){
-        echo '<i>Try enabling PHP\'s socket extension in php.ini for better diagnostics</i>';
+        echo _('<i>Try enabling PHP\'s socket extension in php.ini for better diagnostics</i>');
     }
-    elseif (@MiscLib::pingport(CoreLocal::get('mServer'),CoreLocal::get('DBMS'))){
-        echo '<i>Database found at '.CoreLocal::get('mServer').'. Verify username and password
-            and/or database account permissions.</i>';
+    elseif (@MiscLib::pingport(CoreLocal::get('mServer'),CoreLocal::get('mDBMS'))){
+        printf(_('<i>Database found at %s. Verify username and password
+            and/or database account permissions.</i>'), CoreLocal::get('mServer'));
     }
     else {
-        echo '<i>Database does not appear to be listening for connections on '
-            .CoreLocal::get('mServer').'. Verify host is correct, database is running and
-            firewall is allowing connections.</i>';
+        printf(_('<i>Database does not appear to be listening for connections on 
+            %s. Verify host is correct, database is running and
+            firewall is allowing connections.</i>'), CoreLocal::get('mServer'));
     }
     echo '</div>';
 }
 else {
-    echo "<span class='success'>Succeeded</span><br />";
+    echo "<span class='success'>" . _('Succeeded') . "</span><br />";
     //echo "<textarea rows=3 cols=80>";
-    $sErrors = InstallUtilities::createMinServer($sql, CoreLocal::get('mDatabase'));
+    $sErrors = Creator::createMinServer($sql, CoreLocal::get('mDatabase'));
     $sErrors = array_filter($sErrors, function($x){ return $x['error'] != 0; });
     if (!empty($sErrors)){
-        echo '<div class="db_create_errors" style="border: solid 1px red;padding:5px;">';
-        echo 'There were some errors creating transactional DB structure';
-        echo '<ul style="margin-top:2px;">';
-        foreach($sErrors as $error){
-            if ($error['error'] == 0) {
-                continue; // no error occurred
-            }
-            echo '<li>';    
-            echo 'Error on structure <b>'.$error['struct'].'</b>. ';
-            printf('<a href="" onclick="$(\'#eDetails%s\').toggle();return false;">Details</a>',
-                $error['struct']);
-            printf('<ul style="display:none;" id="eDetails%s">',$error['struct']);
-            echo '<li>Query: <pre>'.$error['query'].'</pre></li>';
-            echo '<li>Error Message: '.$error['details'].'</li>';
-            echo '</ul>';
-            echo '</li>';
-        }
-        echo '</div>';
+        sqlErrorsToList($sErrors);
     }
     //echo "</textarea>";
 }
 ?>
 </div>  <!-- noteTxt -->
-</td></tr><tr><td colspan=2 class="tblHeader">
-<h3>Tax</h3></td></tr>
+</td></tr>
+<tr>
+    <td><?php echo _('Locale:'); ?></td>
+    <td><?php echo $form->selectField('locale', Conf::getLocales(), 'en_US'); ?></td>
+</tr>
+<tr><td colspan=2 class="tblHeader">
+<h3><?php echo _('Tax'); ?></h3></td></tr>
 <tr><td colspan=2>
-<p><i>Provided tax rates are used to create database views. As such,
+<p><i><?php echo _('Provided tax rates are used to create database views. As such,
 descriptions should be DB-legal syntax (e.g., no spaces). A rate of
 0% with ID 0 is automatically included. Enter exact values - e.g.,
-0.05 to represent 5%.</i></p></td></tr>
+0.05 to represent 5%.'); ?></i></p></td></tr>
 <tr><td colspan=2>
 <?php
 $rates = array();
@@ -434,7 +399,7 @@ if ($gotDBs == 2) {
             $rates[] = array($row[0],$row[1],$row[2]);
     }
 }
-echo "<table><tr><th>ID</th><th>Rate</th><th>Description</th></tr>";
+echo "<table><tr><th>" . _('ID') . '</th><th>' . _('Rate') . '</th><th>' . _('Description') . "</th></tr>";
 foreach($rates as $rate){
     printf("<tr><td>%d</td><td><input type=text name=TAX_RATE[] value=\"%f\" /></td>
         <td><input type=text name=TAX_DESC[] value=\"%s\" /></td></tr>",
@@ -444,10 +409,33 @@ printf("<tr><td>(Add)</td><td><input type=text name=TAX_RATE[] value=\"\" /></td
     <td><input type=text name=TAX_DESC[] value=\"\" /></td></tr></table>");
 ?>
 </td></tr><tr><td colspan=2 class="submitBtn">
-<input type=submit value="Save &amp; Re-run installation checks" />
+<input type=submit value="<?php echo _('Save & Re-run installation checks'); ?>" />
 </form>
 </td></tr>
 </table>
 </div> <!--    wrapper -->
 </body>
 </html>
+<?php
+function sqlErrorsToList($errors)
+{
+    echo '<div class="db_create_errors" style="border: solid 1px red;padding:5px;">';
+    echo _('There were some errors creating transactional DB structure');
+    echo '<ul style="margin-top:2px;">';
+    foreach ($errors as $error){
+        if ($error['error'] == 0) {
+            continue; // no error occurred
+        }
+        echo '<li>';    
+        echo _('Error on structure') . ' <b>'.$error['struct'].'</b>. ';
+        printf('<a href="" onclick="$(\'#eDetails%s\').toggle();return false;">' . _('Details') . '</a>',
+            $error['struct']);
+        printf('<ul style="display:none;" id="eDetails%s">',$error['struct']);
+        echo '<li>' . _('Query:') . ' <pre>'.$error['query'].'</pre></li>';
+        echo '<li>' . _('Error Message: ').$error['error_msg'].'</li>';
+        echo '</ul>';
+        echo '</li>';
+    }
+    echo '</div>';
+}
+

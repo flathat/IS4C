@@ -1,40 +1,53 @@
+<?php
+
+use COREPOS\pos\install\conf\Conf;
+use COREPOS\pos\install\conf\JsonConf;
+use COREPOS\pos\install\InstallUtilities;
+use COREPOS\pos\lib\CoreState;
+use COREPOS\pos\lib\MiscLib;
+
+?>
 <!DOCTYPE html>
 <html>
 <?php
 include(realpath(dirname(__FILE__).'/../lib/AutoLoader.php'));
 AutoLoader::loadMap();
-include('../ini.php');
 CoreState::loadParams();
-include('InstallUtilities.php');
 $known_good_modules = array(
     'SPH_Magellan_Scale' => array(
-        'description' => 'Magellan Scanner/scale',
+        'description' => _('Magellan Scanner/scale (recommended)'),
+        'common-ports' => array('COM*', '/dev/ttyS*'),
+    ),
+        'SPH_Magellan_Classic' => array(
+        'description' => _('Magellan Scanner/scale'),
         'common-ports' => array('COM*', '/dev/ttyS*'),
     ),
     'SPH_SignAndPay_USB' => array(
-        'description' => 'ID Tech Sign&Pay (recommended)',
+        'description' => _('ID Tech Sign&Pay (recommended)'),
         'common-ports' => array('USB', '/dev/hidraw*'),
     ),
     'SPH_Datacap_PDCX' => array(
-        'description' => 'Datacap ActiveX compatible devices (Windows-only)',
+        'description' => _('Datacap ActiveX compatible devices (Windows-only)'),
         'common-ports' => array(
-            'VX805XPI:*' => 'Verifone VX805 on COM*',
-            'VX805XPI_MERCURY_E2E:*' => 'Verifone VX805 with Mercury encryption on COM*',
+            'VX805XPI:*' => _('Verifone VX805 on COM*'),
+            'VX805XPI_MERCURY_E2E:*' => _('Verifone VX805 with Mercury encryption on COM*'),
+            'INGENICOISC250_MERCURY_E2E:*' => _('Ingenico iSC250 with Mercury encryption on COM*'),
         ),
     ),
     'SPH_Datacap_EMVX' => array(
-        'description' => 'Datacap ActiveX compatible devices with EMV support (Windows-only)',
+        'description' => _('Datacap ActiveX compatible devices with EMV support (Windows-only)'),
         'common-ports' => array(
-            'VX805XPI:*' => 'Verifone VX805 on COM*',
-            'VX805XPI_MERCURY_E2E:*' => 'Verifone VX805 with Mercury encryption on COM*',
+            'VX805XPI:*' => _('Verifone VX805 on COM*'),
+            'VX805XPI_MERCURY_E2E:*' => _('Verifone VX805 with Mercury encryption on COM*'),
+            'INGENICOISC250_MERCURY_E2E:*' => _('Ingenico iSC250 with Mercury encryption on COM*'),
         ),
     ),
     'SPH_SignAndPay_Native' => array(
-        'description' => 'ID Tech Sign&Pay (not recommended in Linux)',
+        'description' => _('ID Tech Sign&Pay (not recommended in Linux)'),
         'common-ports' => array('USB', '/dev/ttyS*'),
     ),
     'SPH_SignAndPay_Auto' => array(
-        'description' => 'ID Tech Sign&Pay (not recommended)',
+        'description' => _('ID Tech Sign&Pay (not recommended)'),
         'common-ports' => array('USB', '/dev/hidraw*'),
     ),
 );
@@ -67,25 +80,25 @@ function expand_port_list($list)
 <head>
 <title>IT CORE Lane Installation: NewMagellan Driver</title>
 <link rel="stylesheet" href="../css/toggle-switch.css" type="text/css" />
-<script type="text/javascript" src="../js/jquery.js"></script>
+<script type="text/javascript" src="../js/<?php echo MiscLib::jqueryFile(); ?>"></script>
 </head>
 <body>
 <?php include('tabs.php'); ?>
 <div id="wrapper">    
-<h2>IT CORE Lane Installation: Hardware Driver Settings (NewMagellan)</h2>
+<h2><?php echo _('IT CORE Lane Installation: Hardware Driver Settings (NewMagellan)'); ?></h2>
 
-<div class="alert"><?php InstallUtilities::checkWritable('../ini.json', false, 'JSON'); ?></div>
+<div class="alert"><?php Conf::checkWritable('../ini.json', false, 'JSON'); ?></div>
 
 <form action=driver.php method=post>
 <table id="install" border=0 cellspacing=0 cellpadding=4>
 <tr>
-    <td colspan=3 class="tblHeader"><h3>General Settings</h3></td>
+    <td colspan=3 class="tblHeader"><h3><?php echo _('General Settings'); ?></h3></td>
 </tr>
 <tr>
-    <td style="width: 30%;"><b>Add Device</b>:</td>
+    <td style="width: 30%;"><b><?php echo _('Add Device'); ?></b>:</td>
     <td>
     <select name="new-module" title="Stored in ini.json">
-    <option value="n/a">Select device...</option>
+    <option value="n/a"><?php echo _('Select device...'); ?></option>
     <?php
     foreach ($known_good_modules as $mod => $info) {
         printf('<option value="%s">%s</option>',
@@ -97,7 +110,7 @@ function expand_port_list($list)
     </td>
 </tr>
 <tr>
-    <td colspan=3 class="tblHeader"><h3>Current Devices</h3></td>
+    <td colspan=3 class="tblHeader"><h3><?php echo _('Current Devices'); ?></h3></td>
 </tr>
 <?php
 $json = json_decode(file_get_contents('../ini.json'), true);
@@ -137,9 +150,9 @@ foreach ($json['NewMagellanPorts'] as $port) {
         $name = $known_good_modules[$name]['description'];
     }
     echo '<tr>';
-    printf('<td style="width: 40%%;"><b>Device</b>: %s</td>', $name);
+    printf('<td style="width: 40%%;"><b>' . _('Device') . '</b>: %s</td>', $name);
     printf('<input type="hidden" name="entryID[]" value="%d" />', $i);
-    echo '<td><b>Port</b>: <select name="port[]" title="Stored in ini.json">';
+    echo '<td><b>Port</b>: <select name="port[]" title="' . _('Stored in ini.json') . '">';
     if (isset($known_good_modules[$port['module']])) {
         foreach (expand_port_list($known_good_modules[$port['module']]['common-ports']) as $k=>$v) {
             printf('<option %s value="%s">%s</option>',
@@ -150,18 +163,18 @@ foreach ($json['NewMagellanPorts'] as $port) {
         echo '<option>' . $port['port'] . '</option>';
     }
     echo '</select></td>';
-    printf('<td><label>Delete entry <input type="checkbox" name="delete[]" value="%d" /></label></td>', $i);
+    printf('<td><label>' . _('Delete entry') . ' <input type="checkbox" name="delete[]" value="%d" /></label></td>', $i);
     echo '</tr>';
     $i++;
 }
 $json['NewMagellanPorts'] = $valid;
-InstallUtilities::jsonConfSave('NewMagellanPorts', $json['NewMagellanPorts']);
+JsonConf::save('NewMagellanPorts', $json['NewMagellanPorts']);
 ?>
 <tr>
     <td colspan=3 class="tblHeader">&nbsp;</td>
 </tr>
 </table>
-<input type="submit" value="Save Changes" />
+<input type="submit" value="<?php echo _('Save Changes'); ?>" />
 </form>
 </body>
 </html>
