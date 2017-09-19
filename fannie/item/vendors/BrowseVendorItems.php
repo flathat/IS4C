@@ -333,10 +333,10 @@ class BrowseVendorItems extends FanniePage
 
         $dbc = FannieDB::get($FANNIE_OP_DB);
 
-        $vnp = $dbc->prepare_statement("SELECT vendorName FROM vendors
+        $vnp = $dbc->prepare("SELECT vendorName FROM vendors
             WHERE vendorID=?");
-        $vnr = $dbc->exec_statement($vnp, array($vid));
-        $vni = $dbc->fetch_row($vnr);
+        $vnr = $dbc->execute($vnp, array($vid));
+        $vni = $dbc->fetchRow($vnr);
         $vendorName = $vni['vendorName'];
         /* */
         $cats = "";

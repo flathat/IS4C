@@ -230,7 +230,7 @@ class StoreSummaryDiscountReport extends FannieReportPage {
         $dbc->selectDB($this->config->get('OP_DB'));
 
         $dlog = DTransactionsModel::selectDlog($d1,$d2);
-        $datestamp = $dbc->identifier_escape('tdate');
+        $datestamp = $dbc->identifierEscape('tdate');
 
         if ($this->sales_reflect_discounts) {
             $salesStatement = '

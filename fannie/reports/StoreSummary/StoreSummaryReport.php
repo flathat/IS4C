@@ -180,7 +180,7 @@ class StoreSummaryReport extends FannieReportPage {
         $dbc->selectDB($this->config->get('OP_DB'));
 
         $dlog = DTransactionsModel::selectDlog($d1,$d2);
-        $datestamp = $dbc->identifier_escape('tdate');
+        $datestamp = $dbc->identifierEscape('tdate');
 
 /* Start >>>>>>> upstream/version-2.7
  * Can dlog views if they include cost.

@@ -90,17 +90,17 @@ class StoreProgramInputTool extends FanniePage {
 
 		$dbc = FannieDB::get($FANNIE_OP_DB);
         // ASC puts STORECHARGE first, for now anyway.
-        $q = $dbc->prepare_statement("SELECT dept_no,dept_name
+        $q = $dbc->prepare("SELECT dept_no,dept_name
             FROM departments
             WHERE dept_no IN $dlist
             ORDER BY dept_no ASC");
-		$r = $dbc->exec_statement($q,$dArgs);
+		$r = $dbc->execute($q,$dArgs);
 		if ($dbc->num_rows($r) == 0){
 			return "<em>Error: equity department(s) don't exist</em>";
 		}
 
 		$this->depts = array();
-		while($row = $dbc->fetch_row($r)){
+		while($row = $dbc->fetchRow($r)){
 			$this->depts[$row[0]] = $row[1];
 		}
 
@@ -132,17 +132,17 @@ class StoreProgramInputTool extends FanniePage {
             }
             $memNum = FormLib::get_form_value('memIN');
             if ($memNum != 0) {
-                $q = $dbc->prepare_statement("SELECT FirstName,LastName
+                $q = $dbc->prepare("SELECT FirstName,LastName
                     FROM custdata
                     WHERE CardNo=? AND personNum=1");
-                $r = $dbc->exec_statement($q,array($memNum));
+                $r = $dbc->execute($q,array($memNum));
                 if ($dbc->num_rows($r) == 0){
                     $this->errors .= "<em>Error: no such member: ".$memNum."</em>"
                         ."<br /><br />"
                         ."<a href=\"\" onclick=\"back(); return false;\">Back</a>";
                     return True;
                 }
-                $row = $dbc->fetch_row($r);
+                $row = $dbc->fetchRow($r);
                 //$this->name1 = $row['FirstName'].' '.$row['LastName'];
                 $this->name1 = $row[0].' '.$row[1];
             }
@@ -190,34 +190,34 @@ class StoreProgramInputTool extends FanniePage {
 
             //EL From# as dummy for fix.
             if ($this->cn1 > 0) {
-                $q = $dbc->prepare_statement("SELECT FirstName,LastName
+                $q = $dbc->prepare("SELECT FirstName,LastName
                     FROM custdata
                     WHERE CardNo=? AND personNum=1");
-                $r = $dbc->exec_statement($q,array($this->cn1));
+                $r = $dbc->execute($q,array($this->cn1));
                 if ($dbc->num_rows($r) == 0){
                     $this->errors .= "<em>Error: no such member: ".$this->cn1."</em>"
                         ."<br /><br />"
                         ."<a href=\"\" onclick=\"back(); return false;\">Back</a>";
                     return True;
                 }
-                $row = $dbc->fetch_row($r);
+                $row = $dbc->fetchRow($r);
                 //$this->name1 = $row['FirstName'].' '.$row['LastName'];
                 $this->name1 = $row[0].' '.$row[1];
             } else {
                 $this->name1 = "Account Adjustment";
             }
 
-            $q = $dbc->prepare_statement("SELECT FirstName,LastName
+            $q = $dbc->prepare("SELECT FirstName,LastName
                 FROM custdata
                 WHERE CardNo=? AND personNum=1");
-			$r = $dbc->exec_statement($q,array($this->cn2));
+			$r = $dbc->execute($q,array($this->cn2));
 			if ($dbc->num_rows($r) == 0){
 				$this->errors .= "<em>Error: no such member: ".$this->cn2."</em>"
 					."<br /><br />"
 					."<a href=\"\" onclick=\"back(); return false;\">Back</a>";
 				return True;
 			}
-			$row = $dbc->fetch_row($r);
+			$row = $dbc->fetchRow($r);
 			$this->name2 = $row[0].' '.$row[1];
 		}
 
@@ -352,9 +352,9 @@ class StoreProgramInputTool extends FanniePage {
 	function getTransNo($emp,$register){
 		global $FANNIE_TRANS_DB;
 		$dbc = FannieDB::get($FANNIE_TRANS_DB);
-		$q = $dbc->prepare_statement("SELECT max(trans_no) FROM dtransactions WHERE register_no=? AND emp_no=?");
-		$r = $dbc->exec_statement($q,array($register,$emp));
-		$n = array_pop($dbc->fetch_row($r));
+		$q = $dbc->prepare("SELECT max(trans_no) FROM dtransactions WHERE register_no=? AND emp_no=?");
+		$r = $dbc->execute($q,array($register,$emp));
+		$n = array_pop($dbc->fetchRow($r));
 		return (empty($n)?1:$n+1);	
 	}
 
@@ -414,12 +414,12 @@ class StoreProgramInputTool extends FanniePage {
             $defaults['quantity'] = 0;
             $defaults['ItemQtty'] = 0;
             $defaults['upc'] = '0';
-            $tenderP = $dbc->prepare_statement("SELECT TenderName FROM {$OP}tenders WHERE TenderCode=?");
-            $tenderR = $dbc->exec_statement($tenderP,$comment);
+            $tenderP = $dbc->prepare("SELECT TenderName FROM {$OP}tenders WHERE TenderCode=?");
+            $tenderR = $dbc->execute($tenderP,$comment);
             if ($dbc->num_rows($tenderR) == 0) {
                 $defaults['description'] = $comment;
             } else {
-                $tenderW = $dbc->fetch_row($tenderR);
+                $tenderW = $dbc->fetchRow($tenderR);
                 $defaults['description'] = $tenderW['TenderName'];
             }
         // Not a Tender
@@ -437,21 +437,21 @@ class StoreProgramInputTool extends FanniePage {
                 if (isset($this->depts[$department]))
                     $defaults['description'] = $this->depts[$department];
                 else {
-                    $nameP = $dbc->prepare_statement("SELECT dept_name FROM {$OP}departments WHERE dept_no=?");
-                    $nameR = $dbc->exec_statement($nameP,$department);
+                    $nameP = $dbc->prepare("SELECT dept_name FROM {$OP}departments WHERE dept_no=?");
+                    $nameR = $dbc->execute($nameP,$department);
                     if ($dbc->num_rows($nameR) == 0) {
                         $defaults['description'] = 'CORRECTIONS';
                     } else {
-                        $nameW = $dbc->fetch_row($nameR);
+                        $nameW = $dbc->fetchRow($nameR);
                         $defaults['description'] = $nameW['dept_name'];
                     }
                 }
             }
         }
 
-		$q = $dbc->prepare_statement("SELECT memType,Staff FROM {$OP}custdata WHERE CardNo=?");
-		$r = $dbc->exec_statement($q,array($cardno));
-		$w = $dbc->fetch_row($r);
+		$q = $dbc->prepare("SELECT memType,Staff FROM {$OP}custdata WHERE CardNo=?");
+		$r = $dbc->execute($q,array($cardno));
+		$w = $dbc->fetchRow($r);
 		$defaults['memType'] = $w[0];
 		$defaults['staff'] = $w[1];
 
@@ -465,8 +465,8 @@ class StoreProgramInputTool extends FanniePage {
 		}
 		$columns = substr($columns,0,strlen($columns)-1);
 		$values = substr($values,0,strlen($values)-1);
-		$prep = $dbc->prepare_statement("INSERT INTO dtransactions ($columns) VALUES ($values)");
-		$dbc->exec_statement($prep, $args);
+		$prep = $dbc->prepare("INSERT INTO dtransactions ($columns) VALUES ($values)");
+		$dbc->execute($prep, $args);
 	}
 }
 
