@@ -367,7 +367,7 @@ class DepartmentTop10Report extends FannieReportPage
                             ($row['dollars'] - $row['cost']) / $row['qty']);
                          */
                         /* Markup as proportion: .nn or percent nn.nn */
-                        $markup = sprintf('%.2f', $row['qty'] == 0 ? 0 :
+                        $markup = sprintf('%.2f', $row['cost'] == 0 ? 0 :
                             (($row['dollars'] - $row['cost']) / $row['cost']) * $pp);
                         $record[] = $margin;
                         $record[] = $markup;
@@ -394,7 +394,8 @@ class DepartmentTop10Report extends FannieReportPage
             number_format($deptTopRings,0),
             number_format($deptTopQuantity,2),
             sprintf('$%s', number_format($deptTopSales,2)),
-            sprintf('%.2f%%', (($deptTopSales/$deptTotalSales)*100)),
+            sprintf('%.2f%%', $deptTotalSales == 0 ? 0 :
+                (($deptTopSales/$deptTotalSales)*100)),
             "$sectionFooterLabel",'',''));
         $deptFooter['meta'] = FannieReportPage::META_BOLD;
         $ret[] = $deptFooter;
@@ -485,7 +486,7 @@ class DepartmentTop10Report extends FannieReportPage
                                 ($row['dollars'] - $row['cost']) / $row['qty']);
                              */
                             /* Markup as proportion: .nn or percent nn.nn */
-                            $markup = sprintf('%.2f', $row['qty'] == 0 ? 0 :
+                            $markup = sprintf('%.2f', $row['cost'] == 0 ? 0 :
                                 (($row['dollars'] - $row['cost']) / $row['cost']) * $pp);
                             $record[] = $margin;
                             $record[] = $markup;
@@ -511,7 +512,8 @@ class DepartmentTop10Report extends FannieReportPage
                 number_format($deptTopRings,0),
                 number_format($deptTopQuantity,2),
                 sprintf('$%s', number_format($deptTopSales,2)),
-                sprintf('%.2f%%', (($deptTopSales/$deptTotalSales)*100)),
+                sprintf('%.2f%%', $deptTotalSales == 0 ? 0 :
+                    (($deptTopSales/$deptTotalSales)*100)),
                 "$sectionFooterLabel",'',''));
             $deptFooter['meta'] = FannieReportPage::META_BOLD;
             $ret[] = $deptFooter;

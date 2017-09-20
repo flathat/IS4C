@@ -179,7 +179,7 @@ class ONFCuploadPage extends \COREPOS\Fannie\API\FannieUploadPage {
     // preprocess
     }
 
-    function process_file($linedata)
+    public function process_file($linedata, $indexes)
     {
         global $FANNIE_OP_DB;
         //$this->results_details = "Begin process_file()";

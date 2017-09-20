@@ -134,7 +134,8 @@ class Prepay extends \COREPOS\Fannie\API\member\MemberModule
 		return $ret;
 	}
 
-	function SaveFormData($memNum){
+    function SaveFormData($memNum, $json=array())
+    {
 		global $FANNIE_ROOT;
 		$dbc = $this->db();
 		if (!class_exists("CustdataModel")) {
