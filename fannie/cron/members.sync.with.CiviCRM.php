@@ -3538,12 +3538,12 @@ set_time_limit(0);
  * Controls some monitoring and info.
  * 0= production, 1=notify, no-write to db, 2=notify but write to db.
  */
-$debug = 2;     // Restore to 0 for production
+$debug = 0;     // Restore to 0 for production
 /*
  * Whether dieHere() =1 sends email or =0 Displays the message.
  * Optional arg to dieHere(); defaults to 1.
  */
-$dieMail = 0;    // Restore to 1 for production
+$dieMail = 1;    // Restore to 1 for production
 /*
  * Used in composing vars for Civi db access.
  */
@@ -4126,7 +4126,7 @@ fwrite($reporter, "STARTED: $dbNow\n");
 
 // #'N True in production.
 //     False in development, False to disable getting actual data and use local source instead.
-if ( False ) {
+if ( True ) {
 
 /* CiviCRM members with date modified.
  * There is a record for each modified_date; 2nd+ are ignored in the loop.

@@ -48,7 +48,7 @@ are being supported.
 
         set_time_limit(0);
 
-        $cols = $sql->table_definition('dtransactions');
+        $cols = $sql->tableDefinition('dtransactions');
         if (isset($cols['date_id'])){
             $sql->query("UPDATE dtransactions SET date_id=DATE_FORMAT(datetime,'%Y%m%d')");
         }
@@ -70,7 +70,7 @@ are being supported.
                     DAY(datetime)
             ');
             $datesR = $sql->execute($datesP, array($today));
-            while ($datesW = $sql->fetch_row($datesR)) {
+            while ($datesW = $sql->fetchRow($datesR)) {
                 $dates[] = sprintf('%d-%02d-%02d', $datesW['year'], $datesW['month'], $datesW['day']);
             }
         } catch (Exception $ex) {
